@@ -1,0 +1,34 @@
+complexity:
+  active: true
+  ComplexCondition:
+    active: false
+  LongMethod:
+    active: false
+  LongParameterList:
+    active: false
+  TooManyFunctions:
+    active: false
+  LargeClass:
+    active: false
+  ComplexInterface:
+    active: false
+  CyclomaticComplexMethod:
+    active: false
+
+style:
+  active: true
+  MagicNumber:
+    active: false
+  ReturnCount:
+    active: false
+  WildcardImport:
+    active: false
+  MaxLineLength:
+    active: false
+  UnusedPrivateMember:
+    active: false
+
+naming:
+  active: true
+  FunctionNaming:
+    active: false
