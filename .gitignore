@@ -11,3 +11,5 @@ captures/
 *.apk
 *.aab
 *.hprof
+docs/
+.agents/
