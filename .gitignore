@@ -13,3 +13,5 @@ captures/
 *.hprof
 docs/
 .agents/
+ARCHITECTURE.md
+AGENTS.md
