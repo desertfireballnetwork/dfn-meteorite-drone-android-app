@@ -1,7 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="purple_200">#FFBB86FC</color>
     <color name="purple_500">#FF6200EE</color>
     <color name="purple_700">#FF3700B3</color>
     <color name="teal_200">#FF03DAC5</color>
     <color name="ic_launcher_background">#FF6200EE</color>
+
+    <!-- DFN Marker & Design System Color Tokens -->
+    <color name="dfn_marker_yes">#28A745</color>
+    <color name="dfn_marker_no">#DC3545</color>
+    <color name="dfn_marker_unprocessed">#007BFF</color>
+    <color name="dfn_marker_car">#FFC107</color>
+    <color name="dfn_surveyed_area_polygon">#000000</color>
+    <color name="dfn_marker_claimed_by_me_outline">#28A745</color>
+    <color name="dfn_marker_claimed_by_other_outline">#DC3545</color>
 </resources>
