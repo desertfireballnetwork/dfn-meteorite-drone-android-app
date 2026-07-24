@@ -10,15 +10,18 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
+import au.edu.fireballs.stage4.ui.theme.Stage4Theme
 
 @Composable
 fun Stage4RootScreen(modifier: Modifier = Modifier) {
-    Surface(
-        modifier = modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.background,
-    ) {
-        Box(modifier = Modifier.fillMaxSize().wrapContentSize(Alignment.Center)) {
-            Text(text = "Hello DFN Stage 4")
+    Stage4Theme {
+        Surface(
+            modifier = modifier.fillMaxSize(),
+            color = MaterialTheme.colorScheme.background,
+        ) {
+            Box(modifier = Modifier.fillMaxSize().wrapContentSize(Alignment.Center)) {
+                Text(text = "Hello DFN Stage 4")
+            }
         }
     }
 }
