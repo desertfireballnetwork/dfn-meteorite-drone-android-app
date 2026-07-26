@@ -1,0 +1,19 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="50dp"
+    android:height="50dp"
+    android:viewportWidth="36"
+    android:viewportHeight="52">
+    <!-- Outer red claim badge outline -->
+    <path
+        android:strokeColor="#DC3545"
+        android:strokeWidth="3"
+        android:pathData="M18 0 C18 0, 36 0, 36 14 C36 28, 18 52, 18 52 C18 52, 0 28, 0 14 C0 0, 18 0, 18 0 Z" />
+    <!-- Inner unprocessed marker body -->
+    <path
+        android:fillColor="#007BFF"
+        android:pathData="M18 2 C18 2, 34 2, 34 14 C34 26, 18 48, 18 48 C18 48, 2 26, 2 14 C2 2, 18 2, 18 2 Z" />
+    <!-- Inner pin highlight -->
+    <path
+        android:fillColor="#4DFFFFFF"
+        android:pathData="M18 2 C18 2, 28 2, 28 14 C28 22, 18 42, 18 42 C18 42, 8 22, 8 14 C8 2, 18 2, 18 2 Z" />
+</vector>

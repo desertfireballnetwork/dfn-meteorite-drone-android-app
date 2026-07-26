@@ -4,6 +4,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import au.edu.fireballs.stage4.ui.Stage4RootScreen
+import au.edu.fireballs.stage4.ui.theme.Stage4Theme
 import dagger.hilt.android.AndroidEntryPoint
 
 @AndroidEntryPoint
@@ -11,7 +12,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            Stage4RootScreen()
+            Stage4Theme {
+                Stage4RootScreen()
+            }
         }
     }
 }
