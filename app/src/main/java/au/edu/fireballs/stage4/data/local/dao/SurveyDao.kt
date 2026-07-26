@@ -24,7 +24,10 @@ interface SurveyDao {
     fun observeAllSurveys(): Flow<List<SurveyEntity>>
 
     @Query("UPDATE survey SET lastViewed = :timestamp WHERE id = :id")
-    suspend fun updateLastViewed(id: Long, timestamp: Long = System.currentTimeMillis())
+    suspend fun updateLastViewed(
+        id: Long,
+        timestamp: Long = System.currentTimeMillis(),
+    )
 
     @Query("DELETE FROM survey WHERE id = :id")
     suspend fun deleteById(id: Long)

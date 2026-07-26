@@ -19,9 +19,12 @@ interface ClaimDao {
         SELECT * FROM claim
         WHERE surveyId = :surveyId
         AND (:onlyActive = 0 OR isActive = 1)
-        """
+        """,
     )
-    fun getClaims(surveyId: Long, onlyActive: Boolean): Flow<List<ClaimEntity>>
+    fun getClaims(
+        surveyId: Long,
+        onlyActive: Boolean,
+    ): Flow<List<ClaimEntity>>
 
     @Query("SELECT * FROM claim WHERE inferenceResultId = :inferenceResultId")
     suspend fun getByCandidateId(inferenceResultId: Long): ClaimEntity?
@@ -32,9 +35,12 @@ interface ClaimDao {
         SET isActive = 0
         WHERE userId = :userId
         AND inferenceResultId IN (:candidateIds)
-        """
+        """,
     )
-    suspend fun releaseClaimsForUser(userId: Long, candidateIds: List<Long>)
+    suspend fun releaseClaimsForUser(
+        userId: Long,
+        candidateIds: List<Long>,
+    )
 
     @Query("DELETE FROM claim WHERE surveyId = :surveyId")
     suspend fun deleteForSurvey(surveyId: Long)

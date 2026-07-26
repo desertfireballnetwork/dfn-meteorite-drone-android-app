@@ -19,18 +19,24 @@ interface PendingPhotoUploadDao {
         UPDATE pending_photo_upload
         SET uploaded = 1, serverPhotoId = :serverPhotoId, uploadFailedReason = NULL
         WHERE rowId = :rowId
-        """
+        """,
     )
-    suspend fun markUploaded(rowId: Long, serverPhotoId: Long)
+    suspend fun markUploaded(
+        rowId: Long,
+        serverPhotoId: Long,
+    )
 
     @Query(
         """
         UPDATE pending_photo_upload
         SET uploaded = 0, uploadFailedReason = :reason
         WHERE rowId = :rowId
-        """
+        """,
     )
-    suspend fun markFailed(rowId: Long, reason: String)
+    suspend fun markFailed(
+        rowId: Long,
+        reason: String,
+    )
 
     @Query("DELETE FROM pending_photo_upload")
     suspend fun deleteAll()

@@ -18,17 +18,23 @@ import au.edu.fireballs.stage4.data.local.dao.TileManifestDao
         LocalDecisionEntity::class,
         PendingPhotoUploadEntity::class,
         OfflineBundleEntity::class,
-        TileManifestEntity::class
+        TileManifestEntity::class,
     ],
     version = 1,
-    exportSchema = true
+    exportSchema = true,
 )
 abstract class Stage4Database : RoomDatabase() {
     abstract fun surveyDao(): SurveyDao
+
     abstract fun candidateDao(): CandidateDao
+
     abstract fun claimDao(): ClaimDao
+
     abstract fun localDecisionDao(): LocalDecisionDao
+
     abstract fun pendingPhotoUploadDao(): PendingPhotoUploadDao
+
     abstract fun offlineBundleDao(): OfflineBundleDao
+
     abstract fun tileManifestDao(): TileManifestDao
 }

@@ -20,25 +20,24 @@ import javax.inject.Singleton
 @Module
 @InstallIn(SingletonComponent::class)
 object DatabaseModule {
-
     @Provides
     @Singleton
     fun provideStage4Database(
-        @ApplicationContext context: Context
-    ): Stage4Database {
-        return Room.databaseBuilder(
-            context,
-            Stage4Database::class.java,
-            "stage4.db"
-        )
-            //todo
+        @ApplicationContext context: Context,
+    ): Stage4Database =
+        Room
+            .databaseBuilder(
+                context,
+                Stage4Database::class.java,
+                "stage4.db",
+            )
+            // todo
             // **** MVP TRADEOFF: Destructive migration is enabled here ****
             // We want to facilitate rapid iteration during MVP development
             // without manual migration scripts.
             // MUST be replaced with explicit Room Migration objects before to production release.
             .fallbackToDestructiveMigration(dropAllTables = true)
             .build()
-    }
 
     @Provides
     fun provideSurveyDao(db: Stage4Database): SurveyDao = db.surveyDao()

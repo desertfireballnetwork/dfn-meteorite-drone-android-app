@@ -22,18 +22,24 @@ interface LocalDecisionDao {
         UPDATE local_decision
         SET synced = 1, syncedAt = :syncedAt, syncFailedReason = NULL
         WHERE inferenceResultId = :inferenceResultId
-        """
+        """,
     )
-    suspend fun markSynced(inferenceResultId: Long, syncedAt: String)
+    suspend fun markSynced(
+        inferenceResultId: Long,
+        syncedAt: String,
+    )
 
     @Query(
         """
         UPDATE local_decision
         SET synced = 0, syncFailedReason = :reason
         WHERE inferenceResultId = :inferenceResultId
-        """
+        """,
     )
-    suspend fun markFailed(inferenceResultId: Long, reason: String)
+    suspend fun markFailed(
+        inferenceResultId: Long,
+        reason: String,
+    )
 
     @Query("DELETE FROM local_decision")
     suspend fun deleteAll()
