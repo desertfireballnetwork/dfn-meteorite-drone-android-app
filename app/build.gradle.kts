@@ -9,6 +9,10 @@ plugins {
     alias(libs.plugins.ktlint)
 }
 
+ksp {
+    arg("room.schemaLocation", file("schemas").absolutePath)
+}
+
 android {
     namespace = "au.edu.fireballs.stage4"
     compileSdk = 37
@@ -26,7 +30,6 @@ android {
                 .name
                 .get()
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-
         val localProps =
             Properties().apply {
                 val file = rootProject.file("local.properties")
@@ -59,6 +62,10 @@ android {
         buildConfigField("String", "DEV_SERVER_URL", "\"$devServerUrl\"")
     }
 
+    sourceSets {
+        getByName("androidTest").assets.directories.add("$projectDir/schemas")
+    }
+
     buildFeatures {
         compose = true
         buildConfig = true
@@ -67,12 +74,6 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_21
         targetCompatibility = JavaVersion.VERSION_21
-    }
-
-    kotlin {
-        compilerOptions {
-            jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_21)
-        }
     }
 
     buildTypes {
@@ -130,5 +131,8 @@ dependencies {
 
     debugImplementation(libs.compose.ui.tooling)
 
+    testImplementation(libs.androidx.test.core)
     testImplementation(libs.junit)
+    testImplementation(libs.robolectric)
+
 }
