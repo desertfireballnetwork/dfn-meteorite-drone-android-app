@@ -2,6 +2,7 @@ package au.edu.fireballs.stage4.data.remote
 
 import android.content.Context
 import android.content.SharedPreferences
+import androidx.core.content.edit
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import okhttp3.Cookie
@@ -154,6 +155,12 @@ class PersistentCookieJar(
         } catch (_: Exception) {
             null
         }
+    }
+
+    @Synchronized
+    fun clear() {
+        cookieStore.clear()
+        sharedPreferences.edit(commit = false) { clear() }
     }
 
     companion object {

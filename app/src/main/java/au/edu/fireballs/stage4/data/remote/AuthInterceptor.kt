@@ -26,7 +26,9 @@ class AuthInterceptor(
         }
 
         if (productionServerUrl.isNotBlank()) {
-            builder.header(ORIGIN_HEADER_NAME, productionServerUrl)
+            val cleanUrl = productionServerUrl.removeSuffix("/")
+            builder.header(ORIGIN_HEADER_NAME, cleanUrl)
+            builder.header(REFERER_HEADER_NAME, "$cleanUrl/")
         }
 
         return chain.proceed(builder.build())
@@ -36,5 +38,6 @@ class AuthInterceptor(
         const val CSRF_COOKIE_NAME = "csrftoken"
         const val CSRF_HEADER_NAME = "X-CSRFToken"
         const val ORIGIN_HEADER_NAME = "Origin"
+        const val REFERER_HEADER_NAME = "Referer"
     }
 }

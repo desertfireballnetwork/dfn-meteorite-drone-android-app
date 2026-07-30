@@ -3,6 +3,7 @@ package au.edu.fireballs.stage4.di
 import android.content.Context
 import au.edu.fireballs.stage4.BuildConfig
 import au.edu.fireballs.stage4.data.remote.AuthInterceptor
+import au.edu.fireballs.stage4.data.remote.AuthService
 import au.edu.fireballs.stage4.data.remote.EvidenceService
 import au.edu.fireballs.stage4.data.remote.PersistentCookieJar
 import au.edu.fireballs.stage4.data.remote.Stage4Service
@@ -14,6 +15,8 @@ import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import okhttp3.CookieJar
+import okhttp3.HttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
@@ -28,6 +31,14 @@ object NetworkModule {
     private const val CONNECT_TIMEOUT_SECONDS = 30L
     private const val READ_TIMEOUT_SECONDS = 30L
     private const val WRITE_TIMEOUT_SECONDS = 60L
+
+    @Provides
+    @Singleton
+    fun provideBaseUrl(): HttpUrl {
+        val rawUrl = BuildConfig.PRODUCTION_SERVER_URL.ifEmpty { DEFAULT_SERVER_URL }
+        val baseUrl = if (rawUrl.endsWith("/")) rawUrl else "$rawUrl/"
+        return baseUrl.toHttpUrl()
+    }
 
     @Provides
     @Singleton
@@ -85,16 +96,19 @@ object NetworkModule {
     fun provideRetrofit(
         okHttpClient: OkHttpClient,
         moshi: Moshi,
-    ): Retrofit {
-        val rawUrl = BuildConfig.PRODUCTION_SERVER_URL.ifEmpty { DEFAULT_SERVER_URL }
-        val baseUrl = if (rawUrl.endsWith("/")) rawUrl else "$rawUrl/"
-        return Retrofit
+        baseUrl: HttpUrl,
+    ): Retrofit =
+        Retrofit
             .Builder()
             .baseUrl(baseUrl)
             .client(okHttpClient)
             .addConverterFactory(MoshiConverterFactory.create(moshi))
             .build()
-    }
+
+    @Provides
+    @Singleton
+    fun provideAuthService(retrofit: Retrofit): AuthService =
+        retrofit.create(AuthService::class.java)
 
     @Provides
     @Singleton
