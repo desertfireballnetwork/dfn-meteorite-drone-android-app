@@ -50,7 +50,25 @@ class AuthRepository
                 val code = loginResponse.code()
                 val rawResponse = loginResponse.raw()
 
-                if (code == 302 || rawResponse.priorResponse?.code == 302) { // 302 redirect is ok
+                // Extract Location header from current response or prior redirect response
+                val redirectLocation = loginResponse.headers()["Location"]
+                    ?: rawResponse.priorResponse?.header("Location")
+
+                // Check if a NEW sessionid cookie was actually issued in this response sequence
+                val receivedInMainResponse = loginResponse.headers().values("Set-Cookie")
+                    .any { it.contains("sessionid=") }
+
+                val receivedInPriorResponse = rawResponse.priorResponse?.headers?.values("Set-Cookie")
+                    ?.any { it.contains("sessionid=") } == true
+
+                val receivedNewSessionCookie = receivedInMainResponse || receivedInPriorResponse
+                val isRedirectToExpectedTarget = redirectLocation?.contains(Endpoints.NEXT_AFTER_LOGIN) == true
+
+                // Verify status code + target location + new session cookie
+                if ((code == 302 || rawResponse.priorResponse?.code == 302) &&
+                    isRedirectToExpectedTarget &&
+                    receivedNewSessionCookie
+                ) {
                     AuthResult.Success
                 } else if (code == 200) { // 200 OK with HTML error message
                     val responseHtml = loginResponse.body()?.string().orEmpty()
