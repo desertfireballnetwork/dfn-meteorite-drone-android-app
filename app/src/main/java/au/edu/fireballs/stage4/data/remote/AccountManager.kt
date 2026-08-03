@@ -13,7 +13,7 @@ import javax.inject.Singleton
 class AccountManager
     @Inject
     constructor(
-        private val cookieJar: CookieJar,
+        private val cookieJar: PersistentCookieJar,
         private val baseUrl: HttpUrl,
         private val database: Stage4Database,
         @IoDispatcher private val ioDispatcher: CoroutineDispatcher,
@@ -25,7 +25,7 @@ class AccountManager
 
         suspend fun logout() =
             withContext(ioDispatcher) {
-                (cookieJar as? PersistentCookieJar)?.clear()
+                cookieJar.clear()
                 database.clearAllTables()
             }
     }
