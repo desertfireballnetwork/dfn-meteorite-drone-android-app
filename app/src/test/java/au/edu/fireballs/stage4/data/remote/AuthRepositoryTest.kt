@@ -76,21 +76,17 @@ class AuthRepositoryTest {
     @Test
     fun `login success with CSRF extraction and 302 redirect`() =
         runTest {
-            val getResponse =
-                MockResponse()
-                    .setResponseCode(HttpURLConnection.HTTP_OK)
-                    .addHeader("Set-Cookie", "csrftoken=mock_csrf_token_123; Path=/")
-                    .setBody(
-                        """<html><body><input type="hidden" name="csrfmiddlewaretoken" value="mock_csrf_token_123"></body></html>""",
-                    )
+            enqueueLoginForm()
 
             val postResponse =
                 MockResponse()
                     .setResponseCode(HttpURLConnection.HTTP_MOVED_TEMP)
                     .addHeader("Location", "/api/surveys/")
-                    .addHeader("Set-Cookie", "sessionid=mock_session_id_456; Path=/")
+                    .addHeader(
+                        "Set-Cookie",
+                        "${AuthConstants.SESSION_COOKIE_NAME}=mock_session_id_456; Path=/",
+                    )
 
-            mockWebServer.enqueue(getResponse)
             mockWebServer.enqueue(postResponse)
 
             val result = authRepository.login("testuser", "correctpassword")
@@ -111,20 +107,14 @@ class AuthRepositoryTest {
             assertTrue(postBody.contains("csrfmiddlewaretoken=mock_csrf_token_123"))
 
             val cookies = cookieJar.loadForRequest(baseUrl)
-            assertNotNull(cookies.firstOrNull { it.name == "sessionid" })
-            assertNotNull(cookies.firstOrNull { it.name == "csrftoken" })
+            assertNotNull(cookies.firstOrNull { it.name == AuthConstants.SESSION_COOKIE_NAME })
+            assertNotNull(cookies.firstOrNull { it.name == AuthConstants.CSRF_COOKIE_NAME })
         }
 
     @Test
     fun `login failure with 200 response and HTML error parsing`() =
         runTest {
-            val getResponse =
-                MockResponse()
-                    .setResponseCode(HttpURLConnection.HTTP_OK)
-                    .addHeader("Set-Cookie", "csrftoken=mock_csrf_token_123; Path=/")
-                    .setBody(
-                        """<html><body><input type="hidden" name="csrfmiddlewaretoken" value="mock_csrf_token_123"></body></html>""",
-                    )
+            enqueueLoginForm()
 
             val htmlWithError =
                 """
@@ -140,7 +130,6 @@ class AuthRepositoryTest {
                     .setResponseCode(HttpURLConnection.HTTP_OK)
                     .setBody(htmlWithError)
 
-            mockWebServer.enqueue(getResponse)
             mockWebServer.enqueue(postResponse)
 
             val result = authRepository.login("testuser", "wrongpassword")
@@ -157,4 +146,18 @@ class AuthRepositoryTest {
             val result = authRepository.login("testuser", "password")
             assertTrue(result is AuthResult.NetworkError)
         }
+
+    private fun enqueueLoginForm(
+        csrfToken: String = "mock_csrf_token_123",
+        responseCode: Int = HttpURLConnection.HTTP_OK,
+    ) {
+        val getResponse =
+            MockResponse()
+                .setResponseCode(responseCode)
+                .addHeader("Set-Cookie", "${AuthConstants.CSRF_COOKIE_NAME}=$csrfToken; Path=/")
+                .setBody(
+                    """<html><body><input type="hidden" name="csrfmiddlewaretoken" value="$csrfToken"></body></html>""",
+                )
+        mockWebServer.enqueue(getResponse)
+    }
 }

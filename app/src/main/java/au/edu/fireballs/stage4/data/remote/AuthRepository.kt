@@ -54,47 +54,54 @@ class AuthRepository
                             next = Endpoints.NEXT_AFTER_LOGIN,
                         )
 
-                    val code = loginResponse.code()
-                    val rawResponse = loginResponse.raw()
+                    // loginResponse body is closed upon exit in the finally
+                    try {
+                        val code = loginResponse.code()
+                        val rawResponse = loginResponse.raw()
 
-                    // Extract Location header from current response or prior redirect response
-                    val redirectLocation =
-                        loginResponse.headers()["Location"]
-                            ?: rawResponse.priorResponse?.header("Location")
+                        // Extract Location header from current response or prior redirect response
+                        val redirectLocation =
+                            loginResponse.headers()["Location"]
+                                ?: rawResponse.priorResponse?.header("Location")
 
-                    // Check if a NEW sessionid cookie was actually issued in this response sequence
-                    val receivedInMainResponse =
-                        loginResponse
-                            .headers()
-                            .values("Set-Cookie")
-                            .any { it.contains("sessionid=") }
+                        // Check if a NEW sessionid cookie was actually issued in this response sequence
+                        val receivedInMainResponse =
+                            loginResponse
+                                .headers()
+                                .values("Set-Cookie")
+                                .any { it.contains("${AuthConstants.SESSION_COOKIE_NAME}=") }
 
-                    val receivedInPriorResponse =
-                        rawResponse.priorResponse
-                            ?.headers
-                            ?.values("Set-Cookie")
-                            ?.any { it.contains("sessionid=") } == true
+                        val receivedInPriorResponse =
+                            rawResponse.priorResponse
+                                ?.headers
+                                ?.values("Set-Cookie")
+                                ?.any { it.contains("${AuthConstants.SESSION_COOKIE_NAME}=") } ==
+                                true
 
-                    val receivedNewSessionCookie = receivedInMainResponse || receivedInPriorResponse
-                    val isRedirectToExpectedTarget =
-                        redirectLocation?.contains(Endpoints.NEXT_AFTER_LOGIN) == true
+                        val receivedNewSessionCookie =
+                            receivedInMainResponse || receivedInPriorResponse
+                        val isRedirectToExpectedTarget =
+                            redirectLocation?.contains(Endpoints.NEXT_AFTER_LOGIN) == true
 
-                    // Verify status code + target location + new session cookie
-                    if ((code == 302 || rawResponse.priorResponse?.code == 302) &&
-                        isRedirectToExpectedTarget &&
-                        receivedNewSessionCookie
-                    ) {
-                        AuthResult.Success
-                    } else if (code == 200) { // 200 OK with HTML error message
-                        val responseHtml = loginResponse.body()?.string().orEmpty()
-                        val errorMessage = parseDjangoErrorMessage(responseHtml)
-                        if (errorMessage != null) {
-                            AuthResult.Failure(message = errorMessage)
+                        // Verify status code + target location + new session cookie
+                        if ((code == 302 || rawResponse.priorResponse?.code == 302) &&
+                            isRedirectToExpectedTarget &&
+                            receivedNewSessionCookie
+                        ) {
+                            AuthResult.Success
+                        } else if (code == 200) { // 200 OK with HTML error message
+                            val responseHtml = loginResponse.body()?.string().orEmpty()
+                            val errorMessage = parseDjangoErrorMessage(responseHtml)
+                            if (errorMessage != null) {
+                                AuthResult.Failure(message = errorMessage)
+                            } else {
+                                AuthResult.Failure(messageResId = R.string.login_failed)
+                            }
                         } else {
                             AuthResult.Failure(messageResId = R.string.login_failed)
                         }
-                    } else {
-                        AuthResult.Failure(messageResId = R.string.login_failed)
+                    } finally {
+                        loginResponse.body()?.close()
                     }
                 } catch (e: CancellationException) {
                     throw e
@@ -111,7 +118,7 @@ class AuthRepository
             cookieJar
                 .loadForRequest(baseUrl)
                 .firstOrNull {
-                    it.name == "csrftoken"
+                    it.name == AuthConstants.CSRF_COOKIE_NAME
                 }?.value
 
         private fun parseCsrfTokenFromHtml(html: String): String {

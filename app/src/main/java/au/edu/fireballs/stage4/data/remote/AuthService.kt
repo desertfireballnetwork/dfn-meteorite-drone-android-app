@@ -17,6 +17,6 @@ interface AuthService {
         @Field("username") username: String,
         @Field("password") password: String,
         @Field("csrfmiddlewaretoken") csrfToken: String,
-        @Field("next") next: String = Endpoints.NEXT_AFTER_LOGIN,
+        @Field("next") next: String,
     ): Response<ResponseBody>
 }
