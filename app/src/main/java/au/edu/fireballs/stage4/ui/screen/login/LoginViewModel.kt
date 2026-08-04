@@ -2,8 +2,10 @@ package au.edu.fireballs.stage4.ui.screen.login
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import au.edu.fireballs.stage4.R
 import au.edu.fireballs.stage4.data.remote.AuthRepository
 import au.edu.fireballs.stage4.data.remote.AuthResult
+import au.edu.fireballs.stage4.ui.util.UiText
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -21,7 +23,7 @@ sealed interface LoginUiState {
     data object Loading : LoginUiState
 
     data class Error(
-        val message: String,
+        val message: UiText,
     ) : LoginUiState
 }
 
@@ -46,7 +48,9 @@ class LoginViewModel
             password: String,
         ) {
             if (username.isBlank() || password.isBlank()) {
-                _uiState.update { LoginUiState.Error("Username and password required") }
+                _uiState.update {
+                    LoginUiState.Error(UiText.DynamicString("Username and password required"))
+                }
                 return
             }
 
@@ -58,10 +62,21 @@ class LoginViewModel
                         _navigationEvent.emit(LoginNavigationEvent.NavigateToSurveys)
                     }
                     is AuthResult.Failure -> {
-                        _uiState.update { LoginUiState.Error(result.message) }
+                        val errorMessage =
+                            when {
+                                result.message != null -> UiText.DynamicString(result.message)
+                                result.messageResId != null ->
+                                    UiText.StringResource(
+                                        result.messageResId,
+                                    )
+                                else -> UiText.StringResource(R.string.login_failed)
+                            }
+                        _uiState.update { LoginUiState.Error(errorMessage) }
                     }
                     is AuthResult.NetworkError -> {
-                        _uiState.update { LoginUiState.Error("Network error, retry") }
+                        _uiState.update {
+                            LoginUiState.Error(UiText.DynamicString("Network error, retry"))
+                        }
                     }
                 }
             }

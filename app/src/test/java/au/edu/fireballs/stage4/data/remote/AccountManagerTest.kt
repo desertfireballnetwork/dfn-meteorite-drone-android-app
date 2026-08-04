@@ -19,7 +19,6 @@ import org.robolectric.RobolectricTestRunner
 
 @RunWith(RobolectricTestRunner::class)
 class AccountManagerTest {
-
     private lateinit var database: Stage4Database
     private lateinit var cookieJar: PersistentCookieJar
     private lateinit var accountManager: AccountManager
@@ -31,31 +30,35 @@ class AccountManagerTest {
     fun setUp() {
         val context = ApplicationProvider.getApplicationContext<Context>()
 
-        database = Room.inMemoryDatabaseBuilder(
-            context,
-            Stage4Database::class.java,
-        )
-            .allowMainThreadQueries()
-            .build()
+        database =
+            Room
+                .inMemoryDatabaseBuilder(
+                    context,
+                    Stage4Database::class.java,
+                ).allowMainThreadQueries()
+                .build()
 
         // Use ordinary SharedPreferences instead of encrypted ones.
-        val prefs = context.getSharedPreferences(
-            "test_cookies",
-            Context.MODE_PRIVATE,
-        )
+        val prefs =
+            context.getSharedPreferences(
+                "test_cookies",
+                Context.MODE_PRIVATE,
+            )
         prefs.edit().clear().commit()
 
-        cookieJar = PersistentCookieJar(
-            context = context,
-            prefs = prefs,
-        )
+        cookieJar =
+            PersistentCookieJar(
+                context = context,
+                prefs = prefs,
+            )
 
-        accountManager = AccountManager(
-            cookieJar = cookieJar,
-            baseUrl = testUrl,
-            database = database,
-            ioDispatcher = testDispatcher,
-        )
+        accountManager =
+            AccountManager(
+                cookieJar = cookieJar,
+                baseUrl = testUrl,
+                database = database,
+                ioDispatcher = testDispatcher,
+            )
     }
 
     @After
@@ -73,12 +76,14 @@ class AccountManagerTest {
 
     @Test
     fun `isSignedIn returns false when sessionid cookie value is blank`() {
-        val blankCookie = Cookie.Builder()
-            .domain("example.com")
-            .path("/")
-            .name("sessionid")
-            .value("")
-            .build()
+        val blankCookie =
+            Cookie
+                .Builder()
+                .domain("example.com")
+                .path("/")
+                .name("sessionid")
+                .value("")
+                .build()
 
         cookieJar.saveFromResponse(testUrl, listOf(blankCookie))
 
@@ -87,12 +92,14 @@ class AccountManagerTest {
 
     @Test
     fun `isSignedIn returns true when valid sessionid cookie exists`() {
-        val validCookie = Cookie.Builder()
-            .domain("example.com")
-            .path("/")
-            .name("sessionid")
-            .value("valid_session_token_123")
-            .build()
+        val validCookie =
+            Cookie
+                .Builder()
+                .domain("example.com")
+                .path("/")
+                .name("sessionid")
+                .value("valid_session_token_123")
+                .build()
 
         cookieJar.saveFromResponse(testUrl, listOf(validCookie))
 
@@ -100,21 +107,24 @@ class AccountManagerTest {
     }
 
     @Test
-    fun `logout clears cookies and clears database tables`() = runTest {
-        val validCookie = Cookie.Builder()
-            .domain("example.com")
-            .path("/")
-            .name("sessionid")
-            .value("valid_session_token_123")
-            .build()
+    fun `logout clears cookies and clears database tables`() =
+        runTest {
+            val validCookie =
+                Cookie
+                    .Builder()
+                    .domain("example.com")
+                    .path("/")
+                    .name("sessionid")
+                    .value("valid_session_token_123")
+                    .build()
 
-        cookieJar.saveFromResponse(testUrl, listOf(validCookie))
+            cookieJar.saveFromResponse(testUrl, listOf(validCookie))
 
-        assertTrue(accountManager.isSignedIn())
+            assertTrue(accountManager.isSignedIn())
 
-        accountManager.logout()
+            accountManager.logout()
 
-        assertFalse(accountManager.isSignedIn())
-        assertTrue(cookieJar.loadForRequest(testUrl).isEmpty())
-    }
+            assertFalse(accountManager.isSignedIn())
+            assertTrue(cookieJar.loadForRequest(testUrl).isEmpty())
+        }
 }

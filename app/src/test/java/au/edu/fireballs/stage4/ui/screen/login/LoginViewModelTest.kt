@@ -3,6 +3,7 @@ package au.edu.fireballs.stage4.ui.screen.login
 import app.cash.turbine.test
 import au.edu.fireballs.stage4.data.remote.AuthRepository
 import au.edu.fireballs.stage4.data.remote.AuthResult
+import au.edu.fireballs.stage4.ui.util.UiText
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -39,7 +40,7 @@ class LoginViewModelTest {
             viewModel.signIn("", "")
 
             assertEquals(
-                LoginUiState.Error("Username and password required"),
+                LoginUiState.Error(UiText.DynamicString("Username and password required")),
                 viewModel.uiState.value,
             )
         }
@@ -79,7 +80,7 @@ class LoginViewModelTest {
                 testDispatcher.scheduler.advanceUntilIdle()
 
                 assertEquals(LoginUiState.Loading, awaitItem())
-                assertEquals(LoginUiState.Error(errorMessage), awaitItem())
+                assertEquals(LoginUiState.Error(UiText.DynamicString(errorMessage)), awaitItem())
             }
         }
 
@@ -95,7 +96,10 @@ class LoginViewModelTest {
                 testDispatcher.scheduler.advanceUntilIdle()
 
                 assertEquals(LoginUiState.Loading, awaitItem())
-                assertEquals(LoginUiState.Error("Network error, retry"), awaitItem())
+                assertEquals(
+                    LoginUiState.Error(UiText.DynamicString("Network error, retry")),
+                    awaitItem(),
+                )
             }
         }
 }

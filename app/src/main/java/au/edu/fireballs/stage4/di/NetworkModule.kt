@@ -17,6 +17,7 @@ import dagger.hilt.components.SingletonComponent
 import okhttp3.CookieJar
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
@@ -85,6 +86,31 @@ object NetworkModule {
                 HttpLoggingInterceptor().apply {
                     level = HttpLoggingInterceptor.Level.BODY
                 }
+
+            // Interceptor to downgrade logging for auth/login endpoints
+            val selectiveLoggingInterceptor =
+                Interceptor { chain ->
+                    val request = chain.request()
+                    val isAuthEndpoint =
+                        request.url.encodedPath.contains(
+                            "login",
+                            ignoreCase = true,
+                        )
+
+                    if (isAuthEndpoint) {
+                        val originalLevel = loggingInterceptor.level
+                        loggingInterceptor.level = HttpLoggingInterceptor.Level.HEADERS
+                        try {
+                            chain.proceed(request)
+                        } finally {
+                            loggingInterceptor.level = originalLevel
+                        }
+                    } else {
+                        chain.proceed(request)
+                    }
+                }
+
+            builder.addInterceptor(selectiveLoggingInterceptor)
             builder.addInterceptor(loggingInterceptor)
         }
 

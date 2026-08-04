@@ -4,7 +4,6 @@ import au.edu.fireballs.stage4.data.local.Stage4Database
 import au.edu.fireballs.stage4.di.IoDispatcher
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.withContext
-import okhttp3.CookieJar
 import okhttp3.HttpUrl
 import javax.inject.Inject
 import javax.inject.Singleton

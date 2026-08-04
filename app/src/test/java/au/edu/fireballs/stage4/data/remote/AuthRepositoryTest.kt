@@ -2,6 +2,7 @@ package au.edu.fireballs.stage4.data.remote
 
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
 import okhttp3.CookieJar
 import okhttp3.HttpUrl
@@ -23,6 +24,7 @@ class AuthRepositoryTest {
     private lateinit var authRepository: AuthRepository
     private lateinit var cookieJar: CookieJar
     private lateinit var baseUrl: HttpUrl
+    private val testDispatcher = UnconfinedTestDispatcher()
 
     @Before
     fun setUp() {
@@ -63,7 +65,7 @@ class AuthRepositoryTest {
                 .build()
 
         val authService = retrofit.create(AuthService::class.java)
-        authRepository = AuthRepository(authService, cookieJar, baseUrl)
+        authRepository = AuthRepository(authService, cookieJar, baseUrl, testDispatcher)
     }
 
     @After
