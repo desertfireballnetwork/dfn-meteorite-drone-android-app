@@ -27,8 +27,9 @@ junit = "4.13.2"
 material-icons-extended = "1.7.6"
 robolectric = "4.16.1"
 androidxTestCore = "1.6.1"
-
+turbine = "1.2.1"
 security-crypto = "1.1.0-alpha06"
+mockito-kotlin = "5.4.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "core-ktx" }
@@ -70,6 +71,9 @@ mapbox-maps-android = { group = "com.mapbox.maps", name = "android", version.ref
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 robolectric = { group = "org.robolectric", name = "robolectric", version.ref = "robolectric" }
 androidx-test-core = { group = "androidx.test", name = "core-ktx", version.ref = "androidxTestCore" }
+kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version = "1.11.0" }
+cash-turbine = { group = "app.cash.turbine", name = "turbine", version.ref = "turbine" }
+mockito-kotlin = { group = "org.mockito.kotlin", name = "mockito-kotlin", version.ref = "mockito-kotlin" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

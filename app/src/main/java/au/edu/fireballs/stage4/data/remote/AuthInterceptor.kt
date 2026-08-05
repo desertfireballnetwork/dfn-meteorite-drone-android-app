@@ -19,22 +19,21 @@ class AuthInterceptor(
         val builder = originalRequest.newBuilder()
 
         val cookies = cookieJar.loadForRequest(originalRequest.url)
-        val csrfCookie = cookies.firstOrNull { it.name.equals(CSRF_COOKIE_NAME, ignoreCase = true) }
+        val csrfCookie =
+            cookies.firstOrNull {
+                it.name.equals(AuthConstants.CSRF_COOKIE_NAME, ignoreCase = true)
+            }
 
         if (csrfCookie != null) {
-            builder.header(CSRF_HEADER_NAME, csrfCookie.value)
+            builder.header(AuthConstants.CSRF_HEADER_NAME, csrfCookie.value)
         }
 
         if (productionServerUrl.isNotBlank()) {
-            builder.header(ORIGIN_HEADER_NAME, productionServerUrl)
+            val cleanUrl = productionServerUrl.removeSuffix("/")
+            builder.header(AuthConstants.ORIGIN_HEADER_NAME, cleanUrl)
+            builder.header(AuthConstants.REFERER_HEADER_NAME, "$cleanUrl/")
         }
 
         return chain.proceed(builder.build())
-    }
-
-    companion object {
-        const val CSRF_COOKIE_NAME = "csrftoken"
-        const val CSRF_HEADER_NAME = "X-CSRFToken"
-        const val ORIGIN_HEADER_NAME = "Origin"
     }
 }
