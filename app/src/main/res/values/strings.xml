@@ -5,4 +5,13 @@
     <string name="password">Password</string>
     <string name="sign_in">Sign in</string>
     <string name="login_failed">Login failed</string>
+
+    <!-- Survey List Screen -->
+    <string name="surveys_title">Surveys</string>
+    <string name="surveys_loading">Loading surveys…</string>
+    <string name="surveys_empty">No surveys available</string>
+    <string name="survey_stage4_ready">Stage 4 ready</string>
+    <string name="survey_stage4_not_ready">Stage 4 not ready</string>
+    <string name="survey_active_badge">Active survey</string>
+    <string name="retry">Retry</string>
 </resources>

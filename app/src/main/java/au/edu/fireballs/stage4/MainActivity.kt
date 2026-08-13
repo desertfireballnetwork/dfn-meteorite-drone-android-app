@@ -16,11 +16,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import au.edu.fireballs.stage4.ui.screen.login.LoginScreen
 import au.edu.fireballs.stage4.ui.screen.login.LoginViewModel
+import au.edu.fireballs.stage4.ui.screen.surveylist.SurveyListScreen
 import au.edu.fireballs.stage4.ui.theme.Stage4Theme
 import dagger.hilt.android.AndroidEntryPoint
 
@@ -78,13 +81,34 @@ class MainActivity : ComponentActivity() {
                                 }
 
                                 composable("surveys") {
-                                    // Placeholder screen for Survey Picker (A-5)
+                                    SurveyListScreen(
+                                        onSurveySelected = { surveyId ->
+                                            navController.navigate("stage4/$surveyId")
+                                        },
+                                        onAuthExpired = {
+                                            navController.navigate("login") {
+                                                popUpTo("surveys") { inclusive = true }
+                                            }
+                                        },
+                                    )
+                                }
+
+                                composable(
+                                    route = "stage4/{surveyId}",
+                                    arguments =
+                                        listOf(
+                                            navArgument("surveyId") { type = NavType.LongType },
+                                        ),
+                                ) { backStackEntry ->
+                                    val surveyId =
+                                        backStackEntry.arguments?.getLong("surveyId") ?: -1L
+                                    // Placeholder screen for Stage 4 Map Screen (A-6)
                                     Box(
                                         modifier = Modifier.fillMaxSize(),
                                         contentAlignment = Alignment.Center,
                                     ) {
                                         Text(
-                                            text = "Survey Picker Placeholder (A-5)",
+                                            text = "Survey $surveyId — Stage 4 TODO",
                                             style = MaterialTheme.typography.titleLarge,
                                         )
                                     }

@@ -4,11 +4,18 @@ import com.squareup.moshi.Json
 import com.squareup.moshi.JsonClass
 
 @JsonClass(generateAdapter = true)
+data class SurveyListResponseDto(
+    @Json(name = "surveys") val surveys: List<SurveyDto>,
+)
+
+@JsonClass(generateAdapter = true)
 data class SurveyDto(
-    @Json(name = "id") val id: Int,
-    @Json(name = "name") val name: String,
-    @Json(name = "created_at") val createdAt: String? = null,
-    @Json(name = "candidate_count") val candidateCount: Int? = null,
+    @Json(name = "id") val id: Long,
+    @Json(name = "event_id") val eventId: String,
+    @Json(name = "description") val description: String? = null,
+    @Json(name = "created") val created: String,
+    @Json(name = "has_stage4") val hasStage4: Boolean = false,
+    @Json(name = "is_starred") val isStarred: Boolean = false,
 )
 
 @JsonClass(generateAdapter = true)

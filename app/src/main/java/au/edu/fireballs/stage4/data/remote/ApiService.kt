@@ -6,10 +6,11 @@ import au.edu.fireballs.stage4.data.remote.dto.ClaimResponseDto
 import au.edu.fireballs.stage4.data.remote.dto.ListClaimsResponseDto
 import au.edu.fireballs.stage4.data.remote.dto.ReleaseRequestDto
 import au.edu.fireballs.stage4.data.remote.dto.ReleaseResponseDto
-import au.edu.fireballs.stage4.data.remote.dto.SurveyDto
+import au.edu.fireballs.stage4.data.remote.dto.SurveyListResponseDto
 import au.edu.fireballs.stage4.data.remote.dto.UploadEvidenceResponseDto
 import okhttp3.MultipartBody
 import okhttp3.RequestBody
+import retrofit2.Response
 import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.Multipart
@@ -20,7 +21,7 @@ import retrofit2.http.Query
 
 interface Stage4Service {
     @GET("api/surveys/")
-    suspend fun getSurveys(): List<SurveyDto>
+    suspend fun getSurveys(): Response<SurveyListResponseDto>
 
     @GET("api/stage4/surveys/{survey_id}/candidates/")
     suspend fun getCandidates(
