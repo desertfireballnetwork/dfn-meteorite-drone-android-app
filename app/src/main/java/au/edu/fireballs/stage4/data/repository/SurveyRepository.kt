@@ -55,8 +55,12 @@ class SurveyRepository
 
                     if (response.isSuccessful) {
                         val body = response.body()
-                        val surveys = body?.surveys?.map { it.toDomain() }.orEmpty()
-                        SurveyFetchResult.Success(surveys)
+                        if (body == null) {
+                            SurveyFetchResult.Error("Response body was empty or malformed.")
+                        } else {
+                            val surveys = body.surveys.map { it.toDomain() }
+                            SurveyFetchResult.Success(surveys)
+                        }
                     } else {
                         if (response.code() == HttpURLConnection.HTTP_UNAUTHORIZED ||
                             response.code() == HttpURLConnection.HTTP_FORBIDDEN

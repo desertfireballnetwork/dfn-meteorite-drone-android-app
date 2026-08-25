@@ -43,6 +43,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import au.edu.fireballs.stage4.R
 import au.edu.fireballs.stage4.domain.model.Survey
@@ -58,6 +59,14 @@ fun SurveyListScreen(
     viewModel: SurveyListViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+
+    LifecycleResumeEffect(Unit) {
+        viewModel.loadSurveys()
+        onPauseOrDispose {
+            // May be later
+        }
+    }
+
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val notReadyMessage = stringResource(R.string.survey_stage4_not_ready)
@@ -96,6 +105,13 @@ fun SurveyListScreen(
                 }
 
                 is SurveyListUiState.Loaded -> {
+                    LaunchedEffect(state.userMessage) {
+                        state.userMessage?.let { message ->
+                            snackbarHostState.showSnackbar(message)
+                            viewModel.userMessageShown()
+                        }
+                    }
+
                     PullToRefreshBox(
                         isRefreshing = state.isRefreshing,
                         onRefresh = { viewModel.loadSurveys(isPullToRefresh = true) },
