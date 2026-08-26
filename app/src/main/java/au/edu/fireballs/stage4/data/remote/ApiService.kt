@@ -1,6 +1,5 @@
 package au.edu.fireballs.stage4.data.remote
 
-import au.edu.fireballs.stage4.data.remote.dto.CandidatesResponseDto
 import au.edu.fireballs.stage4.data.remote.dto.ClaimRequestDto
 import au.edu.fireballs.stage4.data.remote.dto.ClaimResponseDto
 import au.edu.fireballs.stage4.data.remote.dto.ListClaimsResponseDto
@@ -10,6 +9,7 @@ import au.edu.fireballs.stage4.data.remote.dto.SurveyListResponseDto
 import au.edu.fireballs.stage4.data.remote.dto.UploadEvidenceResponseDto
 import okhttp3.MultipartBody
 import okhttp3.RequestBody
+import okhttp3.ResponseBody
 import retrofit2.Response
 import retrofit2.http.Body
 import retrofit2.http.GET
@@ -26,7 +26,7 @@ interface Stage4Service {
     @GET("api/stage4/surveys/{survey_id}/candidates/")
     suspend fun getCandidates(
         @Path("survey_id") surveyId: String,
-    ): CandidatesResponseDto
+    ): Response<ResponseBody>
 
     @POST("api/stage4/surveys/{survey_id}/claims/claim/")
     suspend fun claimCandidate(

@@ -129,6 +129,7 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.security.crypto)
     implementation(libs.mapbox.maps.android)
+    implementation(libs.maps.compose)
 
     debugImplementation(libs.compose.ui.tooling)
 

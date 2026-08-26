@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -23,6 +22,8 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import au.edu.fireballs.stage4.ui.screen.login.LoginScreen
 import au.edu.fireballs.stage4.ui.screen.login.LoginViewModel
+import au.edu.fireballs.stage4.ui.screen.stage4map.Stage4MapScreen
+import au.edu.fireballs.stage4.ui.screen.stage4map.Stage4MapViewModel
 import au.edu.fireballs.stage4.ui.screen.surveylist.SurveyListScreen
 import au.edu.fireballs.stage4.ui.theme.Stage4Theme
 import dagger.hilt.android.AndroidEntryPoint
@@ -102,16 +103,16 @@ class MainActivity : ComponentActivity() {
                                 ) { backStackEntry ->
                                     val surveyId =
                                         backStackEntry.arguments?.getLong("surveyId") ?: -1L
-                                    // Placeholder screen for Stage 4 Map Screen (A-6)
-                                    Box(
-                                        modifier = Modifier.fillMaxSize(),
-                                        contentAlignment = Alignment.Center,
-                                    ) {
-                                        Text(
-                                            text = "Survey $surveyId — Stage 4 TODO",
-                                            style = MaterialTheme.typography.titleLarge,
-                                        )
-                                    }
+                                    val stage4ViewModel: Stage4MapViewModel = hiltViewModel()
+                                    Stage4MapScreen(
+                                        surveyId = surveyId,
+                                        onAuthExpired = {
+                                            navController.navigate("login") {
+                                                popUpTo("surveys") { inclusive = true }
+                                            }
+                                        },
+                                        viewModel = stage4ViewModel,
+                                    )
                                 }
                             }
                         }
