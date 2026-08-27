@@ -95,4 +95,72 @@ class LocationPermissionPolicyTest {
         assertEquals(LocationPermissionStatus.REVOKED, decision.status)
         assertFalse(decision.shouldRequestNow)
     }
+
+    @Test
+    fun `revoked rationale and permanent denial are notice-worthy`() {
+        assertTrue(isLocationDeniedStatus(LocationPermissionStatus.REVOKED))
+        assertTrue(isLocationDeniedStatus(LocationPermissionStatus.DENIED_RATIONALE_AVAILABLE))
+        assertTrue(isLocationDeniedStatus(LocationPermissionStatus.DENIED_PERMANENT))
+    }
+
+    @Test
+    fun `granted and never-requested are not notice-worthy`() {
+        assertFalse(isLocationDeniedStatus(LocationPermissionStatus.GRANTED))
+        assertFalse(isLocationDeniedStatus(LocationPermissionStatus.COARSE_ONLY))
+        assertFalse(isLocationDeniedStatus(LocationPermissionStatus.NEVER_REQUESTED))
+    }
+
+    @Test
+    fun `notice shows for derived denied status without launcher callback`() {
+        assertTrue(
+            shouldShowLocationDeniedNotice(
+                status = LocationPermissionStatus.REVOKED,
+                dismissedStatus = null,
+            ),
+        )
+        assertTrue(
+            shouldShowLocationDeniedNotice(
+                status = LocationPermissionStatus.DENIED_PERMANENT,
+                dismissedStatus = null,
+            ),
+        )
+        assertTrue(
+            shouldShowLocationDeniedNotice(
+                status = LocationPermissionStatus.DENIED_RATIONALE_AVAILABLE,
+                dismissedStatus = null,
+            ),
+        )
+    }
+
+    @Test
+    fun `dismissed status hides notice until status changes`() {
+        assertFalse(
+            shouldShowLocationDeniedNotice(
+                status = LocationPermissionStatus.REVOKED,
+                dismissedStatus = LocationPermissionStatus.REVOKED,
+            ),
+        )
+        assertTrue(
+            shouldShowLocationDeniedNotice(
+                status = LocationPermissionStatus.DENIED_PERMANENT,
+                dismissedStatus = LocationPermissionStatus.REVOKED,
+            ),
+        )
+    }
+
+    @Test
+    fun `no notice when status is granted or never requested`() {
+        assertFalse(
+            shouldShowLocationDeniedNotice(
+                status = LocationPermissionStatus.GRANTED,
+                dismissedStatus = null,
+            ),
+        )
+        assertFalse(
+            shouldShowLocationDeniedNotice(
+                status = LocationPermissionStatus.NEVER_REQUESTED,
+                dismissedStatus = null,
+            ),
+        )
+    }
 }

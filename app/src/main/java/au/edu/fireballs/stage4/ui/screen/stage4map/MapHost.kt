@@ -45,17 +45,7 @@ internal fun MapHost(
             )
         },
     ) {
-        MapEffect(Unit) { mapView ->
-            mapView.mapboxMap.setBounds(
-                CameraBoundsOptions.Builder().maxZoom(MAX_CAMERA_ZOOM).build(),
-            )
-        }
-
-        if (locationPermissionGranted) {
-            MapEffect(locationPermissionGranted) { mapView ->
-                enableLocationPuck(mapView)
-            }
-        }
+        MapHostEffects(locationPermissionGranted = locationPermissionGranted)
 
         SurveyedAreaOverlay(
             polygons = polygons,
@@ -65,11 +55,27 @@ internal fun MapHost(
     }
 }
 
-private fun enableLocationPuck(mapView: MapView) {
+@Composable
+private fun MapHostEffects(locationPermissionGranted: Boolean) {
+    MapEffect(Unit) { mapView ->
+        mapView.mapboxMap.setBounds(
+            CameraBoundsOptions.Builder().maxZoom(MAX_CAMERA_ZOOM).build(),
+        )
+    }
+
+    MapEffect(locationPermissionGranted) { mapView ->
+        setLocationPuckEnabled(mapView, enabled = locationPermissionGranted)
+    }
+}
+
+private fun setLocationPuckEnabled(
+    mapView: MapView,
+    enabled: Boolean,
+) {
     val locationPlugin =
         mapView.getPlugin(Plugin.MAPBOX_LOCATION_COMPONENT_PLUGIN_ID) as? LocationComponentPlugin
     locationPlugin?.updateSettings {
-        enabled = true
-        pulsingEnabled = true
+        this.enabled = enabled
+        this.pulsingEnabled = enabled
     }
 }

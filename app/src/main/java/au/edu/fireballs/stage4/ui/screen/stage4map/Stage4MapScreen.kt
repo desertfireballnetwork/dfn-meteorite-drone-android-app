@@ -131,17 +131,21 @@ private fun LoadedMap(
 
     var locating by remember { mutableStateOf(false) }
     var locationMessage by remember { mutableStateOf<String?>(null) }
+    var locationServicesDisabled by remember { mutableStateOf(false) }
 
-    LaunchedEffect(loaded.userMessage) {
-        loaded.userMessage?.let { locationMessage = it }
-    }
-
-    LaunchedEffect(locationMessage) {
-        if (locationMessage != null) {
-            delay(LOCATION_MESSAGE_AUTO_DISMISS_MS)
+    LocationMessageEffects(
+        userMessage = loaded.userMessage,
+        locationMessage = locationMessage,
+        locationServicesDisabled = locationServicesDisabled,
+        onUserMessage = {
+            locationServicesDisabled = false
+            locationMessage = it
+        },
+        onAutoDismissed = {
             locationMessage = null
-        }
-    }
+            locationServicesDisabled = false
+        },
+    )
 
     Box(modifier = Modifier.fillMaxSize()) {
         MapHost(
@@ -157,7 +161,12 @@ private fun LoadedMap(
             locationPermission = locationPermission,
             locating = locating,
             locationMessage = locationMessage,
-            onDismissMessage = { locationMessage = null },
+            locationServicesDisabled = locationServicesDisabled,
+            onDismissMessage = {
+                locationMessage = null
+                locationServicesDisabled = false
+            },
+            onOpenLocationSettings = { openLocationSettings(context) },
         )
 
         RecenterButton(
@@ -171,9 +180,30 @@ private fun LoadedMap(
                     mapViewportState = mapViewportState,
                     onLocatingChanged = { locating = it },
                     onMessage = { locationMessage = it },
+                    onLocationServicesDisabled = { locationServicesDisabled = it },
                 )
             },
         )
+    }
+}
+
+@Composable
+private fun LocationMessageEffects(
+    userMessage: String?,
+    locationMessage: String?,
+    locationServicesDisabled: Boolean,
+    onUserMessage: (String) -> Unit,
+    onAutoDismissed: () -> Unit,
+) {
+    LaunchedEffect(userMessage) {
+        userMessage?.let(onUserMessage)
+    }
+
+    LaunchedEffect(locationMessage, locationServicesDisabled) {
+        if (locationMessage != null && !locationServicesDisabled) {
+            delay(LOCATION_MESSAGE_AUTO_DISMISS_MS)
+            onAutoDismissed()
+        }
     }
 }
 

@@ -20,6 +20,16 @@ internal fun shouldAutoRequestLocationPermission(
     shouldShowRationale: Boolean,
 ): Boolean = !permissionGranted && !hadRequestedBefore && !shouldShowRationale
 
+internal fun isLocationDeniedStatus(status: LocationPermissionStatus): Boolean =
+    status == LocationPermissionStatus.DENIED_RATIONALE_AVAILABLE ||
+        status == LocationPermissionStatus.DENIED_PERMANENT ||
+        status == LocationPermissionStatus.REVOKED
+
+internal fun shouldShowLocationDeniedNotice(
+    status: LocationPermissionStatus,
+    dismissedStatus: LocationPermissionStatus?,
+): Boolean = isLocationDeniedStatus(status) && dismissedStatus != status
+
 internal fun decideLocationPermission(
     fineGranted: Boolean,
     coarseGranted: Boolean,
