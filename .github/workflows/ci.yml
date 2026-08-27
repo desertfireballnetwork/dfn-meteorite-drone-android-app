@@ -21,6 +21,12 @@ jobs:
           java-version: '21'
           cache: gradle
 
+      - name: Set up JDK 17 (Temurin) for unit-test toolchain
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
       - name: Populate Gradle properties with Mapbox tokens
         run: |
           mkdir -p ~/.gradle

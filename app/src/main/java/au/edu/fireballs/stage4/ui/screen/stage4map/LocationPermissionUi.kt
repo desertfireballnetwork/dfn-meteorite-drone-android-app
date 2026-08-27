@@ -9,8 +9,10 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
@@ -24,31 +26,33 @@ private val LOCATION_PERMISSIONS =
     )
 
 private class LocationPermissionRequestState(
-    var hadRequestedBefore: Boolean,
-    var wasGrantedPreviously: Boolean,
-    var dismissedStatus: LocationPermissionStatus?,
+    val hadRequestedBefore: MutableState<Boolean>,
+    val wasGrantedPreviously: MutableState<Boolean>,
+    val dismissedStatus: MutableState<LocationPermissionStatus?>,
     val launcher: ManagedActivityResultLauncher<Array<String>, Map<String, Boolean>>,
 )
 
 @Composable
 private fun rememberLocationPermissionRequestState(): LocationPermissionRequestState {
-    var hadRequestedBefore by rememberSaveable { mutableStateOf(false) }
-    var wasGrantedPreviously by rememberSaveable { mutableStateOf(false) }
-    var dismissedStatus by rememberSaveable { mutableStateOf<LocationPermissionStatus?>(null) }
+    val hadRequestedBefore = rememberSaveable { mutableStateOf(false) }
+    val wasGrantedPreviously = rememberSaveable { mutableStateOf(false) }
+    val dismissedStatus = rememberSaveable { mutableStateOf<LocationPermissionStatus?>(null) }
 
     val permissionLauncher =
         rememberLauncherForActivityResult(
             ActivityResultContracts.RequestMultiplePermissions(),
         ) {
-            dismissedStatus = null
+            dismissedStatus.value = null
         }
 
-    return LocationPermissionRequestState(
-        hadRequestedBefore = hadRequestedBefore,
-        wasGrantedPreviously = wasGrantedPreviously,
-        dismissedStatus = dismissedStatus,
-        launcher = permissionLauncher,
-    )
+    return remember(permissionLauncher) {
+        LocationPermissionRequestState(
+            hadRequestedBefore = hadRequestedBefore,
+            wasGrantedPreviously = wasGrantedPreviously,
+            dismissedStatus = dismissedStatus,
+            launcher = permissionLauncher,
+        )
+    }
 }
 
 @Composable
@@ -62,9 +66,9 @@ internal fun rememberLocationPermission(): LocationPermissionUiState {
         decideLocationPermission(
             fineGranted = snapshot.fineGranted,
             coarseGranted = snapshot.coarseGranted,
-            hadRequestedBefore = request.hadRequestedBefore,
+            hadRequestedBefore = request.hadRequestedBefore.value,
             shouldShowRationale = snapshot.shouldShowRationale,
-            wasGrantedPreviously = request.wasGrantedPreviously,
+            wasGrantedPreviously = request.wasGrantedPreviously.value,
         )
 
     LocationPermissionEffects(
@@ -72,10 +76,10 @@ internal fun rememberLocationPermission(): LocationPermissionUiState {
         coarseGranted = snapshot.coarseGranted,
         status = decision.status,
         shouldRequestNow = decision.shouldRequestNow,
-        onPermissionGranted = { request.wasGrantedPreviously = true },
-        onStatusNotDenied = { request.dismissedStatus = null },
+        onPermissionGranted = { request.wasGrantedPreviously.value = true },
+        onStatusNotDenied = { request.dismissedStatus.value = null },
         onAutoRequest = {
-            request.hadRequestedBefore = true
+            request.hadRequestedBefore.value = true
             request.launcher.launch(LOCATION_PERMISSIONS)
         },
     )
@@ -83,16 +87,18 @@ internal fun rememberLocationPermission(): LocationPermissionUiState {
     return LocationPermissionUiState(
         status = decision.status,
         locationPermissionGranted = snapshot.fineGranted || snapshot.coarseGranted,
+        hadRequestedBefore = request.hadRequestedBefore.value,
+        wasGrantedPreviously = request.wasGrantedPreviously.value,
         showDeniedNotice =
             shouldShowLocationDeniedNotice(
                 status = decision.status,
-                dismissedStatus = request.dismissedStatus,
+                dismissedStatus = request.dismissedStatus.value,
             ),
         requestPermissions = {
-            request.hadRequestedBefore = true
+            request.hadRequestedBefore.value = true
             request.launcher.launch(LOCATION_PERMISSIONS)
         },
-        dismissDeniedNotice = { request.dismissedStatus = decision.status },
+        dismissDeniedNotice = { request.dismissedStatus.value = decision.status },
     )
 }
 
@@ -128,6 +134,8 @@ private fun LocationPermissionEffects(
 internal class LocationPermissionUiState(
     val status: LocationPermissionStatus,
     val locationPermissionGranted: Boolean,
+    val hadRequestedBefore: Boolean,
+    val wasGrantedPreviously: Boolean,
     val showDeniedNotice: Boolean,
     val requestPermissions: () -> Unit,
     val dismissDeniedNotice: () -> Unit,
