@@ -1,3 +1,4 @@
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import java.util.Properties
 
 plugins {
@@ -11,6 +12,12 @@ plugins {
 
 ksp {
     arg("room.schemaLocation", file("schemas").absolutePath)
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget.set(JvmTarget.JVM_17)
+    }
 }
 
 android {
@@ -37,12 +44,18 @@ android {
                     file.inputStream().use { load(it) }
                 }
             }
-        val mapboxToken =
+        val mapboxAccessToken =
             providers
-                .gradleProperty("MAPBOX_DOWNLOADS_TOKEN")
-                .orElse(providers.environmentVariable("ORG_GRADLE_PROJECT_MAPBOX_DOWNLOADS_TOKEN"))
-                .orElse(providers.provider { localProps.getProperty("MAPBOX_DOWNLOADS_TOKEN", "") })
+                .gradleProperty("MAPBOX_ACCESS_TOKEN")
+                .orElse(providers.environmentVariable("ORG_GRADLE_PROJECT_MAPBOX_ACCESS_TOKEN"))
+                .orElse(providers.provider { localProps.getProperty("MAPBOX_ACCESS_TOKEN", "") })
                 .getOrElse("")
+        if (mapboxAccessToken.isBlank()) {
+            throw GradleException(
+                "MAPBOX_ACCESS_TOKEN is required: set it in local.properties, as gradle property " +
+                    "MAPBOX_ACCESS_TOKEN, or env ORG_GRADLE_PROJECT_MAPBOX_ACCESS_TOKEN",
+            )
+        }
         val productionServerUrl =
             providers
                 .provider {
@@ -57,7 +70,7 @@ android {
                     )
                 }.getOrElse("")
 
-        buildConfigField("String", "MAPBOX_TOKEN", "\"$mapboxToken\"")
+        buildConfigField("String", "MAPBOX_TOKEN", "\"$mapboxAccessToken\"")
         buildConfigField("String", "PRODUCTION_SERVER_URL", "\"$productionServerUrl\"")
         buildConfigField("String", "DEV_SERVER_URL", "\"$devServerUrl\"")
     }
@@ -72,8 +85,8 @@ android {
     }
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_21
-        targetCompatibility = JavaVersion.VERSION_21
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
 
     buildTypes {
@@ -85,8 +98,17 @@ android {
     testOptions {
         unitTests {
             isReturnDefaultValues = true
+            isIncludeAndroidResources = true
         }
     }
+}
+
+tasks.withType<Test>().configureEach {
+    javaLauncher.set(
+        javaToolchains.launcherFor {
+            languageVersion.set(JavaLanguageVersion.of(17))
+        },
+    )
 }
 
 detekt {
@@ -129,12 +151,21 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.security.crypto)
     implementation(libs.mapbox.maps.android)
+    implementation(libs.maps.compose)
 
     debugImplementation(libs.compose.ui.tooling)
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
+
+    androidTestImplementation(platform(libs.compose.bom))
+    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    androidTestImplementation(libs.androidx.test.core)
+    androidTestImplementation(libs.junit)
 
     testImplementation(libs.androidx.test.core)
     testImplementation(libs.junit)
     testImplementation(libs.robolectric)
+    testImplementation(platform(libs.compose.bom))
+    testImplementation("androidx.compose.ui:ui-test-junit4")
 
     testImplementation(libs.okhttp.mockwebserver)
     testImplementation(libs.kotlinx.coroutines.test)

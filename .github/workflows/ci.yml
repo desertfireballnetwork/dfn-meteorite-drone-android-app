@@ -15,22 +15,29 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up JDK 21 (Temurin)
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '21'
           cache: gradle
 
-      - name: Populate Gradle properties with Mapbox token
+      - name: Set up JDK 17 (Temurin) for unit-test toolchain
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Populate Gradle properties with Mapbox tokens
         run: |
           mkdir -p ~/.gradle
           echo "MAPBOX_DOWNLOADS_TOKEN=${{ secrets.MAPBOX_DOWNLOADS_TOKEN }}" >> ~/.gradle/gradle.properties
+          echo "MAPBOX_ACCESS_TOKEN=${{ secrets.MAPBOX_ACCESS_TOKEN }}" >> ~/.gradle/gradle.properties
 
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
       - name: Run ktlint detekt tests and assembleDebug
-        run: ./gradlew --no-daemon ktlintCheck detekt test assembleDebug
+        run: ./gradlew --no-daemon ktlintCheck detekt test assembleDebug assembleDebugAndroidTest
 
       - name: Upload test reports on failure
         if: failure()
