@@ -158,7 +158,7 @@ class Stage4RepositoryTest {
             mockWebServer.enqueue(
                 MockResponse()
                     .setResponseCode(302)
-                    .setHeader("Location", mockWebServer.url("/login")),
+                    .setHeader("Location", "/login"),
             )
             mockWebServer.enqueue(
                 MockResponse()
@@ -170,6 +170,74 @@ class Stage4RepositoryTest {
             val result = repository.getCandidatesState(7L)
 
             assertEquals(Stage4FetchResult.AuthExpired, result)
+        }
+
+    @Test
+    fun `getCandidatesState detects login redirect buried in multi-hop chain`() =
+        runTest(testDispatcher) {
+            mockWebServer.enqueue(
+                MockResponse()
+                    .setResponseCode(302)
+                    .setHeader("Location", mockWebServer.url("/login")),
+            )
+            mockWebServer.enqueue(
+                MockResponse()
+                    .setResponseCode(302)
+                    .setHeader("Location", mockWebServer.url("/api/auth-gateway")),
+            )
+            mockWebServer.enqueue(
+                MockResponse()
+                    .setResponseCode(200)
+                    .setHeader("Content-Type", "text/html")
+                    .setBody("<html><body>Login Page</body></html>"),
+            )
+
+            val result = repository.getCandidatesState(7L)
+
+            assertEquals(Stage4FetchResult.AuthExpired, result)
+        }
+
+    @Test
+    fun `getCandidatesState treats uppercase LOGIN redirect as AuthExpired`() =
+        runTest(testDispatcher) {
+            mockWebServer.enqueue(
+                MockResponse()
+                    .setResponseCode(302)
+                    .setHeader("Location", mockWebServer.url("/LOGIN")),
+            )
+            mockWebServer.enqueue(
+                MockResponse()
+                    .setResponseCode(200)
+                    .setHeader("Content-Type", "text/html")
+                    .setBody("<html><body>Login Page</body></html>"),
+            )
+
+            val result = repository.getCandidatesState(7L)
+
+            assertEquals(Stage4FetchResult.AuthExpired, result)
+        }
+
+    @Test
+    fun `getCandidatesState ignores login keyword in query string`() =
+        runTest(testDispatcher) {
+            mockWebServer.enqueue(
+                MockResponse()
+                    .setResponseCode(302)
+                    .setHeader("Location", "?next=/login"),
+            )
+            mockWebServer.enqueue(
+                MockResponse()
+                    .setResponseCode(200)
+                    .setHeader("Content-Type", "text/html")
+                    .setBody("<html><body>Not the login page</body></html>"),
+            )
+
+            val result = repository.getCandidatesState(7L)
+
+            assertTrue(
+                "Expected non-auth result but got $result",
+                result != Stage4FetchResult.AuthExpired,
+            )
         }
 
     @Test
@@ -214,13 +282,26 @@ class Stage4RepositoryTest {
         }
 
     @Test
-    fun `getCandidatesState handles HTTP 401 and 403 as AuthExpired`() =
+    fun `getCandidatesState handles HTTP 401 as AuthExpired`() =
         runTest(testDispatcher) {
             mockWebServer.enqueue(MockResponse().setResponseCode(401))
-            assertEquals(Stage4FetchResult.AuthExpired, repository.getCandidatesState(7L))
 
-            mockWebServer.enqueue(MockResponse().setResponseCode(403))
             assertEquals(Stage4FetchResult.AuthExpired, repository.getCandidatesState(7L))
+        }
+
+    @Test
+    fun `getCandidatesState handles HTTP 403 as access denied Error`() =
+        runTest(testDispatcher) {
+            mockWebServer.enqueue(MockResponse().setResponseCode(403))
+
+            val result = repository.getCandidatesState(7L)
+
+            val error = result as? Stage4FetchResult.Error
+            assertTrue("Expected Error but got $result", error != null)
+            assertTrue(
+                "Expected access denied message but got ${error?.message}",
+                error?.message?.contains("don't have access") == true,
+            )
         }
 
     @Test

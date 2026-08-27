@@ -8,6 +8,7 @@ import au.edu.fireballs.stage4.domain.model.toDomain
 import com.squareup.moshi.Moshi
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.withContext
+import okhttp3.HttpUrl
 import okhttp3.ResponseBody
 import retrofit2.HttpException
 import retrofit2.Response
@@ -73,16 +74,30 @@ class Stage4Repository
         }
 
         private fun isLoginRedirect(response: Response<ResponseBody>): Boolean {
-            val rawResponse = response.raw()
-            val isRedirect =
-                response.code() == HttpURLConnection.HTTP_MOVED_TEMP ||
-                    rawResponse.priorResponse?.code == HttpURLConnection.HTTP_MOVED_TEMP
+            val requestUrl = response.raw().request.url
+            var current = response.raw()
+            while (true) {
+                if (current.code == HttpURLConnection.HTTP_MOVED_TEMP) {
+                    val location = current.header("Location")
+                    if (location != null && isLoginLocation(location, requestUrl)) {
+                        return true
+                    }
+                }
+                val prior = current.priorResponse ?: return false
+                current = prior
+            }
+        }
 
-            val redirectTarget =
-                response.headers()["Location"]
-                    ?: rawResponse.priorResponse?.header("Location")
-
-            return isRedirect && redirectTarget?.contains("login") == true
+        private fun isLoginLocation(
+            location: String,
+            requestUrl: HttpUrl,
+        ): Boolean {
+            val resolved = requestUrl.resolve(location)
+            if (resolved != null) {
+                return resolved.encodedPath.contains("login", ignoreCase = true)
+            }
+            val pathOnly = location.substringBefore('?').substringBefore('#')
+            return pathOnly.contains("login", ignoreCase = true)
         }
 
         private suspend fun parseBody(body: ResponseBody?): Stage4FetchResult {
@@ -96,8 +111,9 @@ class Stage4Repository
 
         private fun errorForHttpCode(code: Int): Stage4FetchResult =
             when (code) {
-                HttpURLConnection.HTTP_UNAUTHORIZED, HttpURLConnection.HTTP_FORBIDDEN ->
-                    Stage4FetchResult.AuthExpired
+                HttpURLConnection.HTTP_UNAUTHORIZED -> Stage4FetchResult.AuthExpired
+                HttpURLConnection.HTTP_FORBIDDEN ->
+                    Stage4FetchResult.Error("You don't have access to this survey")
                 HttpURLConnection.HTTP_NOT_FOUND ->
                     Stage4FetchResult.Error(
                         "No Stage 4 candidates task is available for this survey.",

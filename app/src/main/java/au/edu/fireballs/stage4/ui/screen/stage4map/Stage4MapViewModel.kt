@@ -21,6 +21,8 @@ sealed interface Stage4MapUiState {
     data class Loaded(
         val state: Stage4State,
         val cameraTarget: MapCameraTarget?,
+        val isRefreshing: Boolean = false,
+        val userMessage: String? = null,
     ) : Stage4MapUiState
 
     data class Error(
@@ -48,7 +50,16 @@ class Stage4MapViewModel
 
             fetchJob =
                 viewModelScope.launch {
-                    _uiState.value = Stage4MapUiState.Loading
+                    val currentState = _uiState.value
+                    val refreshInPlace =
+                        currentState is Stage4MapUiState.Loaded &&
+                            currentState.state.survey.id == surveyId
+
+                    if (refreshInPlace) {
+                        _uiState.value = currentState.copy(isRefreshing = true, userMessage = null)
+                    } else {
+                        _uiState.value = Stage4MapUiState.Loading
+                    }
 
                     when (val result = stage4Repository.getCandidatesState(surveyId)) {
                         is Stage4FetchResult.Success -> {
@@ -60,17 +71,34 @@ class Stage4MapViewModel
                         }
 
                         is Stage4FetchResult.Error -> {
-                            _uiState.value =
-                                Stage4MapUiState.Error(
-                                    result.message ?: "Failed to load survey candidates",
-                                )
+                            if (refreshInPlace) {
+                                _uiState.value =
+                                    currentState.copy(
+                                        isRefreshing = false,
+                                        userMessage =
+                                            result.message ?: "Failed to refresh survey map",
+                                    )
+                            } else {
+                                _uiState.value =
+                                    Stage4MapUiState.Error(
+                                        result.message ?: "Failed to load survey candidates",
+                                    )
+                            }
                         }
 
                         is Stage4FetchResult.NetworkError -> {
-                            _uiState.value =
-                                Stage4MapUiState.Error(
-                                    "Network error. Please check your connection.",
-                                )
+                            if (refreshInPlace) {
+                                _uiState.value =
+                                    currentState.copy(
+                                        isRefreshing = false,
+                                        userMessage = "Offline — displaying previous map data",
+                                    )
+                            } else {
+                                _uiState.value =
+                                    Stage4MapUiState.Error(
+                                        "Network error. Please check your connection.",
+                                    )
+                            }
                         }
 
                         is Stage4FetchResult.AuthExpired -> {

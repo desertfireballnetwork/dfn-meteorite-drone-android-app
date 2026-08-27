@@ -37,12 +37,18 @@ android {
                     file.inputStream().use { load(it) }
                 }
             }
-        val mapboxToken =
+        val mapboxAccessToken =
             providers
-                .gradleProperty("MAPBOX_DOWNLOADS_TOKEN")
-                .orElse(providers.environmentVariable("ORG_GRADLE_PROJECT_MAPBOX_DOWNLOADS_TOKEN"))
-                .orElse(providers.provider { localProps.getProperty("MAPBOX_DOWNLOADS_TOKEN", "") })
+                .gradleProperty("MAPBOX_ACCESS_TOKEN")
+                .orElse(providers.environmentVariable("ORG_GRADLE_PROJECT_MAPBOX_ACCESS_TOKEN"))
+                .orElse(providers.provider { localProps.getProperty("MAPBOX_ACCESS_TOKEN", "") })
                 .getOrElse("")
+        if (mapboxAccessToken.isBlank()) {
+            throw GradleException(
+                "MAPBOX_ACCESS_TOKEN is required: set it in local.properties, as gradle property " +
+                    "MAPBOX_ACCESS_TOKEN, or env ORG_GRADLE_PROJECT_MAPBOX_ACCESS_TOKEN",
+            )
+        }
         val productionServerUrl =
             providers
                 .provider {
@@ -57,7 +63,7 @@ android {
                     )
                 }.getOrElse("")
 
-        buildConfigField("String", "MAPBOX_TOKEN", "\"$mapboxToken\"")
+        buildConfigField("String", "MAPBOX_TOKEN", "\"$mapboxAccessToken\"")
         buildConfigField("String", "PRODUCTION_SERVER_URL", "\"$productionServerUrl\"")
         buildConfigField("String", "DEV_SERVER_URL", "\"$devServerUrl\"")
     }
@@ -132,6 +138,12 @@ dependencies {
     implementation(libs.maps.compose)
 
     debugImplementation(libs.compose.ui.tooling)
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
+
+    androidTestImplementation(platform(libs.compose.bom))
+    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    androidTestImplementation(libs.androidx.test.core)
+    androidTestImplementation(libs.junit)
 
     testImplementation(libs.androidx.test.core)
     testImplementation(libs.junit)
