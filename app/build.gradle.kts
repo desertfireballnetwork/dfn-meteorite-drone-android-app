@@ -73,6 +73,7 @@ android {
         buildConfigField("String", "MAPBOX_TOKEN", "\"$mapboxAccessToken\"")
         buildConfigField("String", "PRODUCTION_SERVER_URL", "\"$productionServerUrl\"")
         buildConfigField("String", "DEV_SERVER_URL", "\"$devServerUrl\"")
+        buildConfigField("int", "MAPBOX_MAX_TILES_PER_REGION", "50000")
     }
 
     sourceSets {
