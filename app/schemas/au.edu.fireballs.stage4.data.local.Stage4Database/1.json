@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 1,
-    "identityHash": "74d2eee451d129ca966be989a6ea46d5",
+    "identityHash": "28b0ed9e67eff0140e56c836cd714864",
     "entities": [
       {
         "tableName": "survey",
@@ -89,7 +89,7 @@
       },
       {
         "tableName": "candidate",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`inferenceResultId` INTEGER NOT NULL, `surveyId` INTEGER NOT NULL, `imageId` INTEGER NOT NULL, `imageFilename` TEXT NOT NULL, `imageWidth` INTEGER NOT NULL, `imageHeight` INTEGER NOT NULL, `geoCentroidLat` REAL NOT NULL, `geoCentroidLon` REAL NOT NULL, `geoAreaJson` TEXT NOT NULL, `boxX` INTEGER NOT NULL, `boxY` INTEGER NOT NULL, `boxW` INTEGER NOT NULL, `boxH` INTEGER NOT NULL, `confidence` REAL NOT NULL, `sizeMw` REAL, `sizeMh` REAL, `isClaimedByMe` INTEGER NOT NULL, `claimOwnerUsername` TEXT, PRIMARY KEY(`inferenceResultId`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`inferenceResultId` INTEGER NOT NULL, `surveyId` INTEGER NOT NULL, `imageId` INTEGER NOT NULL, `imageFilename` TEXT NOT NULL, `imageWidth` INTEGER NOT NULL, `imageHeight` INTEGER NOT NULL, `geoCentroidLat` REAL NOT NULL, `geoCentroidLon` REAL NOT NULL, `geoAreaJson` TEXT NOT NULL, `boxX` INTEGER NOT NULL, `boxY` INTEGER NOT NULL, `boxW` INTEGER NOT NULL, `boxH` INTEGER NOT NULL, `confidence` REAL NOT NULL, `sizeMw` REAL, `sizeMh` REAL, `isClaimedByMe` INTEGER NOT NULL, `isClaimedByOther` INTEGER NOT NULL, `claimOwnerUsername` TEXT, `serverVerdict` INTEGER NOT NULL, PRIMARY KEY(`inferenceResultId`))",
         "fields": [
           {
             "fieldPath": "inferenceResultId",
@@ -192,9 +192,21 @@
             "notNull": true
           },
           {
+            "fieldPath": "isClaimedByOther",
+            "columnName": "isClaimedByOther",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
             "fieldPath": "claimOwnerUsername",
             "columnName": "claimOwnerUsername",
             "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "serverVerdict",
+            "columnName": "serverVerdict",
+            "affinity": "INTEGER",
+            "notNull": true
           }
         ],
         "primaryKey": {
@@ -579,7 +591,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '74d2eee451d129ca966be989a6ea46d5')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '28b0ed9e67eff0140e56c836cd714864')"
     ]
   }
 }

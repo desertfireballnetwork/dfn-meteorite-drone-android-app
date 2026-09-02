@@ -1,11 +1,22 @@
 package au.edu.fireballs.stage4.data.repository
 
+import au.edu.fireballs.stage4.data.local.CandidateEntity
+import au.edu.fireballs.stage4.data.local.SurveyEntity
+import au.edu.fireballs.stage4.data.local.dao.CandidateDao
+import au.edu.fireballs.stage4.data.local.dao.SurveyDao
 import au.edu.fireballs.stage4.data.remote.Stage4Service
 import au.edu.fireballs.stage4.data.remote.dto.Stage4StateDto
 import au.edu.fireballs.stage4.di.IoDispatcher
+import au.edu.fireballs.stage4.domain.model.BoundingBox
+import au.edu.fireballs.stage4.domain.model.GeoCoordinate
+import au.edu.fireballs.stage4.domain.model.ImageDims
+import au.edu.fireballs.stage4.domain.model.SizeMetres
+import au.edu.fireballs.stage4.domain.model.Stage4Candidate
 import au.edu.fireballs.stage4.domain.model.Stage4State
+import au.edu.fireballs.stage4.domain.model.Stage4Survey
 import au.edu.fireballs.stage4.domain.model.toDomain
 import com.squareup.moshi.Moshi
+import com.squareup.moshi.Types
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl
@@ -38,17 +49,27 @@ class Stage4Repository
     constructor(
         private val stage4Service: Stage4Service,
         private val moshi: Moshi,
+        private val surveyDao: SurveyDao,
+        private val candidateDao: CandidateDao,
         @param:IoDispatcher private val ioDispatcher: CoroutineDispatcher,
     ) {
         @Suppress("TooGenericExceptionCaught", "SwallowedException")
         suspend fun getCandidatesState(surveyId: Long): Stage4FetchResult =
             withContext(ioDispatcher) {
                 try {
-                    resolveFetchResult(stage4Service.getCandidates(surveyId.toString()))
+                    val result =
+                        resolveFetchResult(
+                            stage4Service.getCandidates(surveyId.toString()),
+                        )
+                    if (result is Stage4FetchResult.Success) {
+                        persistState(result.state)
+                    }
+                    result
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: IOException) {
-                    Stage4FetchResult.NetworkError
+                    // load from Room db if offline
+                    loadFromRoom(surveyId) ?: Stage4FetchResult.NetworkError
                 } catch (e: HttpException) {
                     if (e.code() == HttpURLConnection.HTTP_UNAUTHORIZED) {
                         Stage4FetchResult.AuthExpired
@@ -59,6 +80,153 @@ class Stage4Repository
                     Stage4FetchResult.Error(e.localizedMessage ?: "An unexpected error occurred")
                 }
             }
+
+        private suspend fun persistState(state: Stage4State) {
+            val surveyEntity =
+                SurveyEntity(
+                    id = state.survey.id,
+                    eventId = state.survey.eventId,
+                    description = null,
+                    created = "",
+                    hasStage4 = true,
+                    activeSurvey = true,
+                    tilesetId = state.survey.tilesetId,
+                    latestTaskCreated = state.latestTaskCreated,
+                    baseLat = state.base?.latitude,
+                    baseLon = state.base?.longitude,
+                )
+            surveyDao.upsert(surveyEntity)
+
+            val candidates =
+                mutableListOf<CandidateEntity>().apply {
+                    addAll(state.unprocessedCandidates.map { it.toEntity(state.survey.id, 0) })
+                    addAll(state.yesMeteorites.map { it.toEntity(state.survey.id, 1) })
+                    addAll(state.noMeteorites.map { it.toEntity(state.survey.id, 2) })
+                }
+            candidateDao.deleteForSurvey(state.survey.id)
+            candidateDao.upsertAll(candidates)
+        }
+
+        private suspend fun loadFromRoom(surveyId: Long): Stage4FetchResult? {
+            val surveyEntity = surveyDao.getById(surveyId) ?: return null
+            val candidateEntities = candidateDao.getCandidatesForSurvey(surveyId)
+
+            val state =
+                Stage4State(
+                    survey =
+                        Stage4Survey(
+                            id = surveyEntity.id,
+                            eventId = surveyEntity.eventId,
+                            tilesetId = surveyEntity.tilesetId,
+                        ),
+                    base =
+                        if (surveyEntity.baseLat != null && surveyEntity.baseLon != null) {
+                            GeoCoordinate(surveyEntity.baseLat, surveyEntity.baseLon)
+                        } else {
+                            null
+                        },
+                    surveyedAreas = emptyList(),
+                    unprocessedCandidates =
+                        candidateEntities
+                            .filter { it.serverVerdict == 0 }
+                            .map {
+                                it.toDomain()
+                            },
+                    yesMeteorites =
+                        candidateEntities
+                            .filter { it.serverVerdict == 1 }
+                            .map {
+                                it.toDomain()
+                            },
+                    noMeteorites =
+                        candidateEntities
+                            .filter { it.serverVerdict == 2 }
+                            .map {
+                                it.toDomain()
+                            },
+                    detectionTags = emptyList(),
+                    userLocations = emptyList(),
+                    showGeolocationAccuracyCircle = true,
+                    latestTaskCreated = surveyEntity.latestTaskCreated ?: "",
+                )
+            return Stage4FetchResult.Success(state)
+        }
+
+        private fun CandidateEntity.toDomain(): Stage4Candidate {
+            val geoAreaType =
+                Types.newParameterizedType(
+                    List::class.java,
+                    Types.newParameterizedType(List::class.java, Double::class.javaObjectType),
+                )
+            val geoAreaAdapter = moshi.adapter<List<List<Double>>>(geoAreaType)
+            return Stage4Candidate(
+                inferenceResultId = inferenceResultId,
+                imageId = imageId,
+                imageFilename = imageFilename,
+                imageDims = ImageDims(w = imageWidth, h = imageHeight),
+                geoCentroid = GeoCoordinate(latitude = geoCentroidLat, longitude = geoCentroidLon),
+                geoArea =
+                    geoAreaJson.let {
+                        geoAreaAdapter.fromJson(it)
+                    },
+                box =
+                    BoundingBox(
+                        x = boxX,
+                        y = boxY,
+                        w = boxW,
+                        h = boxH,
+                    ),
+                confidence = confidence.toDouble(),
+                sizeM =
+                    if (sizeMw != null && sizeMh != null) {
+                        SizeMetres(
+                            w = sizeMw.toDouble(),
+                            h = sizeMh.toDouble(),
+                        )
+                    } else {
+                        null
+                    },
+                claimedByMe = isClaimedByMe,
+                claimedByOther = isClaimedByOther,
+            )
+        }
+
+        private fun Stage4Candidate.toEntity(
+            surveyId: Long,
+            verdict: Int,
+        ): CandidateEntity {
+            val geoAreaType =
+                Types.newParameterizedType(
+                    List::class.java,
+                    Types.newParameterizedType(List::class.java, Double::class.javaObjectType),
+                )
+            val geoAreaAdapter = moshi.adapter<List<List<Double>>>(geoAreaType)
+            return CandidateEntity(
+                inferenceResultId = inferenceResultId,
+                surveyId = surveyId,
+                imageId = imageId,
+                imageFilename = imageFilename,
+                imageWidth = imageDims.w,
+                imageHeight = imageDims.h,
+                geoCentroidLat = geoCentroid?.latitude ?: 0.0,
+                geoCentroidLon = geoCentroid?.longitude ?: 0.0,
+                geoAreaJson =
+                    geoArea?.let {
+                        geoAreaAdapter.toJson(it)
+                    } ?: "[]",
+                boxX = box.x,
+                boxY = box.y,
+                boxW = box.w,
+                boxH = box.h,
+                confidence = confidence.toFloat(),
+                sizeMw = sizeM?.w?.toFloat(),
+                sizeMh = sizeM?.h?.toFloat(),
+                isClaimedByMe = claimedByMe,
+                isClaimedByOther = claimedByOther,
+                claimOwnerUsername = null, // Not in Stage4Candidate
+                serverVerdict = verdict,
+            )
+        }
 
         private suspend fun resolveFetchResult(
             response: Response<ResponseBody>,

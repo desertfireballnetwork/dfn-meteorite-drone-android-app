@@ -17,6 +17,9 @@ interface CandidateDao {
     @Query("SELECT * FROM candidate WHERE surveyId = :surveyId")
     fun observeCandidatesForSurvey(surveyId: Long): Flow<List<CandidateEntity>>
 
+    @Query("SELECT * FROM candidate WHERE surveyId = :surveyId")
+    suspend fun getCandidatesForSurvey(surveyId: Long): List<CandidateEntity>
+
     @Query("SELECT * FROM candidate WHERE inferenceResultId = :inferenceResultId")
     suspend fun getById(inferenceResultId: Long): CandidateEntity?
 

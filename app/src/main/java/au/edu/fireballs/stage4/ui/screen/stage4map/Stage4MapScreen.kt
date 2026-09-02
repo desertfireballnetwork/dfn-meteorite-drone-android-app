@@ -7,10 +7,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -25,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import au.edu.fireballs.stage4.domain.model.Stage4Candidate
 import com.mapbox.geojson.Point
 import com.mapbox.maps.dsl.cameraOptions
 import com.mapbox.maps.extension.compose.animation.viewport.MapViewportState
@@ -46,8 +49,7 @@ fun Stage4MapScreen(
 
     LifecycleResumeEffect(Unit) {
         viewModel.openSurvey(surveyId)
-        onPauseOrDispose {
-        }
+        onPauseOrDispose {}
     }
 
     LaunchedEffect(uiState) {
@@ -64,14 +66,28 @@ fun Stage4MapScreen(
                 onRetry = viewModel::retry,
             )
 
-        is Stage4MapUiState.Loaded ->
+        is Stage4MapUiState.Loaded -> {
+            var selectedCandidate by remember { mutableStateOf<Stage4Candidate?>(null) }
+
             LoadedMap(
                 loaded = state,
                 mapViewportState = mapViewportState,
                 locationPermission = locationPermission,
                 surveyPositioned = positionedSurveyId == state.state.survey.id,
                 onSurveyPositioned = { positionedSurveyId = state.state.survey.id },
+                onToggleLayer = viewModel::toggleLayer,
+                onMarkerClick = { selectedCandidate = it },
             )
+
+            selectedCandidate?.let { candidate ->
+                CandidatePlaceholderDialog(
+                    candidate = candidate,
+                    onDismiss = {
+                        selectedCandidate = null
+                    },
+                )
+            }
+        }
 
         is Stage4MapUiState.AuthExpired -> Unit
     }
@@ -119,6 +135,8 @@ private fun LoadedMap(
     locationPermission: LocationPermissionUiState,
     surveyPositioned: Boolean,
     onSurveyPositioned: () -> Unit,
+    onToggleLayer: (LayerType, Boolean) -> Unit,
+    onMarkerClick: (Stage4Candidate) -> Unit,
 ) {
     val context = LocalContext.current
 
@@ -151,9 +169,18 @@ private fun LoadedMap(
         MapHost(
             mapViewportState = mapViewportState,
             locationPermissionGranted = locationPermission.locationPermissionGranted,
-            polygons = loaded.state.surveyedAreas,
-            tilesetId = loaded.state.survey.tilesetId,
-            base = loaded.state.base,
+            state = loaded.state,
+            layerToggleState = loaded.layerToggleState,
+            onMarkerClick = onMarkerClick,
+        )
+
+        LayerToggleBar(
+            state = loaded.layerToggleState,
+            onToggle = onToggleLayer,
+            modifier =
+                Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 64.dp, end = 16.dp),
         )
 
         MapTopOverlay(
@@ -227,4 +254,30 @@ private fun PositionSurveyCamera(
             }
         }
     }
+}
+
+@Composable
+private fun CandidatePlaceholderDialog(
+    candidate: Stage4Candidate,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(text = "Candidate #${candidate.inferenceResultId}")
+        },
+        text = {
+            Text(
+                text =
+                    "Inference ID: ${candidate.inferenceResultId}\n" +
+                        "Confidence: ${"%.2f".format(candidate.confidence)}\n\n" +
+                        "[A-10] Modal TODO — This will be replaced by the rich candidate modal.",
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Dismiss")
+            }
+        },
+    )
 }

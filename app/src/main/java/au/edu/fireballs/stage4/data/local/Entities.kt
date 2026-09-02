@@ -51,7 +51,9 @@ data class CandidateEntity(
     val sizeMh: Float?,
     // current claim state cached from basecamp
     val isClaimedByMe: Boolean, // ClaimEntity isClaimedByMe is the live state; this is cache only
+    val isClaimedByOther: Boolean = false,
     val claimOwnerUsername: String?,
+    val serverVerdict: Int = 0, // 0=unprocessed, 1=yes, 2=no
 )
 
 @Entity(

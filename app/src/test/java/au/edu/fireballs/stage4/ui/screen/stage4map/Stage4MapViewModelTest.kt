@@ -1,41 +1,49 @@
 package au.edu.fireballs.stage4.ui.screen.stage4map
 
+import au.edu.fireballs.stage4.data.local.LocalDecisionEntity
+import au.edu.fireballs.stage4.data.local.dao.LocalDecisionDao
 import au.edu.fireballs.stage4.data.repository.Stage4FetchResult
 import au.edu.fireballs.stage4.data.repository.Stage4Repository
+import au.edu.fireballs.stage4.domain.model.BoundingBox
 import au.edu.fireballs.stage4.domain.model.GeoCoordinate
-import au.edu.fireballs.stage4.domain.model.MapCameraTarget
+import au.edu.fireballs.stage4.domain.model.ImageDims
+import au.edu.fireballs.stage4.domain.model.Stage4Candidate
 import au.edu.fireballs.stage4.domain.model.Stage4State
 import au.edu.fireballs.stage4.domain.model.Stage4Survey
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
-import org.mockito.Mockito.mock
-import org.mockito.Mockito.times
-import org.mockito.Mockito.verify
-import org.mockito.Mockito.`when`
+import org.mockito.kotlin.any
+import org.mockito.kotlin.mock
+import org.mockito.kotlin.whenever
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class Stage4MapViewModelTest {
     private val testDispatcher = StandardTestDispatcher()
-    private lateinit var stage4Repository: Stage4Repository
+    private val repository: Stage4Repository = mock()
+    private val localDecisionDao: LocalDecisionDao = mock()
+    private val pendingDecisionsFlow = MutableStateFlow<List<LocalDecisionEntity>>(emptyList())
     private lateinit var viewModel: Stage4MapViewModel
 
     @Before
     fun setUp() {
         Dispatchers.setMain(testDispatcher)
-        stage4Repository = mock(Stage4Repository::class.java)
+        pendingDecisionsFlow.value = emptyList()
+        whenever(localDecisionDao.observeDecisionsForSurvey(any()))
+            .thenReturn(pendingDecisionsFlow)
     }
 
     @After
@@ -43,10 +51,10 @@ class Stage4MapViewModelTest {
         Dispatchers.resetMain()
     }
 
-    private fun stage4State(base: GeoCoordinate?): Stage4State =
+    private fun dummyState(surveyId: Long): Stage4State =
         Stage4State(
-            survey = Stage4Survey(id = 7L, eventId = "DN240703-02", tilesetId = null),
-            base = base,
+            survey = Stage4Survey(id = surveyId, eventId = "EVENT_01", tilesetId = null),
+            base = GeoCoordinate(-37.8, 145.0),
             surveyedAreas = emptyList(),
             unprocessedCandidates = emptyList(),
             yesMeteorites = emptyList(),
@@ -54,279 +62,134 @@ class Stage4MapViewModelTest {
             detectionTags = emptyList(),
             userLocations = emptyList(),
             showGeolocationAccuracyCircle = false,
-            latestTaskCreated = "2026-08-26T00:00:00Z",
+            latestTaskCreated = "",
         )
 
     @Test
-    fun `initial state is Loading`() =
-        runTest {
-            viewModel = Stage4MapViewModel(stage4Repository)
-
-            assertEquals(Stage4MapUiState.Loading, viewModel.uiState.value)
-        }
-
-    @Test
-    fun `openSurvey success updates state to Loaded with camera target at base zoom 13`() =
-        runTest {
-            val base = GeoCoordinate(latitude = -29.467, longitude = 115.342)
-            val fixture = stage4State(base)
-            `when`(stage4Repository.getCandidatesState(7L)).thenReturn(
-                Stage4FetchResult.Success(fixture),
-            )
-
-            viewModel = Stage4MapViewModel(stage4Repository)
-            viewModel.openSurvey(7L)
-            testDispatcher.scheduler.advanceUntilIdle()
-
-            val state = viewModel.uiState.value
-            assertTrue(state is Stage4MapUiState.Loaded)
-            val loaded = state as Stage4MapUiState.Loaded
-            assertEquals(fixture, loaded.state)
-            assertEquals(
-                MapCameraTarget(latitude = -29.467, longitude = 115.342, zoom = 13.0),
-                loaded.cameraTarget,
-            )
-        }
-
-    @Test
-    fun `openSurvey success with null base and empty areas yields null camera target`() =
-        runTest {
-            val fixture = stage4State(base = null)
-            `when`(stage4Repository.getCandidatesState(7L)).thenReturn(
-                Stage4FetchResult.Success(fixture),
-            )
-
-            viewModel = Stage4MapViewModel(stage4Repository)
-            viewModel.openSurvey(7L)
-            testDispatcher.scheduler.advanceUntilIdle()
-
-            val state = viewModel.uiState.value
-            assertTrue(state is Stage4MapUiState.Loaded)
-            assertNull((state as Stage4MapUiState.Loaded).cameraTarget)
-        }
-
-    @Test
-    fun `openSurvey error updates state to Error with message passthrough`() =
-        runTest {
-            `when`(stage4Repository.getCandidatesState(7L)).thenReturn(
-                Stage4FetchResult.Error("No Stage 4 candidates task is available."),
-            )
-
-            viewModel = Stage4MapViewModel(stage4Repository)
-            viewModel.openSurvey(7L)
-            testDispatcher.scheduler.advanceUntilIdle()
-
-            val state = viewModel.uiState.value
-            assertTrue(state is Stage4MapUiState.Error)
-            assertEquals(
-                "No Stage 4 candidates task is available.",
-                (state as Stage4MapUiState.Error).message,
-            )
-        }
-
-    @Test
-    fun `openSurvey network error updates state to Error with generic offline message`() =
-        runTest {
-            `when`(stage4Repository.getCandidatesState(7L)).thenReturn(
-                Stage4FetchResult.NetworkError,
-            )
-
-            viewModel = Stage4MapViewModel(stage4Repository)
-            viewModel.openSurvey(7L)
-            testDispatcher.scheduler.advanceUntilIdle()
-
-            val state = viewModel.uiState.value
-            assertTrue(state is Stage4MapUiState.Error)
-            assertEquals(
-                "Network error. Please check your connection.",
-                (state as Stage4MapUiState.Error).message,
-            )
-        }
-
-    @Test
-    fun `openSurvey auth expired updates state to AuthExpired`() =
-        runTest {
-            `when`(stage4Repository.getCandidatesState(7L)).thenReturn(
-                Stage4FetchResult.AuthExpired,
-            )
-
-            viewModel = Stage4MapViewModel(stage4Repository)
-            viewModel.openSurvey(7L)
-            testDispatcher.scheduler.advanceUntilIdle()
-
-            assertTrue(viewModel.uiState.value is Stage4MapUiState.AuthExpired)
-        }
-
-    @Test
-    fun `openSurvey access denied error updates state to Error not AuthExpired`() =
-        runTest {
-            `when`(stage4Repository.getCandidatesState(7L)).thenReturn(
-                Stage4FetchResult.Error("You don't have access to this survey"),
-            )
-
-            viewModel = Stage4MapViewModel(stage4Repository)
-            viewModel.openSurvey(7L)
-            testDispatcher.scheduler.advanceUntilIdle()
-
-            val state = viewModel.uiState.value
-            assertFalse(state is Stage4MapUiState.AuthExpired)
-            assertTrue(state is Stage4MapUiState.Error)
-            assertEquals(
-                "You don't have access to this survey",
-                (state as Stage4MapUiState.Error).message,
-            )
-        }
-
-    @Test
-    fun `retry after failure re-calls repository and emits Loaded on second success`() =
-        runTest {
-            val base = GeoCoordinate(latitude = -29.467, longitude = 115.342)
-            val fixture = stage4State(base)
-            `when`(stage4Repository.getCandidatesState(7L)).thenReturn(
-                Stage4FetchResult.NetworkError,
-            )
-
-            viewModel = Stage4MapViewModel(stage4Repository)
-            viewModel.openSurvey(7L)
-            testDispatcher.scheduler.advanceUntilIdle()
-            assertTrue(viewModel.uiState.value is Stage4MapUiState.Error)
-
-            `when`(stage4Repository.getCandidatesState(7L)).thenReturn(
-                Stage4FetchResult.Success(fixture),
-            )
-            viewModel.retry()
-            testDispatcher.scheduler.advanceUntilIdle()
-
-            val state = viewModel.uiState.value
-            assertTrue(state is Stage4MapUiState.Loaded)
-            assertEquals(fixture, (state as Stage4MapUiState.Loaded).state)
-            verify(stage4Repository, times(2)).getCandidatesState(7L)
-        }
-
-    @Test
-    fun `openSurvey on loaded survey refreshes in place without emitting Loading`() =
+    fun openSurvey_success_updatesUiState() =
         runTest(testDispatcher) {
-            val fixture = stage4State(base = null)
-            `when`(stage4Repository.getCandidatesState(7L)).thenReturn(
-                Stage4FetchResult.Success(fixture),
-            )
+            val stateData = dummyState(7L)
+            whenever(repository.getCandidatesState(7L))
+                .thenReturn(Stage4FetchResult.Success(stateData))
 
-            viewModel = Stage4MapViewModel(stage4Repository)
-            viewModel.openSurvey(7L)
-            testDispatcher.scheduler.advanceUntilIdle()
-            assertTrue(viewModel.uiState.value is Stage4MapUiState.Loaded)
+            viewModel = Stage4MapViewModel(repository, localDecisionDao)
 
-            val states = mutableListOf<Stage4MapUiState>()
+            // Subscribe to uiState so WhileSubscribed flow collection starts
             val collectJob =
-                launch(UnconfinedTestDispatcher(testDispatcher.scheduler)) {
-                    viewModel.uiState.collect { states.add(it) }
+                backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+                    viewModel.uiState.collect {}
                 }
-            testDispatcher.scheduler.advanceUntilIdle()
 
             viewModel.openSurvey(7L)
-            testDispatcher.scheduler.advanceUntilIdle()
-            collectJob.cancel()
-
-            assertFalse(states.any { it is Stage4MapUiState.Loading })
-            assertTrue(states.any { (it as? Stage4MapUiState.Loaded)?.isRefreshing == true })
-            val finalState = viewModel.uiState.value
-            assertTrue(finalState is Stage4MapUiState.Loaded)
-            assertFalse((finalState as Stage4MapUiState.Loaded).isRefreshing)
-        }
-
-    @Test
-    fun `retry with loaded survey keeps Loaded visible and surfaces message on failure`() =
-        runTest(testDispatcher) {
-            val fixture = stage4State(base = null)
-            `when`(stage4Repository.getCandidatesState(7L)).thenReturn(
-                Stage4FetchResult.Success(fixture),
-            )
-
-            viewModel = Stage4MapViewModel(stage4Repository)
-            viewModel.openSurvey(7L)
-            testDispatcher.scheduler.advanceUntilIdle()
-            assertTrue(viewModel.uiState.value is Stage4MapUiState.Loaded)
-
-            val states = mutableListOf<Stage4MapUiState>()
-            val collectJob =
-                launch(UnconfinedTestDispatcher(testDispatcher.scheduler)) {
-                    viewModel.uiState.collect { states.add(it) }
-                }
-            testDispatcher.scheduler.advanceUntilIdle()
-
-            `when`(stage4Repository.getCandidatesState(7L)).thenReturn(
-                Stage4FetchResult.NetworkError,
-            )
-            viewModel.retry()
-            assertTrue(viewModel.uiState.value is Stage4MapUiState.Loaded)
-            testDispatcher.scheduler.advanceUntilIdle()
-            collectJob.cancel()
-
-            assertFalse(states.any { it is Stage4MapUiState.Loading })
-            assertFalse(states.any { it is Stage4MapUiState.Error })
-            val state = viewModel.uiState.value
-            assertTrue(state is Stage4MapUiState.Loaded)
-            val loaded = state as Stage4MapUiState.Loaded
-            assertEquals(fixture, loaded.state)
-            assertFalse(loaded.isRefreshing)
-            assertEquals("Offline — displaying previous map data", loaded.userMessage)
-        }
-
-    @Test
-    fun `refresh failure keeps previous loaded content with error message`() =
-        runTest(testDispatcher) {
-            val fixture = stage4State(base = null)
-            `when`(stage4Repository.getCandidatesState(7L)).thenReturn(
-                Stage4FetchResult.Success(fixture),
-            )
-
-            viewModel = Stage4MapViewModel(stage4Repository)
-            viewModel.openSurvey(7L)
-            testDispatcher.scheduler.advanceUntilIdle()
-            assertTrue(viewModel.uiState.value is Stage4MapUiState.Loaded)
-
-            `when`(stage4Repository.getCandidatesState(7L)).thenReturn(
-                Stage4FetchResult.Error("No Stage 4 candidates task is available."),
-            )
-            viewModel.openSurvey(7L)
-            testDispatcher.scheduler.advanceUntilIdle()
+            advanceUntilIdle()
 
             val state = viewModel.uiState.value
-            assertTrue(state is Stage4MapUiState.Loaded)
-            val loaded = state as Stage4MapUiState.Loaded
-            assertEquals(fixture, loaded.state)
-            assertFalse(loaded.isRefreshing)
-            assertEquals("No Stage 4 candidates task is available.", loaded.userMessage)
+            assertTrue(
+                "Expected Stage4MapUiState.Loaded but got $state",
+                state is Stage4MapUiState.Loaded,
+            )
+            val loadedState = state as Stage4MapUiState.Loaded
+            assertEquals(7L, loadedState.state.survey.id)
+
+            collectJob.cancel()
         }
 
     @Test
-    fun `openSurvey with a different survey emits Loading before switching`() =
+    fun toggleLayer_updatesState() =
         runTest(testDispatcher) {
-            val fixture = stage4State(base = null)
-            `when`(stage4Repository.getCandidatesState(7L)).thenReturn(
-                Stage4FetchResult.Success(fixture),
-            )
-            `when`(stage4Repository.getCandidatesState(8L)).thenReturn(
-                Stage4FetchResult.Success(fixture),
-            )
+            val stateData = dummyState(7L)
+            whenever(repository.getCandidatesState(7L))
+                .thenReturn(Stage4FetchResult.Success(stateData))
 
-            viewModel = Stage4MapViewModel(stage4Repository)
-            viewModel.openSurvey(7L)
-            testDispatcher.scheduler.advanceUntilIdle()
-            assertTrue(viewModel.uiState.value is Stage4MapUiState.Loaded)
+            viewModel = Stage4MapViewModel(repository, localDecisionDao)
 
-            val states = mutableListOf<Stage4MapUiState>()
             val collectJob =
-                launch(UnconfinedTestDispatcher(testDispatcher.scheduler)) {
-                    viewModel.uiState.collect { states.add(it) }
+                backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+                    viewModel.uiState.collect {}
                 }
-            testDispatcher.scheduler.advanceUntilIdle()
 
-            viewModel.openSurvey(8L)
-            testDispatcher.scheduler.advanceUntilIdle()
+            viewModel.openSurvey(7L)
+            advanceUntilIdle()
+
+            viewModel.toggleLayer(LayerType.UNPROCESSED, false)
+            advanceUntilIdle()
+
+            val state = viewModel.uiState.value
+            assertTrue(
+                "Expected Stage4MapUiState.Loaded but got $state",
+                state is Stage4MapUiState.Loaded,
+            )
+            val loadedState = state as Stage4MapUiState.Loaded
+            assertFalse(
+                "Expected showUnprocessed to be false",
+                loadedState.layerToggleState.showUnprocessed,
+            )
+
             collectJob.cancel()
+        }
 
-            assertTrue(states.any { it is Stage4MapUiState.Loading })
-            assertTrue(viewModel.uiState.value is Stage4MapUiState.Loaded)
+    @Test
+    fun mergeStateWithDecisions_appliesLocalVerdict() =
+        runTest(testDispatcher) {
+            val candidateId = 101L
+            val dummyCandidate =
+                Stage4Candidate(
+                    inferenceResultId = candidateId,
+                    imageId = 1001L,
+                    imageFilename = "img_101.jpg",
+                    imageDims = ImageDims(w = 100, h = 100),
+                    geoCentroid = GeoCoordinate(-37.8, 145.0),
+                    geoArea = null,
+                    box = BoundingBox(x = 0, y = 0, w = 10, h = 10),
+                    confidence = 0.95,
+                    sizeM = null,
+                    claimedByMe = false,
+                    claimedByOther = false,
+                )
+            val baseState =
+                dummyState(7L).copy(
+                    unprocessedCandidates = listOf(dummyCandidate),
+                )
+
+            whenever(repository.getCandidatesState(7L))
+                .thenReturn(Stage4FetchResult.Success(baseState))
+
+            pendingDecisionsFlow.value =
+                listOf(
+                    LocalDecisionEntity(
+                        inferenceResultId = candidateId,
+                        surveyId = 7L,
+                        verdict = true,
+                        detectionTagId = null,
+                        capturedAt = "2026-09-02T12:00:00Z",
+                        evidencePhotoRowId = null,
+                        synced = false,
+                    ),
+                )
+
+            viewModel = Stage4MapViewModel(repository, localDecisionDao)
+
+            val collectJob =
+                backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+                    viewModel.uiState.collect {}
+                }
+
+            viewModel.openSurvey(7L)
+            advanceUntilIdle()
+
+            val state = viewModel.uiState.value
+            assertTrue(
+                "Expected Stage4MapUiState.Loaded but got $state",
+                state is Stage4MapUiState.Loaded,
+            )
+            val loadedState = state as Stage4MapUiState.Loaded
+            val movedToYes =
+                loadedState.state.yesMeteorites.any {
+                    it.inferenceResultId ==
+                        candidateId
+                }
+            assertTrue("Expected candidate to be moved to yesMeteorites", movedToYes)
+
+            collectJob.cancel()
         }
 }

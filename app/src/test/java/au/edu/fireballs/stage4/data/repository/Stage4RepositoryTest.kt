@@ -1,5 +1,7 @@
 package au.edu.fireballs.stage4.data.repository
 
+import au.edu.fireballs.stage4.data.local.dao.CandidateDao
+import au.edu.fireballs.stage4.data.local.dao.SurveyDao
 import au.edu.fireballs.stage4.data.remote.Stage4Service
 import au.edu.fireballs.stage4.domain.model.GeoCoordinate
 import au.edu.fireballs.stage4.domain.model.MapCameraTarget
@@ -20,6 +22,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import org.mockito.Mockito.mock
 import retrofit2.Retrofit
 import retrofit2.converter.moshi.MoshiConverterFactory
 import java.util.concurrent.CancellationException
@@ -29,6 +32,8 @@ class Stage4RepositoryTest {
     private lateinit var mockWebServer: MockWebServer
     private lateinit var repository: Stage4Repository
     private lateinit var moshi: Moshi
+    private val surveyDao: SurveyDao = mock()
+    private val candidateDao: CandidateDao = mock()
     private val testDispatcher = UnconfinedTestDispatcher()
 
     @Before
@@ -50,7 +55,14 @@ class Stage4RepositoryTest {
                 .build()
 
         val service = retrofit.create(Stage4Service::class.java)
-        repository = Stage4Repository(service, moshi, testDispatcher)
+        repository =
+            Stage4Repository(
+                stage4Service = service,
+                moshi = moshi,
+                surveyDao = surveyDao,
+                candidateDao = candidateDao,
+                ioDispatcher = testDispatcher,
+            )
     }
 
     @After
@@ -333,8 +345,20 @@ class Stage4RepositoryTest {
                     .addConverterFactory(MoshiConverterFactory.create(moshi))
                     .build()
 
+            val deadService = retrofit.create(Stage4Service::class.java)
+
+            org.mockito.kotlin
+                .whenever(surveyDao.getById(7L))
+                .thenReturn(null)
+
             val offlineRepository =
-                Stage4Repository(retrofit.create(Stage4Service::class.java), moshi, testDispatcher)
+                Stage4Repository(
+                    stage4Service = deadService,
+                    moshi = moshi,
+                    surveyDao = surveyDao,
+                    candidateDao = candidateDao,
+                    ioDispatcher = testDispatcher,
+                )
 
             val result = offlineRepository.getCandidatesState(7L)
 

@@ -28,7 +28,10 @@ private const val MIN_RING_VERTICES = 3
 fun SurveyedAreaOverlay(
     polygons: List<List<List<Double>>>,
     tilesetId: String?,
+    visible: Boolean = true,
 ) {
+    if (!visible) return
+
     key(polygons, tilesetId) {
         val outlineColorHex = outlinedColorHex()
         polygons.forEachIndexed { index, ring ->
