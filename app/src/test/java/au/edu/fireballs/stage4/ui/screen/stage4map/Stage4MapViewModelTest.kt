@@ -4,6 +4,7 @@ import au.edu.fireballs.stage4.data.local.LocalDecisionEntity
 import au.edu.fireballs.stage4.data.local.dao.LocalDecisionDao
 import au.edu.fireballs.stage4.data.repository.Stage4FetchResult
 import au.edu.fireballs.stage4.data.repository.Stage4Repository
+import au.edu.fireballs.stage4.data.tiles.TileStore
 import au.edu.fireballs.stage4.domain.model.BoundingBox
 import au.edu.fireballs.stage4.domain.model.GeoCoordinate
 import au.edu.fireballs.stage4.domain.model.ImageDims
@@ -32,6 +33,7 @@ import org.mockito.kotlin.mock
 import org.mockito.kotlin.times
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
+import java.io.File
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class Stage4MapViewModelTest {
@@ -39,6 +41,7 @@ class Stage4MapViewModelTest {
     private val repository: Stage4Repository = mock()
     private val localDecisionDao: LocalDecisionDao = mock()
     private val pendingDecisionsFlow = MutableStateFlow<List<LocalDecisionEntity>>(emptyList())
+    private val tileStore = TileStore(File.createTempFile("vm-tiles", "").parentFile)
     private lateinit var viewModel: Stage4MapViewModel
 
     @Before
@@ -74,7 +77,7 @@ class Stage4MapViewModelTest {
     @Test
     fun `initial state is Loading`() =
         runTest(testDispatcher) {
-            viewModel = Stage4MapViewModel(repository, localDecisionDao)
+            viewModel = Stage4MapViewModel(repository, localDecisionDao, tileStore)
 
             assertEquals(Stage4MapUiState.Loading, viewModel.uiState.value)
         }
@@ -86,7 +89,7 @@ class Stage4MapViewModelTest {
             whenever(repository.getCandidatesState(7L))
                 .thenReturn(Stage4FetchResult.Success(fixture, isOffline = true))
 
-            viewModel = Stage4MapViewModel(repository, localDecisionDao)
+            viewModel = Stage4MapViewModel(repository, localDecisionDao, tileStore)
             val collectJob =
                 backgroundScope.launch(testDispatcher) {
                     viewModel.uiState.collect {}
@@ -111,7 +114,7 @@ class Stage4MapViewModelTest {
             whenever(repository.getCandidatesState(7L))
                 .thenReturn(Stage4FetchResult.Success(fixture))
 
-            viewModel = Stage4MapViewModel(repository, localDecisionDao)
+            viewModel = Stage4MapViewModel(repository, localDecisionDao, tileStore)
             val collectJob =
                 backgroundScope.launch(testDispatcher) {
                     viewModel.uiState.collect {}
@@ -139,7 +142,7 @@ class Stage4MapViewModelTest {
             whenever(repository.getCandidatesState(7L))
                 .thenReturn(Stage4FetchResult.Success(fixture))
 
-            viewModel = Stage4MapViewModel(repository, localDecisionDao)
+            viewModel = Stage4MapViewModel(repository, localDecisionDao, tileStore)
             val collectJob =
                 backgroundScope.launch(testDispatcher) {
                     viewModel.uiState.collect {}
@@ -161,7 +164,7 @@ class Stage4MapViewModelTest {
             whenever(repository.getCandidatesState(7L))
                 .thenReturn(Stage4FetchResult.Error("No Stage 4 candidates task is available."))
 
-            viewModel = Stage4MapViewModel(repository, localDecisionDao)
+            viewModel = Stage4MapViewModel(repository, localDecisionDao, tileStore)
             val collectJob =
                 backgroundScope.launch(testDispatcher) {
                     viewModel.uiState.collect {}
@@ -186,7 +189,7 @@ class Stage4MapViewModelTest {
             whenever(repository.getCandidatesState(7L))
                 .thenReturn(Stage4FetchResult.NetworkError)
 
-            viewModel = Stage4MapViewModel(repository, localDecisionDao)
+            viewModel = Stage4MapViewModel(repository, localDecisionDao, tileStore)
             val collectJob =
                 backgroundScope.launch(testDispatcher) {
                     viewModel.uiState.collect {}
@@ -211,7 +214,7 @@ class Stage4MapViewModelTest {
             whenever(repository.getCandidatesState(7L))
                 .thenReturn(Stage4FetchResult.AuthExpired)
 
-            viewModel = Stage4MapViewModel(repository, localDecisionDao)
+            viewModel = Stage4MapViewModel(repository, localDecisionDao, tileStore)
             val collectJob =
                 backgroundScope.launch(testDispatcher) {
                     viewModel.uiState.collect {}
@@ -231,7 +234,7 @@ class Stage4MapViewModelTest {
             whenever(repository.getCandidatesState(7L))
                 .thenReturn(Stage4FetchResult.Error("You don't have access to this survey"))
 
-            viewModel = Stage4MapViewModel(repository, localDecisionDao)
+            viewModel = Stage4MapViewModel(repository, localDecisionDao, tileStore)
             val collectJob =
                 backgroundScope.launch(testDispatcher) {
                     viewModel.uiState.collect {}
@@ -259,7 +262,7 @@ class Stage4MapViewModelTest {
             whenever(repository.getCandidatesState(7L))
                 .thenReturn(Stage4FetchResult.NetworkError)
 
-            viewModel = Stage4MapViewModel(repository, localDecisionDao)
+            viewModel = Stage4MapViewModel(repository, localDecisionDao, tileStore)
             val collectJob =
                 backgroundScope.launch(testDispatcher) {
                     viewModel.uiState.collect {}
@@ -290,7 +293,7 @@ class Stage4MapViewModelTest {
             whenever(repository.getCandidatesState(7L))
                 .thenReturn(Stage4FetchResult.Success(fixture))
 
-            viewModel = Stage4MapViewModel(repository, localDecisionDao)
+            viewModel = Stage4MapViewModel(repository, localDecisionDao, tileStore)
 
             val states = mutableListOf<Stage4MapUiState>()
             val collectJob =
@@ -320,7 +323,7 @@ class Stage4MapViewModelTest {
             whenever(repository.getCandidatesState(7L))
                 .thenReturn(Stage4FetchResult.Success(fixture))
 
-            viewModel = Stage4MapViewModel(repository, localDecisionDao)
+            viewModel = Stage4MapViewModel(repository, localDecisionDao, tileStore)
 
             val states = mutableListOf<Stage4MapUiState>()
             val collectJob =
@@ -357,7 +360,7 @@ class Stage4MapViewModelTest {
             whenever(repository.getCandidatesState(7L))
                 .thenReturn(Stage4FetchResult.Success(fixture))
 
-            viewModel = Stage4MapViewModel(repository, localDecisionDao)
+            viewModel = Stage4MapViewModel(repository, localDecisionDao, tileStore)
             val collectJob =
                 backgroundScope.launch(testDispatcher) {
                     viewModel.uiState.collect {}
@@ -393,7 +396,7 @@ class Stage4MapViewModelTest {
             whenever(repository.getCandidatesState(8L))
                 .thenReturn(Stage4FetchResult.Success(fixture8))
 
-            viewModel = Stage4MapViewModel(repository, localDecisionDao)
+            viewModel = Stage4MapViewModel(repository, localDecisionDao, tileStore)
 
             val states = mutableListOf<Stage4MapUiState>()
             val collectJob =
@@ -423,7 +426,7 @@ class Stage4MapViewModelTest {
             whenever(repository.getCandidatesState(7L))
                 .thenReturn(Stage4FetchResult.Success(stateData))
 
-            viewModel = Stage4MapViewModel(repository, localDecisionDao)
+            viewModel = Stage4MapViewModel(repository, localDecisionDao, tileStore)
             val collectJob =
                 backgroundScope.launch(testDispatcher) {
                     viewModel.uiState.collect {}
@@ -482,7 +485,7 @@ class Stage4MapViewModelTest {
                     ),
                 )
 
-            viewModel = Stage4MapViewModel(repository, localDecisionDao)
+            viewModel = Stage4MapViewModel(repository, localDecisionDao, tileStore)
             val collectJob =
                 backgroundScope.launch(testDispatcher) {
                     viewModel.uiState.collect {}

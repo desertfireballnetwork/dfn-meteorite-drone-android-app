@@ -12,6 +12,9 @@ class BufferRadiusRepository(
         )
 
     fun setBufferRadiusMeters(value: Float) {
+        require(value.isFinite() && value in 1.0f..10_000.0f) {
+            "Buffer radius must be finite and between 1 and 10,000 metres"
+        }
         preferences.edit().putFloat(KEY_BUFFER_RADIUS_METERS, value).apply()
     }
 

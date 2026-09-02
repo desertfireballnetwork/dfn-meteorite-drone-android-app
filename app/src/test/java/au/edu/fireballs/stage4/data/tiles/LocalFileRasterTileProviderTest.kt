@@ -17,9 +17,19 @@ class LocalFileRasterTileProviderTest {
     fun returnsFileBytesWhenPresent() {
         val store = tempStore()
         val bytes = byteArrayOf(1, 2, 3, 4, 5)
-        store.write(1, 2, 3, 4, 5, bytes)
+        store.write(1, 2, 3, 4, 2, bytes)
         val provider = LocalFileRasterTileProvider(store)
         assertArrayEquals(bytes, provider.tile(1, 2, 3, 4, 5))
+    }
+
+    @Test
+    fun convertsXyzToTmsBeforeReading() {
+        val store = tempStore()
+        val bytes = byteArrayOf(9, 8, 7)
+        store.write(1, 2, 3, 4, 2, bytes)
+        val provider = LocalFileRasterTileProvider(store)
+        assertArrayEquals(bytes, provider.tile(1, 2, 3, 4, 5))
+        assertArrayEquals(LocalFileRasterTileProvider.TRANSPARENT_PNG, provider.tile(1, 2, 3, 4, 2))
     }
 
     @Test

@@ -5,9 +5,12 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class OfflineManagerWrapperTest {
-    private class FakeDownloader : OfflineRegionDownloader {
+    private class FakeDownloader(
+        private val failFirst: Boolean = false,
+    ) : OfflineRegionDownloader {
         val downloadedBboxes = mutableListOf<Bbox>()
         var lastProgress = 0.0
+        private var callCount = 0
 
         override fun downloadSatelliteRegion(
             bbox: Bbox,
@@ -18,7 +21,12 @@ class OfflineManagerWrapperTest {
         ) {
             downloadedBboxes.add(bbox)
             progressCb(1.0)
-            completionCb(Result.success(Unit))
+            callCount++
+            if (failFirst && callCount == 1) {
+                completionCb(Result.failure(IllegalStateException("boom")))
+            } else {
+                completionCb(Result.success(Unit))
+            }
         }
     }
 
@@ -58,6 +66,25 @@ class OfflineManagerWrapperTest {
 
         assertEquals(1, fake.downloadedBboxes.size)
         assertEquals(bbox, fake.downloadedBboxes.single())
+    }
+
+    @Test
+    fun failureThenLaterSuccessEmitsExactlyOneFailure() {
+        val failing = FakeDownloader(failFirst = true)
+        val wrapper = OfflineManagerWrapper(failing, maxTilesPerRegion = 100)
+        val bbox = Bbox(minLat = -85.0, minLon = -180.0, maxLat = 85.0, maxLon = 180.0)
+        val completions = mutableListOf<Result<Unit>>()
+
+        wrapper.splitAndDownload(
+            clusterBboxes = listOf(bbox),
+            minZoom = 5,
+            maxZoom = 5,
+            progressCb = {},
+            completionCb = { completions.add(it) },
+        )
+
+        assertEquals(1, completions.size)
+        assertTrue(completions.single().isFailure)
     }
 
     private fun estimateTiles(

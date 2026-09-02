@@ -6,6 +6,8 @@ import kotlin.math.floor
 import kotlin.math.ln
 import kotlin.math.tan
 
+private const val MAX_LATITUDE = 85.05112878
+
 data class Bbox(
     val minLat: Double,
     val minLon: Double,
@@ -23,7 +25,8 @@ object TileMath {
         lat: Double,
         z: Int,
     ): Int {
-        val rad = Math.toRadians(lat)
+        val clamped = lat.coerceIn(-MAX_LATITUDE, MAX_LATITUDE)
+        val rad = Math.toRadians(clamped)
         val merc = ln(tan(rad) + 1.0 / cos(rad))
         return floor((1.0 - merc / PI) / 2.0 * (1 shl z)).toInt().coerceIn(0, (1 shl z) - 1)
     }
@@ -46,6 +49,20 @@ object TileMath {
                 }
             }
         }
+    }
+
+    fun tileCountForBbox(
+        minLat: Double,
+        minLon: Double,
+        maxLat: Double,
+        maxLon: Double,
+        z: Int,
+    ): Long {
+        val minX = tileX(minLon, z).toLong()
+        val maxX = tileX(maxLon, z).toLong()
+        val minY = tileY(maxLat, z).toLong()
+        val maxY = tileY(minLat, z).toLong()
+        return (maxX - minX + 1L) * (maxY - minY + 1L)
     }
 
     fun xyzToTms(coord: TileCoord): TileCoord =

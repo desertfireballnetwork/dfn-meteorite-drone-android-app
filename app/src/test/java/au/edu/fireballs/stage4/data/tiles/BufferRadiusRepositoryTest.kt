@@ -3,6 +3,7 @@ package au.edu.fireballs.stage4.data.tiles
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertThrows
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -50,5 +51,23 @@ class BufferRadiusRepositoryTest {
         val second = BufferRadiusRepository(preferences)
 
         assertEquals(500.0f, second.getBufferRadiusMeters())
+    }
+
+    @Test
+    fun `rejects non finite and out of range values`() {
+        val repository = BufferRadiusRepository(preferences)
+
+        assertThrows(IllegalArgumentException::class.java) {
+            repository.setBufferRadiusMeters(Float.NaN)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            repository.setBufferRadiusMeters(-1.0f)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            repository.setBufferRadiusMeters(0.0f)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            repository.setBufferRadiusMeters(20_000.0f)
+        }
     }
 }

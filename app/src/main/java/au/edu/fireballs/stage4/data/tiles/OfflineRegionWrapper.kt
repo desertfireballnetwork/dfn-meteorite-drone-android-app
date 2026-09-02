@@ -18,6 +18,9 @@ class OfflineRegionWrapper(
     private val offlineRegionManager: OfflineRegionManager = OfflineRegionManager(),
     private val mainHandler: Handler = Handler(Looper.getMainLooper()),
 ) : OfflineRegionDownloader {
+    private var currentRegion: OfflineRegion? = null
+    private var terminal = false
+
     override fun downloadSatelliteRegion(
         bbox: Bbox,
         minZoom: Int,
@@ -25,6 +28,8 @@ class OfflineRegionWrapper(
         progressCb: (Double) -> Unit,
         completionCb: (Result<Unit>) -> Unit,
     ) {
+        terminal = false
+        currentRegion = null
         val definition =
             OfflineRegionTilePyramidDefinition
                 .Builder()
@@ -43,17 +48,19 @@ class OfflineRegionWrapper(
             object : OfflineRegionCreateCallback {
                 override fun run(expected: Expected<String, OfflineRegion>) {
                     if (expected.isError) {
-                        mainHandler.post {
-                            completionCb(
-                                Result.failure(IllegalStateException(expected.error)),
-                            )
+                        completeOnce(mainHandler, completionCb) {
+                            Result.failure(IllegalStateException(expected.error))
                         }
                         return
                     }
                     val region = expected.value ?: return
+                    currentRegion = region
                     region.setOfflineRegionObserver(
                         object : OfflineRegionObserver {
                             override fun statusChanged(status: OfflineRegionStatus) {
+                                if (terminal) {
+                                    return
+                                }
                                 val progress =
                                     if (status.requiredResourceCount > 0) {
                                         status.completedResourceCount.toDouble() /
@@ -61,27 +68,31 @@ class OfflineRegionWrapper(
                                     } else {
                                         0.0
                                     }
-                                mainHandler.post { progressCb(progress) }
+                                mainHandler.post { progressCb(progress.coerceIn(0.0, 1.0)) }
+                                if (status.requiredResourceCount > 0 &&
+                                    status.completedResourceCount >= status.requiredResourceCount
+                                ) {
+                                    completeOnce(mainHandler, completionCb) {
+                                        Result.success(Unit)
+                                    }
+                                }
                             }
 
                             override fun errorOccurred(error: OfflineRegionError) {
-                                mainHandler.post {
-                                    completionCb(
-                                        Result.failure(IllegalStateException(error.message)),
-                                    )
+                                completeOnce(mainHandler, completionCb) {
+                                    Result.failure(IllegalStateException(error.message))
                                 }
                             }
                         },
                     )
                     region.setOfflineRegionDownloadState(OfflineRegionDownloadState.ACTIVE)
-                    mainHandler.post { completionCb(Result.success(Unit)) }
                 }
             },
         )
     }
 
-    fun cancelDownload(region: OfflineRegion) {
-        region.setOfflineRegionDownloadState(OfflineRegionDownloadState.INACTIVE)
+    fun cancelDownload() {
+        currentRegion?.setOfflineRegionDownloadState(OfflineRegionDownloadState.INACTIVE)
     }
 
     fun deleteRegion(regionId: String) {
@@ -100,6 +111,18 @@ class OfflineRegionWrapper(
                 mainHandler.post { callback(Result.success(expected.value.orEmpty())) }
             }
         }
+    }
+
+    private fun completeOnce(
+        handler: Handler,
+        completionCb: (Result<Unit>) -> Unit,
+        result: () -> Result<Unit>,
+    ) {
+        if (terminal) {
+            return
+        }
+        terminal = true
+        handler.post { completionCb(result()) }
     }
 
     companion object {

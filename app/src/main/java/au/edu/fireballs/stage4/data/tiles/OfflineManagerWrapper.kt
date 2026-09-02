@@ -24,7 +24,7 @@ class OfflineManagerWrapper(
         val totalTiles = regions.sumOf { estimateTiles(it, minZoom, maxZoom) }
         var completedTiles = 0L
         var completed = 0
-        var failed = false
+        var terminal = false
         for (region in regions) {
             val regionTiles = estimateTiles(region, minZoom, maxZoom)
             regionWrapper.downloadSatelliteRegion(
@@ -39,12 +39,15 @@ class OfflineManagerWrapper(
                 },
                 { result ->
                     completed++
-                    if (result.isFailure && !failed) {
-                        failed = true
-                        completionCb(result)
+                    if (result.isFailure) {
+                        if (!terminal) {
+                            terminal = true
+                            completionCb(result)
+                        }
                     } else {
                         completedTiles += regionTiles
-                        if (completed == regions.size) {
+                        if (completed == regions.size && !terminal) {
+                            terminal = true
                             completionCb(Result.success(Unit))
                         }
                     }
@@ -83,8 +86,7 @@ class OfflineManagerWrapper(
         for (z in minZoom..maxZoom) {
             total +=
                 TileMath
-                    .tilesForBbox(bbox.minLat, bbox.minLon, bbox.maxLat, bbox.maxLon, z)
-                    .size
+                    .tileCountForBbox(bbox.minLat, bbox.minLon, bbox.maxLat, bbox.maxLon, z)
         }
         return total
     }

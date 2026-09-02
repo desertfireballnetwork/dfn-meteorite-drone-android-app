@@ -10,7 +10,8 @@ class LocalFileRasterTileProvider(
         x: Int,
         y: Int,
     ): ByteArray {
-        val input = tileStore.read(surveyId, candidateId, z, x, y)
+        val tms = TileMath.xyzToTms(TileCoord(z, x, y))
+        val input = tileStore.read(surveyId, candidateId, tms.z, tms.x, tms.y)
         val result =
             when (input) {
                 null -> TRANSPARENT_PNG
