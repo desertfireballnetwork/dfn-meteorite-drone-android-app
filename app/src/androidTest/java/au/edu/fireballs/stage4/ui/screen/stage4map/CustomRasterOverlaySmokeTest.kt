@@ -3,6 +3,7 @@ package au.edu.fireballs.stage4.ui.screen.stage4map
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import au.edu.fireballs.stage4.data.tiles.LocalFileRasterTileProvider
 import au.edu.fireballs.stage4.data.tiles.TileStore
 import com.mapbox.maps.extension.compose.animation.viewport.rememberMapViewportState
 import org.junit.Rule
@@ -53,7 +54,7 @@ class CustomRasterOverlaySmokeTest {
     @Test
     fun customRasterOverlay_withTilesForSurvey_noCrash() {
         val store = TileStore(Files.createTempDirectory("tiles").toFile())
-        store.write(1L, 2L, 0, 0, 0, byteArrayOf(1))
+        store.write(1L, 2L, 0, 0, 0, LocalFileRasterTileProvider.TRANSPARENT_PNG)
         composeRule.setContent {
             MapHost(
                 mapViewportState = rememberMapViewportState(),

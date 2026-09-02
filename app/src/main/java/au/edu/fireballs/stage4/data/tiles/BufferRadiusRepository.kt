@@ -6,10 +6,12 @@ class BufferRadiusRepository(
     private val preferences: SharedPreferences,
 ) {
     fun getBufferRadiusMeters(): Float =
-        preferences.getFloat(
-            KEY_BUFFER_RADIUS_METERS,
-            DEFAULT_BUFFER_RADIUS_METERS,
-        )
+        preferences
+            .getFloat(
+                KEY_BUFFER_RADIUS_METERS,
+                DEFAULT_BUFFER_RADIUS_METERS,
+            ).takeIf { it.isFinite() && it in 1.0f..10_000.0f }
+            ?: DEFAULT_BUFFER_RADIUS_METERS
 
     fun setBufferRadiusMeters(value: Float) {
         require(value.isFinite() && value in 1.0f..10_000.0f) {

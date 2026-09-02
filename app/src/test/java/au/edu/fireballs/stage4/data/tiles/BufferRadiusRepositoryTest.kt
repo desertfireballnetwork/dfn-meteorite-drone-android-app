@@ -70,4 +70,36 @@ class BufferRadiusRepositoryTest {
             repository.setBufferRadiusMeters(20_000.0f)
         }
     }
+
+    @Test
+    fun `invalid persisted value falls back to default`() {
+        val repository = BufferRadiusRepository(preferences)
+
+        preferences
+            .edit()
+            .putFloat(BufferRadiusRepository.KEY_BUFFER_RADIUS_METERS, Float.NaN)
+            .commit()
+        assertEquals(
+            BufferRadiusRepository.DEFAULT_BUFFER_RADIUS_METERS,
+            repository.getBufferRadiusMeters(),
+        )
+
+        preferences
+            .edit()
+            .putFloat(BufferRadiusRepository.KEY_BUFFER_RADIUS_METERS, 0.0f)
+            .commit()
+        assertEquals(
+            BufferRadiusRepository.DEFAULT_BUFFER_RADIUS_METERS,
+            repository.getBufferRadiusMeters(),
+        )
+
+        preferences
+            .edit()
+            .putFloat(BufferRadiusRepository.KEY_BUFFER_RADIUS_METERS, 20_000.0f)
+            .commit()
+        assertEquals(
+            BufferRadiusRepository.DEFAULT_BUFFER_RADIUS_METERS,
+            repository.getBufferRadiusMeters(),
+        )
+    }
 }

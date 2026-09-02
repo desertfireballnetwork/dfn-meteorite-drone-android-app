@@ -1,5 +1,7 @@
 package au.edu.fireballs.stage4.data.tiles
 
+import java.io.InputStream
+
 class LocalFileRasterTileProvider(
     private val tileStore: TileStore,
 ) {
@@ -15,9 +17,25 @@ class LocalFileRasterTileProvider(
         val result =
             when (input) {
                 null -> TRANSPARENT_PNG
-                else -> input.use { it.readBytes() }
+                else -> input.use { readBounded(it) }
             }
         return result
+    }
+
+    private fun readBounded(input: InputStream): ByteArray {
+        val buffer = ByteArray(TileStore.MAX_TILE_BYTES + 1)
+        var offset = 0
+        while (offset <= TileStore.MAX_TILE_BYTES) {
+            val read = input.read(buffer, offset, buffer.size - offset)
+            if (read < 0) {
+                break
+            }
+            offset += read
+        }
+        if (offset > TileStore.MAX_TILE_BYTES) {
+            return TRANSPARENT_PNG
+        }
+        return buffer.copyOf(offset)
     }
 
     companion object {

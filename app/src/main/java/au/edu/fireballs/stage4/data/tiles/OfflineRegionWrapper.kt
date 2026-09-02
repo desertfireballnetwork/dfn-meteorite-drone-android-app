@@ -18,8 +18,7 @@ class OfflineRegionWrapper(
     private val offlineRegionManager: OfflineRegionManager = OfflineRegionManager(),
     private val mainHandler: Handler = Handler(Looper.getMainLooper()),
 ) : OfflineRegionDownloader {
-    private var currentRegion: OfflineRegion? = null
-    private var terminal = false
+    private var activeOperation: RegionOperation? = null
 
     override fun downloadSatelliteRegion(
         bbox: Bbox,
@@ -28,8 +27,8 @@ class OfflineRegionWrapper(
         progressCb: (Double) -> Unit,
         completionCb: (Result<Unit>) -> Unit,
     ) {
-        terminal = false
-        currentRegion = null
+        val operation = RegionOperation(mainHandler, progressCb, completionCb)
+        activeOperation = operation
         val definition =
             OfflineRegionTilePyramidDefinition
                 .Builder()
@@ -48,17 +47,15 @@ class OfflineRegionWrapper(
             object : OfflineRegionCreateCallback {
                 override fun run(expected: Expected<String, OfflineRegion>) {
                     if (expected.isError) {
-                        completeOnce(mainHandler, completionCb) {
-                            Result.failure(IllegalStateException(expected.error))
-                        }
+                        operation.complete(Result.failure(IllegalStateException(expected.error)))
                         return
                     }
                     val region = expected.value ?: return
-                    currentRegion = region
+                    operation.region = region
                     region.setOfflineRegionObserver(
                         object : OfflineRegionObserver {
                             override fun statusChanged(status: OfflineRegionStatus) {
-                                if (terminal) {
+                                if (operation.isTerminal) {
                                     return
                                 }
                                 val progress =
@@ -68,20 +65,20 @@ class OfflineRegionWrapper(
                                     } else {
                                         0.0
                                     }
-                                mainHandler.post { progressCb(progress.coerceIn(0.0, 1.0)) }
+                                operation.postProgress(progress.coerceIn(0.0, 1.0))
                                 if (status.requiredResourceCount > 0 &&
                                     status.completedResourceCount >= status.requiredResourceCount
                                 ) {
-                                    completeOnce(mainHandler, completionCb) {
-                                        Result.success(Unit)
-                                    }
+                                    operation.complete(Result.success(Unit))
                                 }
                             }
 
                             override fun errorOccurred(error: OfflineRegionError) {
-                                completeOnce(mainHandler, completionCb) {
-                                    Result.failure(IllegalStateException(error.message))
-                                }
+                                operation.complete(
+                                    Result.failure(
+                                        IllegalStateException(error.message),
+                                    ),
+                                )
                             }
                         },
                     )
@@ -92,7 +89,7 @@ class OfflineRegionWrapper(
     }
 
     fun cancelDownload() {
-        currentRegion?.setOfflineRegionDownloadState(OfflineRegionDownloadState.INACTIVE)
+        activeOperation?.cancel()
     }
 
     fun deleteRegion(regionId: String) {
@@ -113,16 +110,30 @@ class OfflineRegionWrapper(
         }
     }
 
-    private fun completeOnce(
-        handler: Handler,
-        completionCb: (Result<Unit>) -> Unit,
-        result: () -> Result<Unit>,
+    private class RegionOperation(
+        private val mainHandler: Handler,
+        private val progressCb: (Double) -> Unit,
+        private val completionCb: (Result<Unit>) -> Unit,
     ) {
-        if (terminal) {
-            return
+        var region: OfflineRegion? = null
+        var isTerminal: Boolean = false
+            private set
+
+        fun postProgress(progress: Double) {
+            mainHandler.post { progressCb(progress) }
         }
-        terminal = true
-        handler.post { completionCb(result()) }
+
+        fun complete(result: Result<Unit>) {
+            if (isTerminal) {
+                return
+            }
+            isTerminal = true
+            mainHandler.post { completionCb(result) }
+        }
+
+        fun cancel() {
+            region?.setOfflineRegionDownloadState(OfflineRegionDownloadState.INACTIVE)
+        }
     }
 
     companion object {

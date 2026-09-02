@@ -1,6 +1,7 @@
 package au.edu.fireballs.stage4.data.tiles
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -85,6 +86,66 @@ class OfflineManagerWrapperTest {
 
         assertEquals(1, completions.size)
         assertTrue(completions.single().isFailure)
+    }
+
+    @Test
+    fun nonFiniteBboxIsRejected() {
+        val wrapper = OfflineManagerWrapper(FakeDownloader(), maxTilesPerRegion = 100)
+        assertThrows(IllegalArgumentException::class.java) {
+            wrapper.splitAndDownload(
+                clusterBboxes = listOf(Bbox(Double.NaN, 0.0, 1.0, 1.0)),
+                minZoom = 0,
+                maxZoom = 5,
+                progressCb = {},
+                completionCb = {},
+            )
+        }
+    }
+
+    @Test
+    fun unorderedBboxIsRejected() {
+        val wrapper = OfflineManagerWrapper(FakeDownloader(), maxTilesPerRegion = 100)
+        assertThrows(IllegalArgumentException::class.java) {
+            wrapper.splitAndDownload(
+                clusterBboxes =
+                    listOf(
+                        Bbox(minLat = 10.0, minLon = 0.0, maxLat = -10.0, maxLon = 1.0),
+                    ),
+                minZoom = 0,
+                maxZoom = 5,
+                progressCb = {},
+                completionCb = {},
+            )
+        }
+    }
+
+    @Test
+    fun invertedZoomsAreRejected() {
+        val wrapper = OfflineManagerWrapper(FakeDownloader(), maxTilesPerRegion = 100)
+        assertThrows(IllegalArgumentException::class.java) {
+            wrapper.splitAndDownload(
+                clusterBboxes = listOf(Bbox(-1.0, -1.0, 1.0, 1.0)),
+                minZoom = 10,
+                maxZoom = 5,
+                progressCb = {},
+                completionCb = {},
+            )
+        }
+    }
+
+    @Test
+    fun tooManyClustersAreRejected() {
+        val wrapper = OfflineManagerWrapper(FakeDownloader(), maxTilesPerRegion = 100)
+        val clusters = List(101) { Bbox(-1.0, -1.0, 1.0, 1.0) }
+        assertThrows(IllegalArgumentException::class.java) {
+            wrapper.splitAndDownload(
+                clusterBboxes = clusters,
+                minZoom = 0,
+                maxZoom = 5,
+                progressCb = {},
+                completionCb = {},
+            )
+        }
     }
 
     private fun estimateTiles(

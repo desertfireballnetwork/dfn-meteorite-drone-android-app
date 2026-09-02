@@ -13,46 +13,115 @@ class OfflineManagerWrapper(
         progressCb: (Double) -> Unit,
         completionCb: (Result<Unit>) -> Unit,
     ) {
+        validateZooms(minZoom, maxZoom)
+        require(maxTilesPerRegion > 0) { "maxTilesPerRegion must be positive" }
+        require(clusterBboxes.size <= MAX_CLUSTERS) { "Too many clusters" }
+        clusterBboxes.forEach(::validateBbox)
+
         val regions = mutableListOf<Bbox>()
         for (bbox in clusterBboxes) {
-            collectRegions(bbox, minZoom, maxZoom, regions)
+            collectRegions(bbox, minZoom, maxZoom, regions, depth = 0)
         }
         if (regions.isEmpty()) {
             completionCb(Result.success(Unit))
             return
         }
         val totalTiles = regions.sumOf { estimateTiles(it, minZoom, maxZoom) }
-        var completedTiles = 0L
+        if (regions.size > MAX_REGIONS || totalTiles > MAX_TOTAL_TILES) {
+            completionCb(
+                Result.failure(
+                    IllegalStateException("Offline plan exceeds configured limits"),
+                ),
+            )
+            return
+        }
+
         var completed = 0
+        var completedTiles = 0L
         var terminal = false
-        for (region in regions) {
+        var lastProgress = 0.0
+
+        fun report(progress: Double) {
+            if (progress > lastProgress) {
+                lastProgress = progress
+                progressCb(progress.coerceIn(0.0, 1.0))
+            }
+        }
+
+        fun startNext() {
+            if (terminal || completed >= regions.size) {
+                return
+            }
+            val region = regions[completed]
             val regionTiles = estimateTiles(region, minZoom, maxZoom)
             regionWrapper.downloadSatelliteRegion(
                 region,
                 minZoom,
                 maxZoom,
                 { progress ->
-                    val overall =
+                    report(
                         (completedTiles + regionTiles * progress.coerceIn(0.0, 1.0)) /
-                            totalTiles.toDouble()
-                    progressCb(overall.coerceIn(0.0, 1.0))
+                            totalTiles.toDouble(),
+                    )
                 },
                 { result ->
-                    completed++
+                    if (terminal) {
+                        return@downloadSatelliteRegion
+                    }
                     if (result.isFailure) {
-                        if (!terminal) {
-                            terminal = true
-                            completionCb(result)
-                        }
+                        terminal = true
+                        completionCb(result)
+                        return@downloadSatelliteRegion
+                    }
+                    completedTiles += regionTiles
+                    completed++
+                    report(completedTiles.toDouble() / totalTiles.toDouble())
+                    if (completed == regions.size) {
+                        terminal = true
+                        completionCb(Result.success(Unit))
                     } else {
-                        completedTiles += regionTiles
-                        if (completed == regions.size && !terminal) {
-                            terminal = true
-                            completionCb(Result.success(Unit))
-                        }
+                        startNext()
                     }
                 },
             )
+        }
+        startNext()
+    }
+
+    private fun validateZooms(
+        minZoom: Int,
+        maxZoom: Int,
+    ) {
+        require(minZoom in 0..MAX_ZOOM && maxZoom in 0..MAX_ZOOM) { "Zoom out of range" }
+        require(minZoom <= maxZoom) { "minZoom must not exceed maxZoom" }
+    }
+
+    private fun validateBbox(bbox: Bbox) {
+        require(
+            bbox.minLat.isFinite() &&
+                bbox.minLon.isFinite() &&
+                bbox.maxLat.isFinite() &&
+                bbox.maxLon.isFinite(),
+        ) {
+            "Bbox coordinates must be finite"
+        }
+        require(
+            bbox.minLat in -90.0..90.0 &&
+                bbox.maxLat in -90.0..90.0,
+        ) {
+            "Latitude out of range"
+        }
+        require(
+            bbox.minLon in -180.0..180.0 &&
+                bbox.maxLon in -180.0..180.0,
+        ) {
+            "Longitude out of range"
+        }
+        require(
+            bbox.minLat <= bbox.maxLat &&
+                bbox.minLon <= bbox.maxLon,
+        ) {
+            "Bbox must be ordered and must not cross the antimeridian"
         }
     }
 
@@ -61,7 +130,12 @@ class OfflineManagerWrapper(
         minZoom: Int,
         maxZoom: Int,
         out: MutableList<Bbox>,
+        depth: Int,
     ) {
+        if (depth > MAX_SPLIT_DEPTH || out.size >= MAX_REGIONS) {
+            out.add(bbox)
+            return
+        }
         if (estimateTiles(bbox, minZoom, maxZoom) <= maxTilesPerRegion ||
             bbox.minLat == bbox.maxLat ||
             bbox.minLon == bbox.maxLon
@@ -71,10 +145,34 @@ class OfflineManagerWrapper(
         }
         val midLat = (bbox.minLat + bbox.maxLat) / 2.0
         val midLon = (bbox.minLon + bbox.maxLon) / 2.0
-        collectRegions(Bbox(bbox.minLat, bbox.minLon, midLat, midLon), minZoom, maxZoom, out)
-        collectRegions(Bbox(bbox.minLat, midLon, midLat, bbox.maxLon), minZoom, maxZoom, out)
-        collectRegions(Bbox(midLat, bbox.minLon, bbox.maxLat, midLon), minZoom, maxZoom, out)
-        collectRegions(Bbox(midLat, midLon, bbox.maxLat, bbox.maxLon), minZoom, maxZoom, out)
+        collectRegions(
+            Bbox(bbox.minLat, bbox.minLon, midLat, midLon),
+            minZoom,
+            maxZoom,
+            out,
+            depth + 1,
+        )
+        collectRegions(
+            Bbox(bbox.minLat, midLon, midLat, bbox.maxLon),
+            minZoom,
+            maxZoom,
+            out,
+            depth + 1,
+        )
+        collectRegions(
+            Bbox(midLat, bbox.minLon, bbox.maxLat, midLon),
+            minZoom,
+            maxZoom,
+            out,
+            depth + 1,
+        )
+        collectRegions(
+            Bbox(midLat, midLon, bbox.maxLat, bbox.maxLon),
+            minZoom,
+            maxZoom,
+            out,
+            depth + 1,
+        )
     }
 
     private fun estimateTiles(
@@ -89,5 +187,13 @@ class OfflineManagerWrapper(
                     .tileCountForBbox(bbox.minLat, bbox.minLon, bbox.maxLat, bbox.maxLon, z)
         }
         return total
+    }
+
+    companion object {
+        private const val MAX_ZOOM = 22
+        private const val MAX_CLUSTERS = 100
+        private const val MAX_REGIONS = 256
+        private const val MAX_SPLIT_DEPTH = 12
+        private const val MAX_TOTAL_TILES = 2_000_000L
     }
 }
