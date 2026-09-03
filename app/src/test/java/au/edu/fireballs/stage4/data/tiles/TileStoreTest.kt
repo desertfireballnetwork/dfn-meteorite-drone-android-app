@@ -86,4 +86,19 @@ class TileStoreTest {
             store.write(-1, 2, 3, 4, 5, byteArrayOf(1))
         }
     }
+
+    @Test
+    fun accountScopesAreIsolated() {
+        val base = Files.createTempDirectory("tiles-scope").toFile()
+        val storeA = TileStore(base) { "account-a" }
+        val storeB = TileStore(base) { "account-b" }
+
+        storeA.write(1, 2, 3, 4, 5, byteArrayOf(1, 2, 3))
+
+        assertTrue(storeA.contains(1, 2, 3, 4, 5))
+        assertFalse(storeB.contains(1, 2, 3, 4, 5))
+
+        storeA.deleteAll()
+        assertFalse(storeA.contains(1, 2, 3, 4, 5))
+    }
 }

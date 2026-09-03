@@ -1,6 +1,7 @@
 package au.edu.fireballs.stage4.data.remote
 
 import au.edu.fireballs.stage4.data.local.Stage4Database
+import au.edu.fireballs.stage4.data.tiles.TileStore
 import au.edu.fireballs.stage4.di.IoDispatcher
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.withContext
@@ -15,6 +16,7 @@ class AccountManager
         private val cookieJar: PersistentCookieJar,
         private val baseUrl: HttpUrl,
         private val database: Stage4Database,
+        private val tileStore: TileStore,
         @IoDispatcher private val ioDispatcher: CoroutineDispatcher,
     ) {
         fun isSignedIn(): Boolean {
@@ -26,5 +28,6 @@ class AccountManager
             withContext(ioDispatcher) {
                 cookieJar.clear()
                 database.clearAllTables()
+                tileStore.deleteAll()
             }
     }

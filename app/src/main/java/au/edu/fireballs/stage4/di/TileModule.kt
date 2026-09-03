@@ -1,6 +1,8 @@
 package au.edu.fireballs.stage4.di
 
 import android.content.Context
+import au.edu.fireballs.stage4.data.remote.SessionAccountScopeProvider
+import au.edu.fireballs.stage4.data.tiles.AccountScopeProvider
 import au.edu.fireballs.stage4.data.tiles.BufferRadiusRepository
 import au.edu.fireballs.stage4.data.tiles.LocalFileRasterTileProvider
 import au.edu.fireballs.stage4.data.tiles.OfflineManagerWrapper
@@ -23,9 +25,16 @@ object TileModule {
 
     @Provides
     @Singleton
+    fun provideAccountScopeProvider(
+        sessionAccountScopeProvider: SessionAccountScopeProvider,
+    ): AccountScopeProvider = sessionAccountScopeProvider
+
+    @Provides
+    @Singleton
     fun provideTileStore(
         @ApplicationContext context: Context,
-    ): TileStore = TileStore(File(context.filesDir, TILE_BASE_DIR))
+        accountScopeProvider: AccountScopeProvider,
+    ): TileStore = TileStore(File(context.noBackupFilesDir, TILE_BASE_DIR), accountScopeProvider)
 
     @Provides
     @Singleton

@@ -45,10 +45,13 @@ fun CustomRasterOverlay(
         var disposed = false
 
         fun install(style: MapboxStyleManager) {
-            if (disposed || styleRef != null) {
+            if (disposed || styleRef === style) {
                 return
             }
-            styleRef = style
+            styleRef?.let { previousStyle ->
+                previousStyle.removeStyleLayer(CUSTOM_RASTER_LAYER_ID)
+                previousStyle.removeStyleSource(CUSTOM_RASTER_SOURCE_ID)
+            }
             lateinit var source: CustomRasterSource
             source =
                 customRasterSource(CUSTOM_RASTER_SOURCE_ID) {
@@ -84,6 +87,7 @@ fun CustomRasterOverlay(
                 }
             source.bindTo(style)
             RasterLayer(CUSTOM_RASTER_LAYER_ID, CUSTOM_RASTER_SOURCE_ID).bindTo(style)
+            styleRef = style
         }
 
         map.style?.let { install(it) }

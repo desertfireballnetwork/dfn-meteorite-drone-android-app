@@ -86,6 +86,33 @@ class BufferRadiusRepositoryTest {
 
         preferences
             .edit()
+            .putFloat(BufferRadiusRepository.KEY_BUFFER_RADIUS_METERS, Float.POSITIVE_INFINITY)
+            .commit()
+        assertEquals(
+            BufferRadiusRepository.DEFAULT_BUFFER_RADIUS_METERS,
+            repository.getBufferRadiusMeters(),
+        )
+
+        preferences
+            .edit()
+            .putFloat(BufferRadiusRepository.KEY_BUFFER_RADIUS_METERS, Float.NEGATIVE_INFINITY)
+            .commit()
+        assertEquals(
+            BufferRadiusRepository.DEFAULT_BUFFER_RADIUS_METERS,
+            repository.getBufferRadiusMeters(),
+        )
+
+        preferences
+            .edit()
+            .putFloat(BufferRadiusRepository.KEY_BUFFER_RADIUS_METERS, -5.0f)
+            .commit()
+        assertEquals(
+            BufferRadiusRepository.DEFAULT_BUFFER_RADIUS_METERS,
+            repository.getBufferRadiusMeters(),
+        )
+
+        preferences
+            .edit()
             .putFloat(BufferRadiusRepository.KEY_BUFFER_RADIUS_METERS, 0.0f)
             .commit()
         assertEquals(

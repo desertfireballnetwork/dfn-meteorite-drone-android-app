@@ -148,6 +148,28 @@ class OfflineManagerWrapperTest {
         }
     }
 
+    @Test
+    fun degenerateOversizedRegionFailsInsteadOfViolatingCap() {
+        val fake = FakeDownloader()
+        val wrapper = OfflineManagerWrapper(fake, maxTilesPerRegion = 10)
+        val completions = mutableListOf<Result<Unit>>()
+
+        wrapper.splitAndDownload(
+            clusterBboxes =
+                listOf(
+                    Bbox(minLat = 0.0, minLon = -180.0, maxLat = 0.0, maxLon = 180.0),
+                ),
+            minZoom = 5,
+            maxZoom = 5,
+            progressCb = {},
+            completionCb = { completions.add(it) },
+        )
+
+        assertEquals(1, completions.size)
+        assertTrue(completions.single().isFailure)
+        assertTrue(fake.downloadedBboxes.isEmpty())
+    }
+
     private fun estimateTiles(
         bbox: Bbox,
         minZoom: Int,

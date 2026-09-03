@@ -19,8 +19,13 @@ class OfflineManagerWrapper(
         clusterBboxes.forEach(::validateBbox)
 
         val regions = mutableListOf<Bbox>()
-        for (bbox in clusterBboxes) {
-            collectRegions(bbox, minZoom, maxZoom, regions, depth = 0)
+        try {
+            for (bbox in clusterBboxes) {
+                collectRegions(bbox, minZoom, maxZoom, regions, depth = 0)
+            }
+        } catch (error: IllegalStateException) {
+            completionCb(Result.failure(error))
+            return
         }
         if (regions.isEmpty()) {
             completionCb(Result.success(Unit))
@@ -132,14 +137,21 @@ class OfflineManagerWrapper(
         out: MutableList<Bbox>,
         depth: Int,
     ) {
-        if (depth > MAX_SPLIT_DEPTH || out.size >= MAX_REGIONS) {
+        if (bbox.minLat == bbox.maxLat || bbox.minLon == bbox.maxLon) {
+            check(estimateTiles(bbox, minZoom, maxZoom) <= maxTilesPerRegion) {
+                "Unable to split degenerate offline region below the configured tile cap"
+            }
             out.add(bbox)
             return
         }
-        if (estimateTiles(bbox, minZoom, maxZoom) <= maxTilesPerRegion ||
-            bbox.minLat == bbox.maxLat ||
-            bbox.minLon == bbox.maxLon
-        ) {
+        if (depth > MAX_SPLIT_DEPTH || out.size >= MAX_REGIONS) {
+            check(estimateTiles(bbox, minZoom, maxZoom) <= maxTilesPerRegion) {
+                "Unable to split offline region below the configured tile cap"
+            }
+            out.add(bbox)
+            return
+        }
+        if (estimateTiles(bbox, minZoom, maxZoom) <= maxTilesPerRegion) {
             out.add(bbox)
             return
         }

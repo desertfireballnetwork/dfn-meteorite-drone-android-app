@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import au.edu.fireballs.stage4.data.local.Stage4Database
+import au.edu.fireballs.stage4.data.tiles.TileStore
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
 import okhttp3.Cookie
@@ -16,6 +17,7 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import java.io.File
 
 @RunWith(RobolectricTestRunner::class)
 class AccountManagerTest {
@@ -57,6 +59,7 @@ class AccountManagerTest {
                 cookieJar = cookieJar,
                 baseUrl = testUrl,
                 database = database,
+                tileStore = TileStore(File.createTempFile("am-tiles", "").parentFile),
                 ioDispatcher = testDispatcher,
             )
     }

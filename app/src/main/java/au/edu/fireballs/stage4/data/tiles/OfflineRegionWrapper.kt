@@ -13,6 +13,7 @@ import com.mapbox.maps.OfflineRegionManager
 import com.mapbox.maps.OfflineRegionObserver
 import com.mapbox.maps.OfflineRegionStatus
 import com.mapbox.maps.OfflineRegionTilePyramidDefinition
+import java.util.concurrent.CancellationException
 
 class OfflineRegionWrapper(
     private val offlineRegionManager: OfflineRegionManager = OfflineRegionManager(),
@@ -27,6 +28,9 @@ class OfflineRegionWrapper(
         progressCb: (Double) -> Unit,
         completionCb: (Result<Unit>) -> Unit,
     ) {
+        check(activeOperation?.isTerminal != false) {
+            "An offline region download is already active"
+        }
         val operation = RegionOperation(mainHandler, progressCb, completionCb)
         activeOperation = operation
         val definition =
@@ -50,7 +54,18 @@ class OfflineRegionWrapper(
                         operation.complete(Result.failure(IllegalStateException(expected.error)))
                         return
                     }
-                    val region = expected.value ?: return
+                    val region =
+                        expected.value
+                            ?: run {
+                                operation.complete(
+                                    Result.failure(
+                                        IllegalStateException(
+                                            "Mapbox returned no offline region",
+                                        ),
+                                    ),
+                                )
+                                return
+                            }
                     operation.region = region
                     region.setOfflineRegionObserver(
                         object : OfflineRegionObserver {
@@ -82,7 +97,7 @@ class OfflineRegionWrapper(
                             }
                         },
                     )
-                    region.setOfflineRegionDownloadState(OfflineRegionDownloadState.ACTIVE)
+                    operation.activateIfActive()
                 }
             },
         )
@@ -115,11 +130,20 @@ class OfflineRegionWrapper(
         private val progressCb: (Double) -> Unit,
         private val completionCb: (Result<Unit>) -> Unit,
     ) {
+        @Volatile
         var region: OfflineRegion? = null
+
+        @Volatile
         var isTerminal: Boolean = false
             private set
 
+        @Volatile
+        private var cancelled = false
+
         fun postProgress(progress: Double) {
+            if (isTerminal || cancelled) {
+                return
+            }
             mainHandler.post { progressCb(progress) }
         }
 
@@ -132,7 +156,20 @@ class OfflineRegionWrapper(
         }
 
         fun cancel() {
+            if (isTerminal) {
+                return
+            }
+            cancelled = true
             region?.setOfflineRegionDownloadState(OfflineRegionDownloadState.INACTIVE)
+            complete(Result.failure(CancellationException("Offline region download cancelled")))
+        }
+
+        fun activateIfActive() {
+            if (cancelled || isTerminal) {
+                region?.setOfflineRegionDownloadState(OfflineRegionDownloadState.INACTIVE)
+                return
+            }
+            region?.setOfflineRegionDownloadState(OfflineRegionDownloadState.ACTIVE)
         }
     }
 

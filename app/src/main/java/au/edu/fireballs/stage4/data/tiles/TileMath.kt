@@ -73,8 +73,22 @@ object TileMath {
         lon: Double,
         radiusMeters: Double,
     ): Bbox {
+        require(lat.isFinite() && lat in -MAX_LATITUDE..MAX_LATITUDE) {
+            "Latitude must be finite and within Web Mercator bounds"
+        }
+        require(lon.isFinite() && lon in -180.0..180.0) {
+            "Longitude must be finite and within geographic bounds"
+        }
+        require(radiusMeters.isFinite() && radiusMeters >= 0.0) {
+            "Radius must be finite and non-negative"
+        }
         val latDelta = radiusMeters / 111_000.0
         val lonDelta = radiusMeters / (111_000.0 * cos(Math.toRadians(lat)))
-        return Bbox(lat - latDelta, lon - lonDelta, lat + latDelta, lon + lonDelta)
+        return Bbox(
+            (lat - latDelta).coerceAtLeast(-MAX_LATITUDE),
+            (lon - lonDelta).coerceAtLeast(-180.0),
+            (lat + latDelta).coerceAtMost(MAX_LATITUDE),
+            (lon + lonDelta).coerceAtMost(180.0),
+        )
     }
 }

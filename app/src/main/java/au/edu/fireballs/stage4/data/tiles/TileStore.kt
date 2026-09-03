@@ -6,6 +6,7 @@ import java.io.InputStream
 
 class TileStore(
     private val baseDir: File,
+    private val scopeProvider: AccountScopeProvider = NoScopeProvider,
 ) {
     fun contains(
         surveyId: Long,
@@ -46,11 +47,18 @@ class TileStore(
         }
     }
 
-    fun surveyTilesDirectory(surveyId: Long): File = File(baseDir, surveyId.toString())
+    fun surveyTilesDirectory(surveyId: Long): File {
+        require(surveyId >= 0L) { "Survey id must be non-negative" }
+        return File(scopeDir(), surveyId.toString())
+    }
 
-    fun hasSurvey(surveyId: Long): Boolean = surveyTilesDirectory(surveyId).isDirectory
+    fun hasSurvey(surveyId: Long): Boolean {
+        require(surveyId >= 0L) { "Survey id must be non-negative" }
+        return surveyTilesDirectory(surveyId).isDirectory
+    }
 
     fun deleteSurveyTiles(surveyId: Long) {
+        require(surveyId >= 0L) { "Survey id must be non-negative" }
         surveyTilesDirectory(surveyId).deleteRecursively()
     }
 
@@ -71,16 +79,31 @@ class TileStore(
         require(x in 0 until span && y in 0 until span) { "Tile coordinates out of range" }
     }
 
+    private fun scopeDir(): File {
+        val scope = scopeProvider.currentScope()
+        if (scope.isEmpty()) {
+            return baseDir
+        }
+        require(scope.none { it == '/' || it == '\\' }) {
+            "Invalid tile storage scope"
+        }
+        return File(baseDir, scope)
+    }
+
     private fun tileFile(
         surveyId: Long,
         candidateId: Long,
         z: Int,
         x: Int,
         y: Int,
-    ): File = File(baseDir, "$surveyId/$candidateId/$z/$x/$y.png")
+    ): File = File(scopeDir(), "$surveyId/$candidateId/$z/$x/$y.png")
 
     companion object {
         const val MAX_TILE_BYTES = 1_048_576
         private const val MAX_TILE_ZOOM = 30
+
+        private object NoScopeProvider : AccountScopeProvider {
+            override fun currentScope(): String = ""
+        }
     }
 }
