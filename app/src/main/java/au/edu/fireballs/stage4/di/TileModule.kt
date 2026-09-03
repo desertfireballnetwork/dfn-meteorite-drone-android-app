@@ -4,7 +4,6 @@ import android.content.Context
 import au.edu.fireballs.stage4.data.remote.SessionAccountScopeProvider
 import au.edu.fireballs.stage4.data.tiles.AccountScopeProvider
 import au.edu.fireballs.stage4.data.tiles.BufferRadiusRepository
-import au.edu.fireballs.stage4.data.tiles.LocalFileRasterTileProvider
 import au.edu.fireballs.stage4.data.tiles.OfflineManagerWrapper
 import au.edu.fireballs.stage4.data.tiles.OfflineRegionDownloader
 import au.edu.fireballs.stage4.data.tiles.OfflineRegionWrapper
@@ -60,9 +59,4 @@ object TileModule {
     fun provideOfflineManagerWrapper(
         offlineRegionDownloader: OfflineRegionDownloader,
     ): OfflineManagerWrapper = OfflineManagerWrapper(offlineRegionDownloader)
-
-    @Provides
-    @Singleton
-    fun provideLocalFileRasterTileProvider(tileStore: TileStore): LocalFileRasterTileProvider =
-        LocalFileRasterTileProvider(tileStore)
 }

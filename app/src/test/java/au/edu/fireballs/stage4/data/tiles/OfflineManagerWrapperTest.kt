@@ -8,6 +8,7 @@ import org.junit.Test
 class OfflineManagerWrapperTest {
     private class FakeDownloader(
         private val failFirst: Boolean = false,
+        private val duplicateCompletions: Boolean = false,
     ) : OfflineRegionDownloader {
         val downloadedBboxes = mutableListOf<Bbox>()
         var lastProgress = 0.0
@@ -26,6 +27,9 @@ class OfflineManagerWrapperTest {
             if (failFirst && callCount == 1) {
                 completionCb(Result.failure(IllegalStateException("boom")))
             } else {
+                completionCb(Result.success(Unit))
+            }
+            if (duplicateCompletions) {
                 completionCb(Result.success(Unit))
             }
         }
@@ -168,6 +172,25 @@ class OfflineManagerWrapperTest {
         assertEquals(1, completions.size)
         assertTrue(completions.single().isFailure)
         assertTrue(fake.downloadedBboxes.isEmpty())
+    }
+
+    @Test
+    fun duplicateCompletionEmitsExactlyOneOverallCompletion() {
+        val fake = FakeDownloader(duplicateCompletions = true)
+        val wrapper = OfflineManagerWrapper(fake, maxTilesPerRegion = 100)
+        val bbox = Bbox(minLat = -0.001, minLon = -0.001, maxLat = 0.001, maxLon = 0.001)
+        val completions = mutableListOf<Result<Unit>>()
+
+        wrapper.splitAndDownload(
+            clusterBboxes = listOf(bbox),
+            minZoom = 0,
+            maxZoom = 2,
+            progressCb = {},
+            completionCb = { completions.add(it) },
+        )
+
+        assertEquals(1, completions.size)
+        assertTrue(completions.single().isSuccess)
     }
 
     private fun estimateTiles(

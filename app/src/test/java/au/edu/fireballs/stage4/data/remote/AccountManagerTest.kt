@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import au.edu.fireballs.stage4.data.local.Stage4Database
+import au.edu.fireballs.stage4.data.tiles.OfflineRegionWrapper
 import au.edu.fireballs.stage4.data.tiles.TileStore
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
@@ -16,6 +17,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.mockito.Mockito.mock
 import org.robolectric.RobolectricTestRunner
 import java.io.File
 
@@ -60,6 +62,7 @@ class AccountManagerTest {
                 baseUrl = testUrl,
                 database = database,
                 tileStore = TileStore(File.createTempFile("am-tiles", "").parentFile),
+                offlineRegionWrapper = mock(OfflineRegionWrapper::class.java),
                 ioDispatcher = testDispatcher,
             )
     }

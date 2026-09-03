@@ -14,6 +14,7 @@ import com.mapbox.maps.OfflineRegionObserver
 import com.mapbox.maps.OfflineRegionStatus
 import com.mapbox.maps.OfflineRegionTilePyramidDefinition
 import java.util.concurrent.CancellationException
+import java.util.concurrent.atomic.AtomicBoolean
 
 class OfflineRegionWrapper(
     private val offlineRegionManager: OfflineRegionManager = OfflineRegionManager(),
@@ -125,6 +126,16 @@ class OfflineRegionWrapper(
         }
     }
 
+    fun purgeAllRegions() {
+        offlineRegionManager.getOfflineRegions { expected ->
+            if (!expected.isError) {
+                expected.value?.forEach { region ->
+                    region.purge { }
+                }
+            }
+        }
+    }
+
     private class RegionOperation(
         private val mainHandler: Handler,
         private val progressCb: (Double) -> Unit,
@@ -133,25 +144,29 @@ class OfflineRegionWrapper(
         @Volatile
         var region: OfflineRegion? = null
 
-        @Volatile
-        var isTerminal: Boolean = false
-            private set
+        private val terminal = AtomicBoolean(false)
+
+        val isTerminal: Boolean
+            get() = terminal.get()
 
         @Volatile
         private var cancelled = false
 
         fun postProgress(progress: Double) {
-            if (isTerminal || cancelled) {
+            if (terminal.get() || cancelled) {
                 return
             }
-            mainHandler.post { progressCb(progress) }
+            mainHandler.post {
+                if (!terminal.get() && !cancelled) {
+                    progressCb(progress)
+                }
+            }
         }
 
         fun complete(result: Result<Unit>) {
-            if (isTerminal) {
+            if (!terminal.compareAndSet(false, true)) {
                 return
             }
-            isTerminal = true
             mainHandler.post { completionCb(result) }
         }
 

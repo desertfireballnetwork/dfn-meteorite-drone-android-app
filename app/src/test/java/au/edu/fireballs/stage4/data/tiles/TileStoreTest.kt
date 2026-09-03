@@ -90,8 +90,8 @@ class TileStoreTest {
     @Test
     fun accountScopesAreIsolated() {
         val base = Files.createTempDirectory("tiles-scope").toFile()
-        val storeA = TileStore(base) { "account-a" }
-        val storeB = TileStore(base) { "account-b" }
+        val storeA = TileStore(base, scopeProvider = { "account-a" })
+        val storeB = TileStore(base, scopeProvider = { "account-b" })
 
         storeA.write(1, 2, 3, 4, 5, byteArrayOf(1, 2, 3))
 
@@ -100,5 +100,22 @@ class TileStoreTest {
 
         storeA.deleteAll()
         assertFalse(storeA.contains(1, 2, 3, 4, 5))
+    }
+
+    @Test
+    fun aggregateQuotaRejectsExcessWrites() {
+        val base = Files.createTempDirectory("tiles-quota").toFile()
+        val store = TileStore(base, quotaBytes = 10)
+
+        store.write(1, 2, 3, 4, 5, byteArrayOf(1, 2, 3, 4, 5, 6, 7))
+
+        assertThrows(IllegalStateException::class.java) {
+            store.write(1, 2, 3, 4, 6, byteArrayOf(1, 2, 3, 4))
+        }
+        assertFalse(store.contains(1, 2, 3, 4, 6))
+
+        store.deleteSurveyTiles(1)
+        store.write(1, 2, 3, 4, 6, byteArrayOf(1, 2, 3, 4))
+        assertTrue(store.contains(1, 2, 3, 4, 6))
     }
 }

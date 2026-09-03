@@ -1,6 +1,7 @@
 package au.edu.fireballs.stage4.data.remote
 
 import au.edu.fireballs.stage4.data.local.Stage4Database
+import au.edu.fireballs.stage4.data.tiles.OfflineRegionWrapper
 import au.edu.fireballs.stage4.data.tiles.TileStore
 import au.edu.fireballs.stage4.di.IoDispatcher
 import kotlinx.coroutines.CoroutineDispatcher
@@ -17,6 +18,7 @@ class AccountManager
         private val baseUrl: HttpUrl,
         private val database: Stage4Database,
         private val tileStore: TileStore,
+        private val offlineRegionWrapper: OfflineRegionWrapper,
         @IoDispatcher private val ioDispatcher: CoroutineDispatcher,
     ) {
         fun isSignedIn(): Boolean {
@@ -29,5 +31,6 @@ class AccountManager
                 cookieJar.clear()
                 database.clearAllTables()
                 tileStore.deleteAll()
+                offlineRegionWrapper.purgeAllRegions()
             }
     }

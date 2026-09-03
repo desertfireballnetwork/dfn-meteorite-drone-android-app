@@ -1,6 +1,7 @@
 package au.edu.fireballs.stage4.data.tiles
 
 import au.edu.fireballs.stage4.BuildConfig
+import java.util.concurrent.atomic.AtomicBoolean
 
 class OfflineManagerWrapper(
     private val regionWrapper: OfflineRegionDownloader,
@@ -43,8 +44,9 @@ class OfflineManagerWrapper(
 
         var completed = 0
         var completedTiles = 0L
-        var terminal = false
         var lastProgress = 0.0
+        val terminal = AtomicBoolean(false)
+        val stateLock = Any()
 
         fun report(progress: Double) {
             if (progress > lastProgress) {
@@ -54,7 +56,7 @@ class OfflineManagerWrapper(
         }
 
         fun startNext() {
-            if (terminal || completed >= regions.size) {
+            if (terminal.get() || completed >= regions.size) {
                 return
             }
             val region = regions[completed]
@@ -64,28 +66,32 @@ class OfflineManagerWrapper(
                 minZoom,
                 maxZoom,
                 { progress ->
-                    report(
-                        (completedTiles + regionTiles * progress.coerceIn(0.0, 1.0)) /
-                            totalTiles.toDouble(),
-                    )
+                    synchronized(stateLock) {
+                        report(
+                            (completedTiles + regionTiles * progress.coerceIn(0.0, 1.0)) /
+                                totalTiles.toDouble(),
+                        )
+                    }
                 },
                 { result ->
-                    if (terminal) {
-                        return@downloadSatelliteRegion
-                    }
-                    if (result.isFailure) {
-                        terminal = true
-                        completionCb(result)
-                        return@downloadSatelliteRegion
-                    }
-                    completedTiles += regionTiles
-                    completed++
-                    report(completedTiles.toDouble() / totalTiles.toDouble())
-                    if (completed == regions.size) {
-                        terminal = true
-                        completionCb(Result.success(Unit))
-                    } else {
-                        startNext()
+                    synchronized(stateLock) {
+                        if (terminal.get()) {
+                            return@downloadSatelliteRegion
+                        }
+                        if (result.isFailure) {
+                            terminal.set(true)
+                            completionCb(result)
+                            return@downloadSatelliteRegion
+                        }
+                        completedTiles += regionTiles
+                        completed++
+                        report(completedTiles.toDouble() / totalTiles.toDouble())
+                        if (completed == regions.size) {
+                            terminal.set(true)
+                            completionCb(Result.success(Unit))
+                        } else {
+                            startNext()
+                        }
                     }
                 },
             )

@@ -46,7 +46,6 @@ sealed interface Stage4MapUiState {
         val layerToggleState: LayerToggleState = LayerToggleState(),
         val isRefreshing: Boolean = false,
         val userMessage: String? = null,
-        val selectedCandidateId: Long? = null,
     ) : Stage4MapUiState
 
     data class Error(
@@ -240,13 +239,4 @@ class Stage4MapViewModel
             val surveyId = surveyIdFlow.value ?: return
             openSurvey(surveyId)
         }
-
-        private fun firstCandidateId(state: Stage4State): Long? =
-            state
-                .unprocessedCandidates
-                .asSequence()
-                .plus(state.yesMeteorites)
-                .plus(state.noMeteorites)
-                .firstOrNull()
-                ?.inferenceResultId
     }
