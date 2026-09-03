@@ -17,7 +17,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -73,37 +72,54 @@ class Stage4MapViewModel
 
         @OptIn(ExperimentalCoroutinesApi::class)
         val uiState: StateFlow<Stage4MapUiState> =
-            combine(
-                surveyIdFlow.filterNotNull().flatMapLatest { id ->
-                    combine(
-                        sourceStateFlow.filterNotNull(),
-                        localDecisionDao.observeDecisionsForSurvey(id),
-                        layerToggleStateFlow,
-                        isRefreshingFlow,
-                        userMessageFlow,
-                    ) { source, decisions, toggles, refreshing, msg ->
-                        Stage4MapUiState.Loaded(
-                            state = mergeStateWithDecisions(source, decisions),
-                            cameraTarget = resolveInitialCamera(source),
-                            layerToggleState = toggles,
-                            isRefreshing = refreshing,
-                            userMessage = msg,
-                        )
+            surveyIdFlow
+                .flatMapLatest { id ->
+                    if (id == null) {
+                        combine(errorFlow, authExpiredFlow) { error, authExpired ->
+                            when {
+                                authExpired -> Stage4MapUiState.AuthExpired
+                                error != null -> Stage4MapUiState.Error(error)
+                                else -> Stage4MapUiState.Loading
+                            }
+                        }
+                    } else {
+                        val loadedFlow =
+                            combine(
+                                sourceStateFlow,
+                                localDecisionDao.observeDecisionsForSurvey(id),
+                                layerToggleStateFlow,
+                                isRefreshingFlow,
+                                userMessageFlow,
+                            ) { source, decisions, toggles, refreshing, msg ->
+                                source?.let {
+                                    Stage4MapUiState.Loaded(
+                                        state = mergeStateWithDecisions(it, decisions),
+                                        cameraTarget = resolveInitialCamera(it),
+                                        layerToggleState = toggles,
+                                        isRefreshing = refreshing,
+                                        userMessage = msg,
+                                    )
+                                }
+                            }
+
+                        combine(
+                            loadedFlow,
+                            errorFlow,
+                            authExpiredFlow,
+                        ) { loaded, error, authExpired ->
+                            when {
+                                authExpired -> Stage4MapUiState.AuthExpired
+                                error != null -> Stage4MapUiState.Error(error)
+                                loaded != null -> loaded
+                                else -> Stage4MapUiState.Loading
+                            }
+                        }
                     }
-                },
-                errorFlow,
-                authExpiredFlow,
-            ) { loaded, error, authExpired ->
-                when {
-                    authExpired -> Stage4MapUiState.AuthExpired
-                    error != null -> Stage4MapUiState.Error(error)
-                    else -> loaded
-                }
-            }.stateIn(
-                scope = viewModelScope,
-                started = SharingStarted.WhileSubscribed(5000),
-                initialValue = Stage4MapUiState.Loading,
-            )
+                }.stateIn(
+                    scope = viewModelScope,
+                    started = SharingStarted.WhileSubscribed(5000),
+                    initialValue = Stage4MapUiState.Loading,
+                )
 
         private var fetchJob: Job? = null
 
@@ -119,6 +135,7 @@ class Stage4MapViewModel
                         layerToggleStateFlow.value.copy(
                             showUnprocessed = visible,
                         )
+
                     LayerType.SURVEYED_AREAS ->
                         layerToggleStateFlow.value.copy(
                             showSurveyedAreas = visible,
@@ -127,8 +144,6 @@ class Stage4MapViewModel
         }
 
         fun openSurvey(surveyId: Long) {
-            if (surveyIdFlow.value == surveyId && sourceStateFlow.value != null) return
-
             fetchJob?.cancel()
 
             fetchJob =
@@ -143,6 +158,7 @@ class Stage4MapViewModel
                         // Clear source state and errors so the combine pipeline resets cleanly
                         sourceStateFlow.value = null
                         errorFlow.value = null
+                        authExpiredFlow.value = false
                         surveyIdFlow.value = surveyId
                     }
 
