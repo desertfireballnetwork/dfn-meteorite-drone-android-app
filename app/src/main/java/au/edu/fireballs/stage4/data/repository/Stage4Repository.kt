@@ -103,8 +103,7 @@ class Stage4Repository
                     addAll(state.yesMeteorites.map { it.toEntity(state.survey.id, 1) })
                     addAll(state.noMeteorites.map { it.toEntity(state.survey.id, 2) })
                 }
-            candidateDao.deleteForSurvey(state.survey.id)
-            candidateDao.upsertAll(candidates)
+            candidateDao.replaceForSurvey(state.survey.id, candidates)
         }
 
         private suspend fun loadFromRoom(surveyId: Long): Stage4FetchResult? {
