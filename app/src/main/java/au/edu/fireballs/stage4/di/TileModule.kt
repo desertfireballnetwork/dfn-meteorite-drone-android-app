@@ -46,7 +46,9 @@ object TileModule {
 
     @Provides
     @Singleton
-    fun provideOfflineRegionWrapper(): OfflineRegionWrapper = OfflineRegionWrapper()
+    fun provideOfflineRegionWrapper(
+        accountScopeProvider: AccountScopeProvider,
+    ): OfflineRegionWrapper = OfflineRegionWrapper(scopeProvider = accountScopeProvider)
 
     @Provides
     @Singleton

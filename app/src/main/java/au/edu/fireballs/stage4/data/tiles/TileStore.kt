@@ -99,6 +99,19 @@ class TileStore(
         }
     }
 
+    fun deleteCurrentScope() {
+        deleteScope(scopeProvider.currentScope())
+    }
+
+    fun deleteScope(scope: String) {
+        synchronized(lock) {
+            val dir = scopedDir(scope)
+            val removed = dirTotalSize(dir)
+            dir.deleteRecursively()
+            totalBytes = (totalBytes - removed).coerceAtLeast(0L)
+        }
+    }
+
     fun deleteAll() {
         synchronized(lock) {
             baseDir.deleteRecursively()
@@ -119,8 +132,9 @@ class TileStore(
         require(x in 0 until span && y in 0 until span) { "Tile coordinates out of range" }
     }
 
-    private fun scopeDir(): File {
-        val scope = scopeProvider.currentScope()
+    private fun scopeDir(): File = scopedDir(scopeProvider.currentScope())
+
+    private fun scopedDir(scope: String): File {
         if (scope.isEmpty()) {
             return baseDir
         }

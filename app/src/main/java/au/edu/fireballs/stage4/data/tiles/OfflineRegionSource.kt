@@ -16,6 +16,13 @@ interface OfflineRegionHandle {
 
     fun purge(callback: AsyncOperationResultCallback)
 
+    fun setMetadata(
+        metadata: ByteArray,
+        callback: AsyncOperationResultCallback,
+    )
+
+    fun getMetadata(): ByteArray
+
     val identifier: Long
 }
 
@@ -33,6 +40,15 @@ class MapboxOfflineRegionHandle(
     override fun purge(callback: AsyncOperationResultCallback) {
         region.purge(callback)
     }
+
+    override fun setMetadata(
+        metadata: ByteArray,
+        callback: AsyncOperationResultCallback,
+    ) {
+        region.setMetadata(metadata, callback)
+    }
+
+    override fun getMetadata(): ByteArray = region.getMetadata()
 
     override val identifier: Long
         get() = region.identifier

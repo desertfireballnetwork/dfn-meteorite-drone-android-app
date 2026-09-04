@@ -95,12 +95,30 @@ class TileStoreTest {
         val storeB = TileStore(base, scopeProvider = { "account-b" })
 
         storeA.write(1, 2, 3, 4, 5, byteArrayOf(1, 2, 3))
+        storeB.write(6, 7, 8, 9, 10, byteArrayOf(4, 5, 6))
 
         assertTrue(storeA.contains(1, 2, 3, 4, 5))
-        assertFalse(storeB.contains(1, 2, 3, 4, 5))
+        assertTrue(storeB.contains(6, 7, 8, 9, 10))
 
-        storeA.deleteAll()
+        storeA.deleteSurveyTiles(1)
+
         assertFalse(storeA.contains(1, 2, 3, 4, 5))
+        assertTrue(storeB.contains(6, 7, 8, 9, 10))
+    }
+
+    @Test
+    fun deleteScopeRemovesOnlyThatAccount() {
+        val base = Files.createTempDirectory("tiles-delete-scope").toFile()
+        val storeA = TileStore(base, scopeProvider = { "account-a" })
+        val storeB = TileStore(base, scopeProvider = { "account-b" })
+
+        storeA.write(1, 2, 3, 4, 5, byteArrayOf(1, 2, 3))
+        storeB.write(6, 7, 8, 9, 10, byteArrayOf(4, 5, 6))
+
+        storeA.deleteScope("account-a")
+
+        assertFalse(storeA.contains(1, 2, 3, 4, 5))
+        assertTrue(storeB.contains(6, 7, 8, 9, 10))
     }
 
     @Test

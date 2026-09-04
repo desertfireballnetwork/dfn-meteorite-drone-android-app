@@ -14,6 +14,7 @@ import java.util.concurrent.CancellationException
 import java.util.concurrent.atomic.AtomicBoolean
 
 class OfflineRegionWrapper(
+    private val scopeProvider: AccountScopeProvider = NoScopeProvider,
     private val source: OfflineRegionSource = MapboxOfflineRegionSource(OfflineRegionManager()),
     private val mainHandler: Handler = Handler(Looper.getMainLooper()),
     private val definitionFactory: (Bbox, Int, Int) -> OfflineRegionTilePyramidDefinition =
@@ -38,7 +39,12 @@ class OfflineRegionWrapper(
                     activeOperation = it
                 }
             }
-        val definition = definitionFactory(bbox, minZoom, maxZoom)
+        val definition =
+            runCatching { definitionFactory(bbox, minZoom, maxZoom) }
+                .getOrElse { error ->
+                    operation.complete(Result.failure(error))
+                    return
+                }
 
         source.createOfflineRegion(definition) { result ->
             val region =
@@ -47,6 +53,7 @@ class OfflineRegionWrapper(
                     return@createOfflineRegion
                 }
             operation.region = region
+            region.setMetadata(scopeProvider.currentScope().toByteArray()) { }
             region.setOfflineRegionObserver(
                 object : OfflineRegionObserver {
                     override fun statusChanged(status: OfflineRegionStatus) {
@@ -87,6 +94,7 @@ class OfflineRegionWrapper(
 
     fun deleteRegion(
         regionId: String,
+        scope: String = scopeProvider.currentScope(),
         callback: (Result<Unit>) -> Unit = {},
     ) {
         source.getOfflineRegions { result ->
@@ -95,7 +103,10 @@ class OfflineRegionWrapper(
                     mainHandler.post { callback(Result.failure(error)) }
                     return@getOfflineRegions
                 }
-            val region = regions.firstOrNull { it.identifier.toString() == regionId }
+            val region =
+                regions.firstOrNull {
+                    it.identifier.toString() == regionId && it.belongsTo(scope)
+                }
             if (region == null) {
                 mainHandler.post {
                     callback(Result.failure(IllegalStateException("Region not found: $regionId")))
@@ -116,20 +127,24 @@ class OfflineRegionWrapper(
         }
     }
 
-    fun purgeAllRegions(callback: (Result<Unit>) -> Unit = {}) {
+    fun purgeAllRegions(
+        scope: String = scopeProvider.currentScope(),
+        callback: (Result<Unit>) -> Unit = {},
+    ) {
         source.getOfflineRegions { result ->
             val regions =
                 result.getOrElse { error ->
                     mainHandler.post { callback(Result.failure(error)) }
                     return@getOfflineRegions
                 }
-            var remaining = regions.size
+            val owned = regions.filter { it.belongsTo(scope) }
+            var remaining = owned.size
             var failed: Throwable? = null
             if (remaining == 0) {
                 mainHandler.post { callback(Result.success(Unit)) }
                 return@getOfflineRegions
             }
-            regions.forEach { region ->
+            owned.forEach { region ->
                 region.purge {
                     mainHandler.post {
                         if (it.isError && failed == null) {
@@ -151,11 +166,21 @@ class OfflineRegionWrapper(
         }
     }
 
-    fun listRegions(callback: (Result<List<OfflineRegionHandle>>) -> Unit) {
+    fun listRegions(
+        scope: String = scopeProvider.currentScope(),
+        callback: (Result<List<OfflineRegionHandle>>) -> Unit,
+    ) {
         source.getOfflineRegions { result ->
-            mainHandler.post { callback(result) }
+            val filtered =
+                result.map { regions ->
+                    regions.filter { it.belongsTo(scope) }
+                }
+            mainHandler.post { callback(filtered) }
         }
     }
+
+    private fun OfflineRegionHandle.belongsTo(scope: String): Boolean =
+        String(getMetadata(), Charsets.UTF_8) == scope
 
     private class RegionOperation(
         private val mainHandler: Handler,
@@ -222,6 +247,10 @@ class OfflineRegionWrapper(
 
     companion object {
         private const val SATELLITE_STYLE_URL = "mapbox://styles/mapbox/satellite-v9"
+
+        private object NoScopeProvider : AccountScopeProvider {
+            override fun currentScope(): String = ""
+        }
 
         private fun defaultDefinition(
             bbox: Bbox,

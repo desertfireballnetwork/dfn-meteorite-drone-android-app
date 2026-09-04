@@ -70,4 +70,24 @@ class CustomRasterOverlaySmokeTest {
         composeRule.waitForIdle()
         composeRule.onNodeWithTag("map-host-root").assertExists()
     }
+
+    @Test
+    fun customRasterOverlay_corruptTile_noCrash() {
+        val store = TileStore(Files.createTempDirectory("tiles").toFile())
+        store.write(1L, 2L, 0, 0, 0, byteArrayOf(1, 2, 3, 4, 5))
+        composeRule.setContent {
+            MapHost(
+                mapViewportState = rememberMapViewportState(),
+                locationPermissionGranted = false,
+                polygons = emptyList(),
+                tilesetId = null,
+                base = null,
+                surveyId = 1L,
+                candidateId = 2L,
+                tileStore = store,
+            )
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("map-host-root").assertExists()
+    }
 }

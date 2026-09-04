@@ -81,7 +81,12 @@ fun CustomRasterOverlay(
                                             tileId.x,
                                             tileId.y,
                                         )
-                                    val image = decodeToImage(bytes) ?: return
+                                    val image =
+                                        decodeToImage(bytes)
+                                            ?: decodeToImage(
+                                                LocalFileRasterTileProvider.TRANSPARENT_PNG,
+                                            )
+                                            ?: return
                                     source.setTileData(
                                         listOf(
                                             CustomRasterSourceTileData(tileId, image),
