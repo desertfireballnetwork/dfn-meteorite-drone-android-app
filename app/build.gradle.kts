@@ -160,6 +160,7 @@ dependencies {
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
     androidTestImplementation(libs.androidx.test.core)
     androidTestImplementation(libs.junit)
+    androidTestImplementation(libs.room.testing)
 
     testImplementation(libs.androidx.test.core)
     testImplementation(libs.junit)
