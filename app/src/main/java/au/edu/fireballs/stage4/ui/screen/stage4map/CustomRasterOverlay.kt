@@ -24,7 +24,7 @@ private const val CUSTOM_RASTER_SOURCE_ID = "custom_raster"
 private const val CUSTOM_RASTER_LAYER_ID = "custom_raster_layer"
 private const val TILE_SIZE: Short = 128
 private const val MAX_TILE_BYTES = TileStore.MAX_TILE_BYTES
-private const val MAX_TILE_PIXELS = 1_048_576L
+private const val MAX_TILE_PIXELS = 128L * 128L
 
 @Composable
 fun CustomRasterOverlay(
@@ -32,7 +32,11 @@ fun CustomRasterOverlay(
     candidateId: Long?,
     tileStore: TileStore?,
 ) {
-    if (tileStore == null || candidateId == null || !tileStore.hasSurvey(surveyId)) {
+    if (
+        tileStore == null ||
+        candidateId == null ||
+        !tileStore.hasCandidate(surveyId, candidateId)
+    ) {
         return
     }
     val tileProvider =
@@ -62,7 +66,11 @@ fun CustomRasterOverlay(
                                     tileId: CanonicalTileID,
                                     status: CustomRasterSourceTileStatus,
                                 ) {
-                                    if (status != CustomRasterSourceTileStatus.REQUIRED) {
+                                    if (
+                                        disposed ||
+                                        styleRef !== style ||
+                                        status != CustomRasterSourceTileStatus.REQUIRED
+                                    ) {
                                         return
                                     }
                                     val bytes =
@@ -126,6 +134,7 @@ private fun decodeToImage(bytes: ByteArray): Image? {
     val height = bitmap.height
     val argb = IntArray(width * height)
     bitmap.getPixels(argb, 0, width, 0, 0, width, height)
+    bitmap.recycle()
     val bufferSize = width.toLong() * height * 4L
     if (bufferSize > Int.MAX_VALUE) {
         return null

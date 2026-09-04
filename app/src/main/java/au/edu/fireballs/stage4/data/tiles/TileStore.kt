@@ -9,6 +9,7 @@ class TileStore(
     private val scopeProvider: AccountScopeProvider = NoScopeProvider,
     private val quotaBytes: Long = DEFAULT_QUOTA_BYTES,
 ) {
+    private val lock = Any()
     private var totalBytes: Long = computeTotalBytes(baseDir)
 
     fun contains(
@@ -18,6 +19,14 @@ class TileStore(
         x: Int,
         y: Int,
     ): Boolean = tileFile(surveyId, candidateId, z, x, y).isFile
+
+    fun hasCandidate(
+        surveyId: Long,
+        candidateId: Long,
+    ): Boolean {
+        require(surveyId >= 0L && candidateId >= 0L) { "Identifiers must be non-negative" }
+        return File(scopeDir(), "$surveyId/$candidateId").isDirectory
+    }
 
     fun read(
         surveyId: Long,
@@ -40,16 +49,22 @@ class TileStore(
     ) {
         validateTile(surveyId, candidateId, z, x, y)
         require(bytes.size <= MAX_TILE_BYTES) { "Tile exceeds maximum encoded size" }
-        check(totalBytes + bytes.size <= quotaBytes) { "Tile storage quota exceeded" }
-        val file = tileFile(surveyId, candidateId, z, x, y)
-        file.parentFile?.mkdirs()
-        val temp = File(file.parentFile, "${file.name}.tmp")
-        temp.writeBytes(bytes)
-        if (!temp.renameTo(file)) {
-            temp.delete()
-            throw IOException("Failed to commit tile $file")
+        synchronized(lock) {
+            val file = tileFile(surveyId, candidateId, z, x, y)
+            val previousSize = if (file.isFile) file.length() else 0L
+            val updatedTotal = totalBytes - previousSize + bytes.size
+            check(updatedTotal <= quotaBytes) { "Tile storage quota exceeded" }
+            check(file.parentFile?.mkdirs() != false || file.parentFile?.isDirectory == true) {
+                "Failed to create tile directory"
+            }
+            val temp = File(file.parentFile, "${file.name}.tmp")
+            temp.writeBytes(bytes)
+            if (!temp.renameTo(file)) {
+                temp.delete()
+                throw IOException("Failed to commit tile $file")
+            }
+            totalBytes = updatedTotal
         }
-        totalBytes += bytes.size
     }
 
     fun surveyTilesDirectory(surveyId: Long): File {
@@ -64,15 +79,19 @@ class TileStore(
 
     fun deleteSurveyTiles(surveyId: Long) {
         require(surveyId >= 0L) { "Survey id must be non-negative" }
-        val dir = surveyTilesDirectory(surveyId)
-        val removed = dirTotalSize(dir)
-        dir.deleteRecursively()
-        totalBytes = (totalBytes - removed).coerceAtLeast(0L)
+        synchronized(lock) {
+            val dir = surveyTilesDirectory(surveyId)
+            val removed = dirTotalSize(dir)
+            dir.deleteRecursively()
+            totalBytes = (totalBytes - removed).coerceAtLeast(0L)
+        }
     }
 
     fun deleteAll() {
-        baseDir.deleteRecursively()
-        totalBytes = 0L
+        synchronized(lock) {
+            baseDir.deleteRecursively()
+            totalBytes = 0L
+        }
     }
 
     private fun validateTile(
@@ -93,10 +112,15 @@ class TileStore(
         if (scope.isEmpty()) {
             return baseDir
         }
-        require(scope.none { it == '/' || it == '\\' }) {
+        require(SCOPE_PATTERN.matches(scope)) {
             "Invalid tile storage scope"
         }
-        return File(baseDir, scope)
+        val canonicalBase = baseDir.canonicalFile
+        val scopedDir = File(canonicalBase, scope).canonicalFile
+        require(scopedDir.parentFile == canonicalBase) {
+            "Tile storage scope escapes base directory"
+        }
+        return scopedDir
     }
 
     private fun tileFile(
@@ -124,6 +148,7 @@ class TileStore(
         const val MAX_TILE_BYTES = 1_048_576
         const val DEFAULT_QUOTA_BYTES = 512L * 1024L * 1024L
         private const val MAX_TILE_ZOOM = 30
+        private val SCOPE_PATTERN = Regex("[A-Za-z0-9_-]{1,128}")
 
         private object NoScopeProvider : AccountScopeProvider {
             override fun currentScope(): String = ""

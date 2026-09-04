@@ -21,6 +21,7 @@ class OfflineRegionWrapper(
     private val mainHandler: Handler = Handler(Looper.getMainLooper()),
 ) : OfflineRegionDownloader {
     private var activeOperation: RegionOperation? = null
+    private val operationLock = Any()
 
     override fun downloadSatelliteRegion(
         bbox: Bbox,
@@ -29,11 +30,15 @@ class OfflineRegionWrapper(
         progressCb: (Double) -> Unit,
         completionCb: (Result<Unit>) -> Unit,
     ) {
-        check(activeOperation?.isTerminal != false) {
-            "An offline region download is already active"
-        }
-        val operation = RegionOperation(mainHandler, progressCb, completionCb)
-        activeOperation = operation
+        val operation =
+            synchronized(operationLock) {
+                check(activeOperation?.isTerminal != false) {
+                    "An offline region download is already active"
+                }
+                RegionOperation(mainHandler, progressCb, completionCb).also {
+                    activeOperation = it
+                }
+            }
         val definition =
             OfflineRegionTilePyramidDefinition
                 .Builder()
@@ -108,10 +113,71 @@ class OfflineRegionWrapper(
         activeOperation?.cancel()
     }
 
-    fun deleteRegion(regionId: String) {
+    fun deleteRegion(
+        regionId: String,
+        callback: (Result<Unit>) -> Unit = {},
+    ) {
         offlineRegionManager.getOfflineRegions { expected ->
-            if (!expected.isError) {
-                expected.value?.firstOrNull { it.identifier.toString() == regionId }?.purge { }
+            if (expected.isError) {
+                mainHandler.post {
+                    callback(Result.failure(IllegalStateException(expected.error)))
+                }
+                return@getOfflineRegions
+            }
+            val region = expected.value?.firstOrNull { it.identifier.toString() == regionId }
+            if (region == null) {
+                mainHandler.post {
+                    callback(Result.failure(IllegalStateException("Region not found: $regionId")))
+                }
+                return@getOfflineRegions
+            }
+            region.purge {
+                mainHandler.post {
+                    callback(
+                        if (it.isError) {
+                            Result.failure(IllegalStateException(it.error))
+                        } else {
+                            Result.success(Unit)
+                        },
+                    )
+                }
+            }
+        }
+    }
+
+    fun purgeAllRegions(callback: (Result<Unit>) -> Unit = {}) {
+        offlineRegionManager.getOfflineRegions { expected ->
+            if (expected.isError) {
+                mainHandler.post {
+                    callback(Result.failure(IllegalStateException(expected.error)))
+                }
+                return@getOfflineRegions
+            }
+            val regions = expected.value.orEmpty()
+            var remaining = regions.size
+            var failed: Throwable? = null
+            if (remaining == 0) {
+                mainHandler.post { callback(Result.success(Unit)) }
+                return@getOfflineRegions
+            }
+            regions.forEach { region ->
+                region.purge {
+                    mainHandler.post {
+                        if (it.isError && failed == null) {
+                            failed = IllegalStateException(it.error)
+                        }
+                        remaining--
+                        if (remaining == 0) {
+                            callback(
+                                if (failed != null) {
+                                    Result.failure(failed)
+                                } else {
+                                    Result.success(Unit)
+                                },
+                            )
+                        }
+                    }
+                }
             }
         }
     }
@@ -122,16 +188,6 @@ class OfflineRegionWrapper(
                 mainHandler.post { callback(Result.failure(IllegalStateException(expected.error))) }
             } else {
                 mainHandler.post { callback(Result.success(expected.value.orEmpty())) }
-            }
-        }
-    }
-
-    fun purgeAllRegions() {
-        offlineRegionManager.getOfflineRegions { expected ->
-            if (!expected.isError) {
-                expected.value?.forEach { region ->
-                    region.purge { }
-                }
             }
         }
     }

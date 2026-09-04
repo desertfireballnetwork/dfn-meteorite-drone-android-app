@@ -14,31 +14,34 @@ class LocalFileRasterTileProvider(
     ): ByteArray {
         val tms = TileMath.xyzToTms(TileCoord(z, x, y))
         val input = tileStore.read(surveyId, candidateId, tms.z, tms.x, tms.y)
-        val result =
-            when (input) {
-                null -> TRANSPARENT_PNG
-                else -> input.use { readBounded(it) }
-            }
-        return result
+        return when (input) {
+            null -> TRANSPARENT_PNG
+            else -> input.use { readBounded(it) }
+        }
     }
 
     private fun readBounded(input: InputStream): ByteArray {
-        val buffer = ByteArray(TileStore.MAX_TILE_BYTES + 1)
+        var buffer = ByteArray(INITIAL_BUFFER_BYTES)
         var offset = 0
-        while (offset <= TileStore.MAX_TILE_BYTES) {
+        while (true) {
+            if (offset == buffer.size) {
+                if (buffer.size >= TileStore.MAX_TILE_BYTES) {
+                    return TRANSPARENT_PNG
+                }
+                buffer = buffer.copyOf(minOf(buffer.size * 2, TileStore.MAX_TILE_BYTES + 1))
+            }
             val read = input.read(buffer, offset, buffer.size - offset)
             if (read < 0) {
                 break
             }
             offset += read
         }
-        if (offset > TileStore.MAX_TILE_BYTES) {
-            return TRANSPARENT_PNG
-        }
         return buffer.copyOf(offset)
     }
 
     companion object {
+        private const val INITIAL_BUFFER_BYTES = 8 * 1024
+
         val TRANSPARENT_PNG: ByteArray =
             byteArrayOf(
                 0x89.toByte(),

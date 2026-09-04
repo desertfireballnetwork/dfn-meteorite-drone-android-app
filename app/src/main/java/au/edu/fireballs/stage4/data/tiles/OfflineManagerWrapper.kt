@@ -67,10 +67,14 @@ class OfflineManagerWrapper(
                 maxZoom,
                 { progress ->
                     synchronized(stateLock) {
-                        report(
-                            (completedTiles + regionTiles * progress.coerceIn(0.0, 1.0)) /
-                                totalTiles.toDouble(),
-                        )
+                        if (!terminal.get()) {
+                            report(
+                                (
+                                    completedTiles +
+                                        regionTiles * progress.coerceIn(0.0, 1.0)
+                                ) / totalTiles.toDouble(),
+                            )
+                        }
                     }
                 },
                 { result ->

@@ -6,6 +6,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
 import java.nio.file.Files
 
 class TileStoreTest {
@@ -117,5 +118,37 @@ class TileStoreTest {
         store.deleteSurveyTiles(1)
         store.write(1, 2, 3, 4, 6, byteArrayOf(1, 2, 3, 4))
         assertTrue(store.contains(1, 2, 3, 4, 6))
+    }
+
+    @Test
+    fun replacingTileAccountsOnlyForSizeDelta() {
+        val base = Files.createTempDirectory("tiles-replace").toFile()
+        val store = TileStore(base, quotaBytes = 10)
+
+        store.write(1, 2, 3, 4, 5, byteArrayOf(1, 2, 3, 4, 5, 6, 7))
+        store.write(1, 2, 3, 4, 5, byteArrayOf(1, 2, 3, 4))
+        store.write(1, 2, 3, 4, 6, byteArrayOf(1, 2, 3, 4))
+
+        assertTrue(store.contains(1, 2, 3, 4, 5))
+        assertTrue(store.contains(1, 2, 3, 4, 6))
+    }
+
+    @Test
+    fun invalidScopeIsRejected() {
+        val base = Files.createTempDirectory("tiles-scope-invalid").toFile()
+        for (badScope in listOf(".", "..", "a/b", "a\\b", "a b", "a.b", "x".repeat(129))) {
+            assertThrows(IllegalArgumentException::class.java) {
+                TileStore(base, scopeProvider = { badScope }).write(1, 2, 3, 4, 5, byteArrayOf(1))
+            }
+        }
+    }
+
+    @Test
+    fun validScopesStayContained() {
+        val base = Files.createTempDirectory("tiles-scope-valid").toFile()
+        val store = TileStore(base, scopeProvider = { "session-0123456789abcdef" })
+        store.write(1, 2, 3, 4, 5, byteArrayOf(1))
+        assertTrue(store.contains(1, 2, 3, 4, 5))
+        assertTrue(File(base, "session-0123456789abcdef/1/2/3/4/5.png").isFile)
     }
 }
