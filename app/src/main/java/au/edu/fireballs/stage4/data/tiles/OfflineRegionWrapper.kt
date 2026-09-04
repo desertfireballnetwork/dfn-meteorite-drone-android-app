@@ -2,11 +2,8 @@ package au.edu.fireballs.stage4.data.tiles
 
 import android.os.Handler
 import android.os.Looper
-import com.mapbox.bindgen.Expected
 import com.mapbox.geojson.Point
 import com.mapbox.maps.CoordinateBounds
-import com.mapbox.maps.OfflineRegion
-import com.mapbox.maps.OfflineRegionCreateCallback
 import com.mapbox.maps.OfflineRegionDownloadState
 import com.mapbox.maps.OfflineRegionError
 import com.mapbox.maps.OfflineRegionManager
@@ -17,8 +14,10 @@ import java.util.concurrent.CancellationException
 import java.util.concurrent.atomic.AtomicBoolean
 
 class OfflineRegionWrapper(
-    private val offlineRegionManager: OfflineRegionManager = OfflineRegionManager(),
+    private val source: OfflineRegionSource = MapboxOfflineRegionSource(OfflineRegionManager()),
     private val mainHandler: Handler = Handler(Looper.getMainLooper()),
+    private val definitionFactory: (Bbox, Int, Int) -> OfflineRegionTilePyramidDefinition =
+        ::defaultDefinition,
 ) : OfflineRegionDownloader {
     private var activeOperation: RegionOperation? = null
     private val operationLock = Any()
@@ -39,74 +38,47 @@ class OfflineRegionWrapper(
                     activeOperation = it
                 }
             }
-        val definition =
-            OfflineRegionTilePyramidDefinition
-                .Builder()
-                .styleURL(SATELLITE_STYLE_URL)
-                .bounds(
-                    CoordinateBounds(
-                        Point.fromLngLat(bbox.minLon, bbox.minLat),
-                        Point.fromLngLat(bbox.maxLon, bbox.maxLat),
-                    ),
-                ).minZoom(minZoom.toDouble())
-                .maxZoom(maxZoom.toDouble())
-                .build()
+        val definition = definitionFactory(bbox, minZoom, maxZoom)
 
-        offlineRegionManager.createOfflineRegion(
-            definition,
-            object : OfflineRegionCreateCallback {
-                override fun run(expected: Expected<String, OfflineRegion>) {
-                    if (expected.isError) {
-                        operation.complete(Result.failure(IllegalStateException(expected.error)))
-                        return
-                    }
-                    val region =
-                        expected.value
-                            ?: run {
-                                operation.complete(
-                                    Result.failure(
-                                        IllegalStateException(
-                                            "Mapbox returned no offline region",
-                                        ),
-                                    ),
-                                )
-                                return
-                            }
-                    operation.region = region
-                    region.setOfflineRegionObserver(
-                        object : OfflineRegionObserver {
-                            override fun statusChanged(status: OfflineRegionStatus) {
-                                if (operation.isTerminal) {
-                                    return
-                                }
-                                val progress =
-                                    if (status.requiredResourceCount > 0) {
-                                        status.completedResourceCount.toDouble() /
-                                            status.requiredResourceCount.toDouble()
-                                    } else {
-                                        0.0
-                                    }
-                                operation.postProgress(progress.coerceIn(0.0, 1.0))
-                                if (status.requiredResourceCount > 0 &&
-                                    status.completedResourceCount >= status.requiredResourceCount
-                                ) {
-                                    operation.complete(Result.success(Unit))
-                                }
-                            }
-
-                            override fun errorOccurred(error: OfflineRegionError) {
-                                operation.complete(
-                                    Result.failure(
-                                        IllegalStateException(error.message),
-                                    ),
-                                )
-                            }
-                        },
-                    )
-                    operation.activateIfActive()
+        source.createOfflineRegion(definition) { result ->
+            val region =
+                result.getOrElse { error ->
+                    operation.complete(Result.failure(error))
+                    return@createOfflineRegion
                 }
-            },
-        )
+            operation.region = region
+            region.setOfflineRegionObserver(
+                object : OfflineRegionObserver {
+                    override fun statusChanged(status: OfflineRegionStatus) {
+                        if (operation.isTerminal) {
+                            return
+                        }
+                        val progress =
+                            if (status.requiredResourceCount > 0) {
+                                status.completedResourceCount.toDouble() /
+                                    status.requiredResourceCount.toDouble()
+                            } else {
+                                0.0
+                            }
+                        operation.postProgress(progress.coerceIn(0.0, 1.0))
+                        if (status.requiredResourceCount > 0 &&
+                            status.completedResourceCount >= status.requiredResourceCount
+                        ) {
+                            operation.complete(Result.success(Unit))
+                        }
+                    }
+
+                    override fun errorOccurred(error: OfflineRegionError) {
+                        operation.complete(
+                            Result.failure(
+                                IllegalStateException(error.message),
+                            ),
+                        )
+                    }
+                },
+            )
+            operation.activateIfActive()
+        }
     }
 
     fun cancelDownload() {
@@ -117,14 +89,13 @@ class OfflineRegionWrapper(
         regionId: String,
         callback: (Result<Unit>) -> Unit = {},
     ) {
-        offlineRegionManager.getOfflineRegions { expected ->
-            if (expected.isError) {
-                mainHandler.post {
-                    callback(Result.failure(IllegalStateException(expected.error)))
+        source.getOfflineRegions { result ->
+            val regions =
+                result.getOrElse { error ->
+                    mainHandler.post { callback(Result.failure(error)) }
+                    return@getOfflineRegions
                 }
-                return@getOfflineRegions
-            }
-            val region = expected.value?.firstOrNull { it.identifier.toString() == regionId }
+            val region = regions.firstOrNull { it.identifier.toString() == regionId }
             if (region == null) {
                 mainHandler.post {
                     callback(Result.failure(IllegalStateException("Region not found: $regionId")))
@@ -146,14 +117,12 @@ class OfflineRegionWrapper(
     }
 
     fun purgeAllRegions(callback: (Result<Unit>) -> Unit = {}) {
-        offlineRegionManager.getOfflineRegions { expected ->
-            if (expected.isError) {
-                mainHandler.post {
-                    callback(Result.failure(IllegalStateException(expected.error)))
+        source.getOfflineRegions { result ->
+            val regions =
+                result.getOrElse { error ->
+                    mainHandler.post { callback(Result.failure(error)) }
+                    return@getOfflineRegions
                 }
-                return@getOfflineRegions
-            }
-            val regions = expected.value.orEmpty()
             var remaining = regions.size
             var failed: Throwable? = null
             if (remaining == 0) {
@@ -182,13 +151,9 @@ class OfflineRegionWrapper(
         }
     }
 
-    fun listRegions(callback: (Result<List<OfflineRegion>>) -> Unit) {
-        offlineRegionManager.getOfflineRegions { expected ->
-            if (expected.isError) {
-                mainHandler.post { callback(Result.failure(IllegalStateException(expected.error))) }
-            } else {
-                mainHandler.post { callback(Result.success(expected.value.orEmpty())) }
-            }
+    fun listRegions(callback: (Result<List<OfflineRegionHandle>>) -> Unit) {
+        source.getOfflineRegions { result ->
+            mainHandler.post { callback(result) }
         }
     }
 
@@ -198,7 +163,7 @@ class OfflineRegionWrapper(
         private val completionCb: (Result<Unit>) -> Unit,
     ) {
         @Volatile
-        var region: OfflineRegion? = null
+        var region: OfflineRegionHandle? = null
 
         private val terminal = AtomicBoolean(false)
 
@@ -231,12 +196,23 @@ class OfflineRegionWrapper(
                 return
             }
             cancelled = true
-            region?.setOfflineRegionDownloadState(OfflineRegionDownloadState.INACTIVE)
-            complete(Result.failure(CancellationException("Offline region download cancelled")))
+            val activeRegion = region
+            activeRegion?.setOfflineRegionDownloadState(OfflineRegionDownloadState.INACTIVE)
+            if (activeRegion == null) {
+                complete(Result.failure(CancellationException("Offline region download cancelled")))
+                return
+            }
+            activeRegion.purge {
+                complete(Result.failure(CancellationException("Offline region download cancelled")))
+            }
         }
 
         fun activateIfActive() {
-            if (cancelled || isTerminal) {
+            if (cancelled) {
+                region?.purge { }
+                return
+            }
+            if (isTerminal) {
                 region?.setOfflineRegionDownloadState(OfflineRegionDownloadState.INACTIVE)
                 return
             }
@@ -246,5 +222,22 @@ class OfflineRegionWrapper(
 
     companion object {
         private const val SATELLITE_STYLE_URL = "mapbox://styles/mapbox/satellite-v9"
+
+        private fun defaultDefinition(
+            bbox: Bbox,
+            minZoom: Int,
+            maxZoom: Int,
+        ): OfflineRegionTilePyramidDefinition =
+            OfflineRegionTilePyramidDefinition
+                .Builder()
+                .styleURL(SATELLITE_STYLE_URL)
+                .bounds(
+                    CoordinateBounds(
+                        Point.fromLngLat(bbox.minLon, bbox.minLat),
+                        Point.fromLngLat(bbox.maxLon, bbox.maxLat),
+                    ),
+                ).minZoom(minZoom.toDouble())
+                .maxZoom(maxZoom.toDouble())
+                .build()
     }
 }

@@ -5,10 +5,13 @@ import au.edu.fireballs.stage4.data.tiles.OfflineRegionWrapper
 import au.edu.fireballs.stage4.data.tiles.TileStore
 import au.edu.fireballs.stage4.di.IoDispatcher
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 @Singleton
 class AccountManager
@@ -31,6 +34,13 @@ class AccountManager
                 cookieJar.clear()
                 database.clearAllTables()
                 tileStore.deleteAll()
-                offlineRegionWrapper.purgeAllRegions()
+                suspendCancellableCoroutine { continuation ->
+                    offlineRegionWrapper.purgeAllRegions { result ->
+                        result.fold(
+                            onSuccess = { continuation.resume(Unit) },
+                            onFailure = { continuation.resumeWithException(it) },
+                        )
+                    }
+                }
             }
     }

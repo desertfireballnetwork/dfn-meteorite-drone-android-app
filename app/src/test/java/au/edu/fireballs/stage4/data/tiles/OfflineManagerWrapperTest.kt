@@ -239,14 +239,14 @@ class OfflineManagerWrapperTest {
         bbox: Bbox,
         minZoom: Int,
         maxZoom: Int,
-    ): Int {
-        var total = 0
-        for (z in minZoom..maxZoom) {
-            total +=
-                TileMath
-                    .tilesForBbox(bbox.minLat, bbox.minLon, bbox.maxLat, bbox.maxLon, z)
-                    .size
+    ): Long =
+        (minZoom..maxZoom).sumOf { zoom ->
+            TileMath.tileCountForBbox(
+                bbox.minLat,
+                bbox.minLon,
+                bbox.maxLat,
+                bbox.maxLon,
+                zoom,
+            )
         }
-        return total
-    }
 }

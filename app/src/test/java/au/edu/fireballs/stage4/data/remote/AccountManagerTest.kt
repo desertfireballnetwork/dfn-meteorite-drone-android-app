@@ -6,7 +6,9 @@ import androidx.test.core.app.ApplicationProvider
 import au.edu.fireballs.stage4.data.local.Stage4Database
 import au.edu.fireballs.stage4.data.tiles.OfflineRegionWrapper
 import au.edu.fireballs.stage4.data.tiles.TileStore
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import okhttp3.Cookie
 import okhttp3.HttpUrl
@@ -17,7 +19,10 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.mockito.Mockito.doAnswer
 import org.mockito.Mockito.mock
+import org.mockito.Mockito.verify
+import org.mockito.kotlin.any
 import org.robolectric.RobolectricTestRunner
 import java.io.File
 
@@ -25,6 +30,7 @@ import java.io.File
 class AccountManagerTest {
     private lateinit var database: Stage4Database
     private lateinit var cookieJar: PersistentCookieJar
+    private lateinit var offlineRegionWrapper: OfflineRegionWrapper
     private lateinit var accountManager: AccountManager
 
     private val testDispatcher = UnconfinedTestDispatcher()
@@ -56,15 +62,26 @@ class AccountManagerTest {
                 prefs = prefs,
             )
 
+        offlineRegionWrapper = mock(OfflineRegionWrapper::class.java)
+        answerPurgeWith(Result.success(Unit))
+
         accountManager =
             AccountManager(
                 cookieJar = cookieJar,
                 baseUrl = testUrl,
                 database = database,
                 tileStore = TileStore(File.createTempFile("am-tiles", "").parentFile),
-                offlineRegionWrapper = mock(OfflineRegionWrapper::class.java),
+                offlineRegionWrapper = offlineRegionWrapper,
                 ioDispatcher = testDispatcher,
             )
+    }
+
+    private fun answerPurgeWith(result: Result<Unit>) {
+        doAnswer { invocation ->
+            val callback = invocation.getArgument<(Result<Unit>) -> Unit>(0)
+            callback(result)
+            null
+        }.`when`(offlineRegionWrapper).purgeAllRegions(any())
     }
 
     @After
@@ -132,5 +149,41 @@ class AccountManagerTest {
 
             assertFalse(accountManager.isSignedIn())
             assertTrue(cookieJar.loadForRequest(testUrl).isEmpty())
+        }
+
+    @Test
+    fun `logout waits for region purge before returning`() =
+        runTest {
+            var purgeCallback: ((Result<Unit>) -> Unit)? = null
+            doAnswer { invocation ->
+                purgeCallback = invocation.getArgument<(Result<Unit>) -> Unit>(0)
+                null
+            }.`when`(offlineRegionWrapper).purgeAllRegions(any())
+
+            val logoutJob = launch { accountManager.logout() }
+            runCurrent()
+
+            assertFalse(logoutJob.isCompleted)
+
+            purgeCallback?.invoke(Result.success(Unit))
+            runCurrent()
+
+            assertTrue(logoutJob.isCompleted)
+            verify(offlineRegionWrapper).purgeAllRegions(any())
+        }
+
+    @Test
+    fun `logout propagates region purge failure`() =
+        runTest {
+            answerPurgeWith(Result.failure(IllegalStateException("purge failed")))
+
+            var thrown: Throwable? = null
+            try {
+                accountManager.logout()
+            } catch (error: IllegalStateException) {
+                thrown = error
+            }
+
+            assertTrue(thrown is IllegalStateException)
         }
 }
