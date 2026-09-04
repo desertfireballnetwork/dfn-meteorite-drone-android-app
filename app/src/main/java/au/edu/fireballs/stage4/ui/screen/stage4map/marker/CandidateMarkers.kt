@@ -87,7 +87,7 @@ private fun CandidateMarker(
             }
             Image(
                 painter = painterResource(style.iconRes),
-                contentDescription = null,
+                contentDescription = "Candidate #${candidate.inferenceResultId}",
                 modifier = Modifier.size(style.size),
                 alpha = style.opacity,
             )
