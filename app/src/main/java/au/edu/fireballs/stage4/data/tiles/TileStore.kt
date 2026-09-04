@@ -20,6 +20,12 @@ class TileStore(
         y: Int,
     ): Boolean = tileFile(surveyId, candidateId, z, x, y).isFile
 
+    fun contains(
+        surveyId: Long,
+        candidateId: Long,
+        coord: TileCoord,
+    ): Boolean = contains(surveyId, candidateId, coord.z, coord.x, coord.y)
+
     fun hasCandidate(
         surveyId: Long,
         candidateId: Long,
@@ -38,6 +44,12 @@ class TileStore(
         val file = tileFile(surveyId, candidateId, z, x, y)
         return if (file.isFile) file.inputStream() else null
     }
+
+    fun read(
+        surveyId: Long,
+        candidateId: Long,
+        coord: TileCoord,
+    ): InputStream? = read(surveyId, candidateId, coord.z, coord.x, coord.y)
 
     fun write(
         surveyId: Long,

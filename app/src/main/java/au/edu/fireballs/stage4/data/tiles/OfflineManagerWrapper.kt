@@ -51,7 +51,7 @@ class OfflineManagerWrapper(
         fun report(progress: Double) {
             if (progress > lastProgress) {
                 lastProgress = progress
-                progressCb(progress.coerceIn(0.0, 1.0))
+                progressCb(progress)
             }
         }
 

@@ -65,7 +65,7 @@ object TileMath {
         return (maxX - minX + 1L) * (maxY - minY + 1L)
     }
 
-    fun xyzToTms(coord: TileCoord): TileCoord =
+    fun flipTileY(coord: TileCoord): TileCoord =
         TileCoord(coord.z, coord.x, (1 shl coord.z) - 1 - coord.y)
 
     fun bufferBbox(

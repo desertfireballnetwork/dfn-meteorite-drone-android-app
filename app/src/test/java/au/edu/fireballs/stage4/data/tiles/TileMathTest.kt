@@ -35,14 +35,14 @@ class TileMathTest {
     }
 
     @Test
-    fun xyzToTmsFlipsY() {
-        assertEquals(TileCoord(1, 0, 1), TileMath.xyzToTms(TileCoord(1, 0, 0)))
+    fun flipTileYFlipsY() {
+        assertEquals(TileCoord(1, 0, 1), TileMath.flipTileY(TileCoord(1, 0, 0)))
     }
 
     @Test
-    fun xyzToTmsRoundTrip() {
+    fun flipTileYRoundTrip() {
         val coord = TileCoord(5, 12, 20)
-        assertEquals(coord, TileMath.xyzToTms(TileMath.xyzToTms(coord)))
+        assertEquals(coord, TileMath.flipTileY(TileMath.flipTileY(coord)))
     }
 
     @Test
