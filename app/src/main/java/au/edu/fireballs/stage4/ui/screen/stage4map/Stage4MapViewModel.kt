@@ -201,6 +201,8 @@ class Stage4MapViewModel
             decisions: List<LocalDecisionEntity>,
         ): Stage4State {
             val decisionMap = decisions.associateBy { it.inferenceResultId }
+            val yesIds = state.yesMeteorites.mapTo(mutableSetOf()) { it.inferenceResultId }
+            val noIds = state.noMeteorites.mapTo(mutableSetOf()) { it.inferenceResultId }
             val allCandidates =
                 (state.unprocessedCandidates + state.yesMeteorites + state.noMeteorites)
                     .distinctBy { it.inferenceResultId }
@@ -211,23 +213,14 @@ class Stage4MapViewModel
 
             allCandidates.forEach { candidate ->
                 val decision = decisionMap[candidate.inferenceResultId]
-                if (decision != null) {
-                    if (decision.verdict) newYes.add(candidate) else newNo.add(candidate)
-                } else {
-                    if (state.yesMeteorites.any {
-                            it.inferenceResultId == candidate.inferenceResultId
-                        }
-                    ) {
-                        newYes.add(candidate)
-                    } else if (state.noMeteorites.any {
-                            it.inferenceResultId == candidate.inferenceResultId
-                        }
-                    ) {
-                        newNo.add(candidate)
-                    } else {
-                        newUnprocessed.add(candidate)
-                    }
+                when {
+                    decision?.verdict == true -> newYes.add(candidate)
+                    decision != null -> newNo.add(candidate)
+                    candidate.inferenceResultId in yesIds -> newYes.add(candidate)
+                    candidate.inferenceResultId in noIds -> newNo.add(candidate)
+                    else -> newUnprocessed.add(candidate)
                 }
+            }
             }
 
             return state.copy(
