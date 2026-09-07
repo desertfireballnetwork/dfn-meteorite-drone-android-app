@@ -270,8 +270,7 @@ private fun CandidatePlaceholderDialog(
             Text(
                 text =
                     "Inference ID: ${candidate.inferenceResultId}\n" +
-                        "Confidence: ${"%.2f".format(candidate.confidence)}\n\n" +
-                        "[A-10] Modal TODO — This will be replaced by the rich candidate modal.",
+                        "Confidence: ${"%.2f".format(candidate.confidence)}",
             )
         },
         confirmButton = {
