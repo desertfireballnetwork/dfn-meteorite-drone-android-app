@@ -2,6 +2,7 @@ package au.edu.fireballs.stage4.data.local.dao
 
 import androidx.room.Dao
 import androidx.room.Query
+import androidx.room.Transaction
 import androidx.room.Upsert
 import au.edu.fireballs.stage4.data.local.CandidateEntity
 import kotlinx.coroutines.flow.Flow
@@ -17,6 +18,9 @@ interface CandidateDao {
     @Query("SELECT * FROM candidate WHERE surveyId = :surveyId")
     fun observeCandidatesForSurvey(surveyId: Long): Flow<List<CandidateEntity>>
 
+    @Query("SELECT * FROM candidate WHERE surveyId = :surveyId")
+    suspend fun getCandidatesForSurvey(surveyId: Long): List<CandidateEntity>
+
     @Query("SELECT * FROM candidate WHERE inferenceResultId = :inferenceResultId")
     suspend fun getById(inferenceResultId: Long): CandidateEntity?
 
@@ -25,4 +29,13 @@ interface CandidateDao {
 
     @Query("DELETE FROM candidate")
     suspend fun deleteAll()
+
+    @Transaction
+    suspend fun replaceForSurvey(
+        surveyId: Long,
+        candidates: List<CandidateEntity>,
+    ) {
+        deleteForSurvey(surveyId)
+        upsertAll(candidates)
+    }
 }

@@ -160,6 +160,7 @@ dependencies {
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
     androidTestImplementation(libs.androidx.test.core)
     androidTestImplementation(libs.junit)
+    androidTestImplementation(libs.room.testing)
 
     testImplementation(libs.androidx.test.core)
     testImplementation(libs.junit)
@@ -171,4 +172,5 @@ dependencies {
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.cash.turbine)
     testImplementation(libs.mockito.kotlin)
+    testImplementation(libs.mockk)
 }

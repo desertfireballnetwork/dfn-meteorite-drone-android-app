@@ -22,6 +22,10 @@ data class SurveyEntity(
     val baseLat: Double?,
     val baseLon: Double?,
     val lastViewed: Long? = System.currentTimeMillis(),
+    val surveyedAreasJson: String? = null,
+    val detectionTagsJson: String? = null,
+    val userLocationsJson: String? = null,
+    val showGeolocationAccuracyCircle: Boolean = true,
 )
 
 @Entity(
@@ -37,8 +41,8 @@ data class CandidateEntity(
     val imageFilename: String,
     val imageWidth: Int,
     val imageHeight: Int,
-    val geoCentroidLat: Double,
-    val geoCentroidLon: Double,
+    val geoCentroidLat: Double?,
+    val geoCentroidLon: Double?,
     // Cached footprint polygon serialized as JSON string of [lon,lat] pairs
     val geoAreaJson: String,
     // ML box in source-image pixel coords (x,y center per InferenceResult)
@@ -51,7 +55,9 @@ data class CandidateEntity(
     val sizeMh: Float?,
     // current claim state cached from basecamp
     val isClaimedByMe: Boolean, // ClaimEntity isClaimedByMe is the live state; this is cache only
+    val isClaimedByOther: Boolean = false,
     val claimOwnerUsername: String?,
+    val serverVerdict: Int = 0, // 0=unprocessed, 1=yes, 2=no
 )
 
 @Entity(

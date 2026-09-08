@@ -11,6 +11,8 @@ data class Stage4Survey(
     val id: Long,
     val eventId: String,
     val tilesetId: String?,
+    val description: String? = null,
+    val created: String = "",
 )
 
 data class GeoCoordinate(
@@ -46,6 +48,7 @@ data class Stage4Candidate(
     val confidence: Double,
     val sizeM: SizeMetres?,
     val claimedByMe: Boolean = false,
+    val claimedByOther: Boolean = false,
 )
 
 data class DetectionTag(
@@ -132,6 +135,7 @@ private fun Stage4CandidateDto.toDomain(): Stage4Candidate =
         confidence = confidence,
         sizeM = sizeM?.let { SizeMetres(w = it.w, h = it.h) },
         claimedByMe = claimedByMe,
+        claimedByOther = false,
     )
 
 private fun DetectionTagDto.toDomain(): DetectionTag =

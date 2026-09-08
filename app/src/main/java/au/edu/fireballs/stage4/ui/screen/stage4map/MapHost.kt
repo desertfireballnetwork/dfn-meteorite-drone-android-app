@@ -4,7 +4,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
-import au.edu.fireballs.stage4.domain.model.GeoCoordinate
+import au.edu.fireballs.stage4.domain.model.Stage4Candidate
+import au.edu.fireballs.stage4.domain.model.Stage4State
+import au.edu.fireballs.stage4.ui.screen.stage4map.marker.CandidateMarkers
 import com.mapbox.maps.CameraBoundsOptions
 import com.mapbox.maps.MapView
 import com.mapbox.maps.extension.compose.MapEffect
@@ -23,9 +25,9 @@ private const val MAX_CAMERA_ZOOM = 25.0
 internal fun MapHost(
     mapViewportState: MapViewportState,
     locationPermissionGranted: Boolean,
-    polygons: List<List<List<Double>>>,
-    tilesetId: String?,
-    base: GeoCoordinate?,
+    state: Stage4State,
+    layerToggleState: LayerToggleState,
+    onMarkerClick: (Stage4Candidate) -> Unit,
 ) {
     val styleState =
         rememberStyleState {
@@ -48,10 +50,17 @@ internal fun MapHost(
         MapHostEffects(locationPermissionGranted = locationPermissionGranted)
 
         SurveyedAreaOverlay(
-            polygons = polygons,
-            tilesetId = tilesetId,
+            polygons = state.surveyedAreas,
+            tilesetId = state.survey.tilesetId,
+            visible = layerToggleState.showSurveyedAreas,
         )
-        BaseMarker(base = base)
+        BaseMarker(base = state.base)
+
+        CandidateMarkers(
+            state = state,
+            toggleState = layerToggleState,
+            onMarkerClick = onMarkerClick,
+        )
     }
 }
 

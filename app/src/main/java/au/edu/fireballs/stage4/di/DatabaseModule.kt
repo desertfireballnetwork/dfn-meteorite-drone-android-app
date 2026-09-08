@@ -30,14 +30,11 @@ object DatabaseModule {
                 context,
                 Stage4Database::class.java,
                 "stage4.db",
-            )
-            // todo
-            // **** MVP TRADEOFF: Destructive migration is enabled here ****
-            // We want to facilitate rapid iteration during MVP development
-            // without manual migration scripts.
-            // MUST be replaced with explicit Room Migration objects before to production release.
-            .fallbackToDestructiveMigration(dropAllTables = true)
-            .build()
+            ).addMigrations(
+                Stage4Database.MIGRATION_1_2,
+                Stage4Database.MIGRATION_2_3,
+                Stage4Database.MIGRATION_3_4,
+            ).build()
 
     @Provides
     fun provideSurveyDao(db: Stage4Database): SurveyDao = db.surveyDao()

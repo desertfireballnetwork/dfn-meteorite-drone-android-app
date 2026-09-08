@@ -70,6 +70,11 @@ class RoomDaoTest {
                     latestTaskCreated = null,
                     baseLat = -25.2744,
                     baseLon = 133.7751,
+                    lastViewed = 1721779200000L,
+                    surveyedAreasJson = "[]",
+                    detectionTagsJson = "[]",
+                    userLocationsJson = "[]",
+                    showGeolocationAccuracyCircle = true,
                 )
 
             surveyDao.upsert(survey)
