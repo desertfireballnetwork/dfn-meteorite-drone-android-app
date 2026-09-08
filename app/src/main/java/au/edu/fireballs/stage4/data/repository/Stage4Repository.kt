@@ -123,11 +123,17 @@ class Stage4Repository
                     id = state.survey.id,
                     eventId = state.survey.eventId,
                     description = state.survey.description ?: existingSurvey?.description,
-                    created = state.survey.created.takeIf { it.isNotEmpty() } ?: existingSurvey?.created.orEmpty(),
+                    created =
+                        state.survey.created.takeIf { it.isNotEmpty() }
+                            ?: existingSurvey?.created.orEmpty(),
                     hasStage4 = existingSurvey?.hasStage4 ?: true,
                     activeSurvey = existingSurvey?.activeSurvey ?: true,
                     tilesetId = state.survey.tilesetId ?: existingSurvey?.tilesetId,
-                    latestTaskCreated = state.latestTaskCreated.ifEmpty { existingSurvey?.latestTaskCreated },
+                    latestTaskCreated =
+                        state.latestTaskCreated.ifEmpty {
+                            existingSurvey
+                                ?.latestTaskCreated
+                        },
                     baseLat = state.base?.latitude ?: existingSurvey?.baseLat,
                     baseLon = state.base?.longitude ?: existingSurvey?.baseLon,
                     surveyedAreasJson = surveyedAreasAdapter.toJson(state.surveyedAreas),

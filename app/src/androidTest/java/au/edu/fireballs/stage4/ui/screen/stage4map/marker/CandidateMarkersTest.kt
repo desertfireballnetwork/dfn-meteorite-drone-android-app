@@ -20,7 +20,11 @@ class CandidateMarkersTest {
     @get:Rule
     val composeRule = createAndroidComposeRule<ComponentActivity>()
 
-    private fun createCandidate(id: Long, lat: Double, lon: Double): Stage4Candidate =
+    private fun createCandidate(
+        id: Long,
+        lat: Double,
+        lon: Double,
+    ): Stage4Candidate =
         Stage4Candidate(
             inferenceResultId = id,
             imageId = 1000L + id,
