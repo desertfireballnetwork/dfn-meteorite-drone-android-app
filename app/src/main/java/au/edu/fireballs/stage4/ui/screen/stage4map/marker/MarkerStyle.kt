@@ -5,6 +5,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import au.edu.fireballs.stage4.R
 import au.edu.fireballs.stage4.domain.model.Stage4Candidate
+import au.edu.fireballs.stage4.ui.theme.DFNColors
 
 data class MarkerStyle(
     val iconRes: Int,
@@ -18,14 +19,12 @@ object MarkerStyleDefaults {
     val UNPROCESSED_SIZE = 50.dp
     val NO_SIZE = 30.dp
     const val NO_OPACITY = 0.8f
-
-    val CLAIM_ME_COLOR = Color(0xFF28A745)
-    val CLAIM_OTHER_COLOR = Color(0xFFDC3545)
 }
 
 fun getCandidateMarkerStyle(
     candidate: Stage4Candidate,
     verdict: Int, // 0=unprocessed, 1=yes, 2=no
+    colors: DFNColors,
 ): MarkerStyle {
     val iconRes =
         when (verdict) {
@@ -45,8 +44,8 @@ fun getCandidateMarkerStyle(
 
     val claimBorderColor =
         when {
-            candidate.claimedByMe -> MarkerStyleDefaults.CLAIM_ME_COLOR
-            candidate.claimedByOther -> MarkerStyleDefaults.CLAIM_OTHER_COLOR
+            candidate.claimedByMe -> colors.markerClaimedByMeOutline
+            candidate.claimedByOther -> colors.markerClaimedByOtherOutline
             else -> null
         }
 

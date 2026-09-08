@@ -15,6 +15,7 @@ import androidx.compose.ui.unit.dp
 import au.edu.fireballs.stage4.domain.model.Stage4Candidate
 import au.edu.fireballs.stage4.domain.model.Stage4State
 import au.edu.fireballs.stage4.ui.screen.stage4map.LayerToggleState
+import au.edu.fireballs.stage4.ui.theme.LocalDFNColors
 import com.mapbox.geojson.Point
 import com.mapbox.maps.AnnotatedFeature
 import com.mapbox.maps.ViewAnnotationAnchor
@@ -55,7 +56,8 @@ private fun CandidateMarker(
     onClick: (Stage4Candidate) -> Unit,
 ) {
     val coordinate = candidate.geoCentroid ?: return
-    val style = getCandidateMarkerStyle(candidate, verdict)
+    val colors = LocalDFNColors.current
+    val style = getCandidateMarkerStyle(candidate, verdict, colors)
 
     val options =
         ViewAnnotationOptions
