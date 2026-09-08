@@ -221,7 +221,6 @@ class Stage4MapViewModel
                     else -> newUnprocessed.add(candidate)
                 }
             }
-            }
 
             return state.copy(
                 unprocessedCandidates = newUnprocessed,

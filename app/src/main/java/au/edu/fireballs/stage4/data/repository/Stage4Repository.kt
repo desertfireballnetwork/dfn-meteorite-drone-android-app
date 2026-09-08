@@ -81,6 +81,7 @@ class Stage4Repository
                 }
             }
 
+        private suspend fun persistState(state: Stage4State) {
             val existingSurvey = surveyDao.getById(state.survey.id)
             val surveyEntity =
                 SurveyEntity(
