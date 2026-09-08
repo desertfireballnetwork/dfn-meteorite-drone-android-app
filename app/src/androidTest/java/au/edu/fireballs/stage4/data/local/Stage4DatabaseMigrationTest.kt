@@ -95,4 +95,67 @@ class Stage4DatabaseMigrationTest {
         assertEquals(1, cursor.getInt(3)) // showGeolocationAccuracyCircle default 1 (true)
         cursor.close()
     }
+
+    @Test
+    @Throws(IOException::class)
+    fun migrate3To4() {
+        var db =
+            helper.createDatabase(testDb, 3).apply {
+                // Insert test data with (0.0, 0.0) sentinel values for coordinates
+                execSQL(
+                    """
+                    INSERT INTO candidate (
+                        inferenceResultId, surveyId, imageId, imageFilename,
+                        imageWidth, imageHeight, geoCentroidLat, geoCentroidLon,
+                        geoAreaJson, boxX, boxY, boxW, boxH, confidence,
+                        isClaimedByMe, isClaimedByOther, serverVerdict
+                    ) VALUES (
+                        101, 7, 202, 'test_image.jpg',
+                        4000, 3000, 0.0, 0.0,
+                        '[]', 2000, 1500, 100, 100, 0.95,
+                        0, 0, 0
+                    )
+                    """.trimIndent(),
+                )
+                // Insert another row with real coordinates
+                execSQL(
+                    """
+                    INSERT INTO candidate (
+                        inferenceResultId, surveyId, imageId, imageFilename,
+                        imageWidth, imageHeight, geoCentroidLat, geoCentroidLon,
+                        geoAreaJson, boxX, boxY, boxW, boxH, confidence,
+                        isClaimedByMe, isClaimedByOther, serverVerdict
+                    ) VALUES (
+                        102, 7, 203, 'test_image_2.jpg',
+                        4000, 3000, -31.95, 115.86,
+                        '[]', 2000, 1500, 100, 100, 0.95,
+                        0, 0, 0
+                    )
+                    """.trimIndent(),
+                )
+                close()
+            }
+
+        db = helper.runMigrationsAndValidate(testDb, 4, true, Stage4Database.MIGRATION_3_4)
+
+        // Verify (0.0, 0.0) converted to NULL
+        val cursor1 =
+            db.query(
+                "SELECT geoCentroidLat, geoCentroidLon FROM candidate WHERE inferenceResultId = 101",
+            )
+        assertTrue(cursor1.moveToFirst())
+        assertTrue(cursor1.isNull(0))
+        assertTrue(cursor1.isNull(1))
+        cursor1.close()
+
+        // Verify real coordinates preserved
+        val cursor2 =
+            db.query(
+                "SELECT geoCentroidLat, geoCentroidLon FROM candidate WHERE inferenceResultId = 102",
+            )
+        assertTrue(cursor2.moveToFirst())
+        assertEquals(-31.95, cursor2.getDouble(0), 0.001)
+        assertEquals(115.86, cursor2.getDouble(1), 0.001)
+        cursor2.close()
+    }
 }

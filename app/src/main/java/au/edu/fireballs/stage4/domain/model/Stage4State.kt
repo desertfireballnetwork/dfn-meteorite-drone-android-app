@@ -11,6 +11,8 @@ data class Stage4Survey(
     val id: Long,
     val eventId: String,
     val tilesetId: String?,
+    val description: String? = null,
+    val created: String = "",
 )
 
 data class GeoCoordinate(

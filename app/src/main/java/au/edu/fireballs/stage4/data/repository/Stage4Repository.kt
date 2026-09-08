@@ -122,14 +122,14 @@ class Stage4Repository
                 SurveyEntity(
                     id = state.survey.id,
                     eventId = state.survey.eventId,
-                    description = existingSurvey?.description,
-                    created = existingSurvey?.created.orEmpty(),
+                    description = state.survey.description ?: existingSurvey?.description,
+                    created = state.survey.created.takeIf { it.isNotEmpty() } ?: existingSurvey?.created.orEmpty(),
                     hasStage4 = existingSurvey?.hasStage4 ?: true,
                     activeSurvey = existingSurvey?.activeSurvey ?: true,
-                    tilesetId = state.survey.tilesetId,
-                    latestTaskCreated = state.latestTaskCreated,
-                    baseLat = state.base?.latitude,
-                    baseLon = state.base?.longitude,
+                    tilesetId = state.survey.tilesetId ?: existingSurvey?.tilesetId,
+                    latestTaskCreated = state.latestTaskCreated.ifEmpty { existingSurvey?.latestTaskCreated },
+                    baseLat = state.base?.latitude ?: existingSurvey?.baseLat,
+                    baseLon = state.base?.longitude ?: existingSurvey?.baseLon,
                     surveyedAreasJson = surveyedAreasAdapter.toJson(state.surveyedAreas),
                     detectionTagsJson = detectionTagsAdapter.toJson(state.detectionTags),
                     userLocationsJson = userLocationsAdapter.toJson(state.userLocations),
@@ -157,6 +157,8 @@ class Stage4Repository
                             id = surveyEntity.id,
                             eventId = surveyEntity.eventId,
                             tilesetId = surveyEntity.tilesetId,
+                            description = surveyEntity.description,
+                            created = surveyEntity.created,
                         ),
                     base =
                         if (surveyEntity.baseLat != null && surveyEntity.baseLon != null) {
@@ -206,7 +208,12 @@ class Stage4Repository
                 imageId = imageId,
                 imageFilename = imageFilename,
                 imageDims = ImageDims(w = imageWidth, h = imageHeight),
-                geoCentroid = GeoCoordinate(latitude = geoCentroidLat, longitude = geoCentroidLon),
+                geoCentroid =
+                    if (geoCentroidLat != null && geoCentroidLon != null) {
+                        GeoCoordinate(latitude = geoCentroidLat, longitude = geoCentroidLon)
+                    } else {
+                        null
+                    },
                 geoArea =
                     geoAreaJson.let {
                         geoAreaAdapter.fromJson(it)
@@ -243,8 +250,8 @@ class Stage4Repository
                 imageFilename = imageFilename,
                 imageWidth = imageDims.w,
                 imageHeight = imageDims.h,
-                geoCentroidLat = geoCentroid?.latitude ?: 0.0,
-                geoCentroidLon = geoCentroid?.longitude ?: 0.0,
+                geoCentroidLat = geoCentroid?.latitude,
+                geoCentroidLon = geoCentroid?.longitude,
                 geoAreaJson =
                     geoArea?.let {
                         geoAreaAdapter.toJson(it)

@@ -33,6 +33,7 @@ object DatabaseModule {
             ).addMigrations(
                 Stage4Database.MIGRATION_1_2,
                 Stage4Database.MIGRATION_2_3,
+                Stage4Database.MIGRATION_3_4,
             ).build()
 
     @Provides

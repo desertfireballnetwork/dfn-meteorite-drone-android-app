@@ -9,6 +9,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import au.edu.fireballs.stage4.domain.model.Stage4Candidate
@@ -74,7 +75,10 @@ private fun CandidateMarker(
 
     ViewAnnotation(options = options) {
         Box(
-            modifier = Modifier.clickable { onClick(candidate) },
+            modifier =
+                Modifier
+                    .clickable { onClick(candidate) }
+                    .testTag("candidate-marker-${candidate.inferenceResultId}"),
             contentAlignment = Alignment.Center,
         ) {
             if (style.claimBorderColor != null) {

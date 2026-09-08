@@ -41,8 +41,8 @@ data class CandidateEntity(
     val imageFilename: String,
     val imageWidth: Int,
     val imageHeight: Int,
-    val geoCentroidLat: Double,
-    val geoCentroidLon: Double,
+    val geoCentroidLat: Double?,
+    val geoCentroidLon: Double?,
     // Cached footprint polygon serialized as JSON string of [lon,lat] pairs
     val geoAreaJson: String,
     // ML box in source-image pixel coords (x,y center per InferenceResult)
