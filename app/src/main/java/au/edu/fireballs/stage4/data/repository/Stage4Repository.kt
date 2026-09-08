@@ -200,8 +200,8 @@ class Stage4Repository
             return Stage4FetchResult.Success(state, isOffline = true)
         }
 
-        private fun CandidateEntity.toDomain(): Stage4Candidate {
-            return Stage4Candidate(
+        private fun CandidateEntity.toDomain(): Stage4Candidate =
+            Stage4Candidate(
                 inferenceResultId = inferenceResultId,
                 imageId = imageId,
                 imageFilename = imageFilename,
@@ -231,13 +231,12 @@ class Stage4Repository
                 claimedByMe = isClaimedByMe,
                 claimedByOther = isClaimedByOther,
             )
-        }
 
         private fun Stage4Candidate.toEntity(
             surveyId: Long,
             verdict: Int,
-        ): CandidateEntity {
-            return CandidateEntity(
+        ): CandidateEntity =
+            CandidateEntity(
                 inferenceResultId = inferenceResultId,
                 surveyId = surveyId,
                 imageId = imageId,
@@ -262,7 +261,6 @@ class Stage4Repository
                 claimOwnerUsername = null, // Not in Stage4Candidate
                 serverVerdict = verdict,
             )
-        }
 
         private suspend fun resolveFetchResult(
             response: Response<ResponseBody>,
