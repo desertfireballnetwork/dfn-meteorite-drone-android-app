@@ -80,6 +80,30 @@ class Stage4MapViewModelTest {
         }
 
     @Test
+    fun `openSurvey with offline Success result surfaces user message`() =
+        runTest(testDispatcher) {
+            val fixture = dummyState(7L)
+            whenever(repository.getCandidatesState(7L))
+                .thenReturn(Stage4FetchResult.Success(fixture, isOffline = true))
+
+            viewModel = Stage4MapViewModel(repository, localDecisionDao)
+            val collectJob =
+                backgroundScope.launch(testDispatcher) {
+                    viewModel.uiState.collect {}
+                }
+
+            viewModel.openSurvey(7L)
+            advanceUntilIdle()
+
+            val state = viewModel.uiState.value
+            assertTrue(state is Stage4MapUiState.Loaded)
+            val loaded = state as Stage4MapUiState.Loaded
+            assertEquals("Offline — displaying previous map data", loaded.userMessage)
+
+            collectJob.cancel()
+        }
+
+    @Test
     fun `openSurvey success updates state to Loaded with camera target at base zoom 13`() =
         runTest(testDispatcher) {
             val base = GeoCoordinate(latitude = -29.467, longitude = 115.342)

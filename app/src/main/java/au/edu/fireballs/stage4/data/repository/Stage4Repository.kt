@@ -8,12 +8,14 @@ import au.edu.fireballs.stage4.data.remote.Stage4Service
 import au.edu.fireballs.stage4.data.remote.dto.Stage4StateDto
 import au.edu.fireballs.stage4.di.IoDispatcher
 import au.edu.fireballs.stage4.domain.model.BoundingBox
+import au.edu.fireballs.stage4.domain.model.DetectionTag
 import au.edu.fireballs.stage4.domain.model.GeoCoordinate
 import au.edu.fireballs.stage4.domain.model.ImageDims
 import au.edu.fireballs.stage4.domain.model.SizeMetres
 import au.edu.fireballs.stage4.domain.model.Stage4Candidate
 import au.edu.fireballs.stage4.domain.model.Stage4State
 import au.edu.fireballs.stage4.domain.model.Stage4Survey
+import au.edu.fireballs.stage4.domain.model.UserLocation
 import au.edu.fireballs.stage4.domain.model.toDomain
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.Types
@@ -32,6 +34,7 @@ import javax.inject.Singleton
 sealed interface Stage4FetchResult {
     data class Success(
         val state: Stage4State,
+        val isOffline: Boolean = false,
     ) : Stage4FetchResult
 
     data class Error(
@@ -53,6 +56,38 @@ class Stage4Repository
         private val candidateDao: CandidateDao,
         @param:IoDispatcher private val ioDispatcher: CoroutineDispatcher,
     ) {
+        private val surveyedAreasAdapter =
+            moshi.adapter<List<List<List<Double>>>>(
+                Types.newParameterizedType(
+                    List::class.java,
+                    Types.newParameterizedType(
+                        List::class.java,
+                        Types.newParameterizedType(List::class.java, Double::class.javaObjectType),
+                    ),
+                ),
+            )
+        private val detectionTagsAdapter =
+            moshi.adapter<List<DetectionTag>>(
+                Types.newParameterizedType(
+                    List::class.java,
+                    DetectionTag::class.java,
+                ),
+            )
+        private val userLocationsAdapter =
+            moshi.adapter<List<UserLocation>>(
+                Types.newParameterizedType(
+                    List::class.java,
+                    UserLocation::class.java,
+                ),
+            )
+        private val geoAreaAdapter =
+            moshi.adapter<List<List<Double>>>(
+                Types.newParameterizedType(
+                    List::class.java,
+                    Types.newParameterizedType(List::class.java, Double::class.javaObjectType),
+                ),
+            )
+
         @Suppress("TooGenericExceptionCaught", "SwallowedException")
         suspend fun getCandidatesState(surveyId: Long): Stage4FetchResult =
             withContext(ioDispatcher) {
@@ -95,6 +130,10 @@ class Stage4Repository
                     latestTaskCreated = state.latestTaskCreated,
                     baseLat = state.base?.latitude,
                     baseLon = state.base?.longitude,
+                    surveyedAreasJson = surveyedAreasAdapter.toJson(state.surveyedAreas),
+                    detectionTagsJson = detectionTagsAdapter.toJson(state.detectionTags),
+                    userLocationsJson = userLocationsAdapter.toJson(state.userLocations),
+                    showGeolocationAccuracyCircle = state.showGeolocationAccuracyCircle,
                 )
             surveyDao.upsert(surveyEntity)
 
@@ -125,7 +164,10 @@ class Stage4Repository
                         } else {
                             null
                         },
-                    surveyedAreas = emptyList(),
+                    surveyedAreas =
+                        surveyEntity.surveyedAreasJson?.let {
+                            surveyedAreasAdapter.fromJson(it)
+                        } ?: emptyList(),
                     unprocessedCandidates =
                         candidateEntities
                             .filter { it.serverVerdict == 0 }
@@ -144,21 +186,21 @@ class Stage4Repository
                             .map {
                                 it.toDomain()
                             },
-                    detectionTags = emptyList(),
-                    userLocations = emptyList(),
-                    showGeolocationAccuracyCircle = true,
+                    detectionTags =
+                        surveyEntity.detectionTagsJson?.let {
+                            detectionTagsAdapter.fromJson(it)
+                        } ?: emptyList(),
+                    userLocations =
+                        surveyEntity.userLocationsJson?.let {
+                            userLocationsAdapter.fromJson(it)
+                        } ?: emptyList(),
+                    showGeolocationAccuracyCircle = surveyEntity.showGeolocationAccuracyCircle,
                     latestTaskCreated = surveyEntity.latestTaskCreated ?: "",
                 )
-            return Stage4FetchResult.Success(state)
+            return Stage4FetchResult.Success(state, isOffline = true)
         }
 
         private fun CandidateEntity.toDomain(): Stage4Candidate {
-            val geoAreaType =
-                Types.newParameterizedType(
-                    List::class.java,
-                    Types.newParameterizedType(List::class.java, Double::class.javaObjectType),
-                )
-            val geoAreaAdapter = moshi.adapter<List<List<Double>>>(geoAreaType)
             return Stage4Candidate(
                 inferenceResultId = inferenceResultId,
                 imageId = imageId,
@@ -195,12 +237,6 @@ class Stage4Repository
             surveyId: Long,
             verdict: Int,
         ): CandidateEntity {
-            val geoAreaType =
-                Types.newParameterizedType(
-                    List::class.java,
-                    Types.newParameterizedType(List::class.java, Double::class.javaObjectType),
-                )
-            val geoAreaAdapter = moshi.adapter<List<List<Double>>>(geoAreaType)
             return CandidateEntity(
                 inferenceResultId = inferenceResultId,
                 surveyId = surveyId,

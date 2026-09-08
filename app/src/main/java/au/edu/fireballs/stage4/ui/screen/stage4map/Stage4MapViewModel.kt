@@ -167,6 +167,9 @@ class Stage4MapViewModel
                             sourceStateFlow.value = result.state
                             errorFlow.value = null
                             isRefreshingFlow.value = false
+                            if (result.isOffline) {
+                                userMessageFlow.value = "Offline — displaying previous map data"
+                            }
                         }
 
                         is Stage4FetchResult.Error -> {

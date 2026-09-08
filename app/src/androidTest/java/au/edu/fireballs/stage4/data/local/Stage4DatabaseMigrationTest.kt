@@ -61,4 +61,38 @@ class Stage4DatabaseMigrationTest {
         assertEquals(0, cursor.getInt(1)) // serverVerdict default 0 (unprocessed)
         cursor.close()
     }
+
+    @Test
+    @Throws(IOException::class)
+    fun migrate2To3() {
+        var db =
+            helper.createDatabase(testDb, 2).apply {
+                execSQL(
+                    """
+                    INSERT INTO survey (
+                        id, eventId, created, hasStage4, activeSurvey
+                    ) VALUES (
+                        7, 'event-7', '2026-09-08T00:00:00Z', 1, 1
+                    )
+                    """.trimIndent(),
+                )
+                close()
+            }
+
+        db = helper.runMigrationsAndValidate(testDb, 3, true, Stage4Database.MIGRATION_2_3)
+
+        val cursor =
+            db.query(
+                """
+                SELECT surveyedAreasJson, detectionTagsJson, userLocationsJson, showGeolocationAccuracyCircle
+                FROM survey WHERE id = 7
+                """.trimIndent(),
+            )
+        assertTrue(cursor.moveToFirst())
+        assertTrue(cursor.isNull(0)) // surveyedAreasJson
+        assertTrue(cursor.isNull(1)) // detectionTagsJson
+        assertTrue(cursor.isNull(2)) // userLocationsJson
+        assertEquals(1, cursor.getInt(3)) // showGeolocationAccuracyCircle default 1 (true)
+        cursor.close()
+    }
 }

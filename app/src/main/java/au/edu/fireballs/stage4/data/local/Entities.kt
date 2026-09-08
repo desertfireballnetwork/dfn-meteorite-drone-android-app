@@ -22,6 +22,10 @@ data class SurveyEntity(
     val baseLat: Double?,
     val baseLon: Double?,
     val lastViewed: Long? = System.currentTimeMillis(),
+    val surveyedAreasJson: String? = null,
+    val detectionTagsJson: String? = null,
+    val userLocationsJson: String? = null,
+    val showGeolocationAccuracyCircle: Boolean = true,
 )
 
 @Entity(

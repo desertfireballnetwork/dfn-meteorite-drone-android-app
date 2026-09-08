@@ -22,7 +22,7 @@ import au.edu.fireballs.stage4.data.local.dao.TileManifestDao
         OfflineBundleEntity::class,
         TileManifestEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = true,
 )
 abstract class Stage4Database : RoomDatabase() {
@@ -49,6 +49,18 @@ abstract class Stage4Database : RoomDatabase() {
                     )
                     db.execSQL(
                         "ALTER TABLE candidate ADD COLUMN serverVerdict INTEGER NOT NULL DEFAULT 0",
+                    )
+                }
+            }
+
+        val MIGRATION_2_3 =
+            object : Migration(2, 3) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    db.execSQL("ALTER TABLE survey ADD COLUMN surveyedAreasJson TEXT DEFAULT NULL")
+                    db.execSQL("ALTER TABLE survey ADD COLUMN detectionTagsJson TEXT DEFAULT NULL")
+                    db.execSQL("ALTER TABLE survey ADD COLUMN userLocationsJson TEXT DEFAULT NULL")
+                    db.execSQL(
+                        "ALTER TABLE survey ADD COLUMN showGeolocationAccuracyCircle INTEGER NOT NULL DEFAULT 1",
                     )
                 }
             }

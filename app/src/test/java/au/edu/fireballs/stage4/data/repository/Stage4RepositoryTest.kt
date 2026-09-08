@@ -1,5 +1,6 @@
 package au.edu.fireballs.stage4.data.repository
 
+import au.edu.fireballs.stage4.data.local.SurveyEntity
 import au.edu.fireballs.stage4.data.local.dao.CandidateDao
 import au.edu.fireballs.stage4.data.local.dao.SurveyDao
 import au.edu.fireballs.stage4.data.remote.Stage4Service
@@ -117,7 +118,9 @@ class Stage4RepositoryTest {
 
             assertTrue("Expected Success but got $result", result is Stage4FetchResult.Success)
 
-            val state = (result as Stage4FetchResult.Success).state
+            val success = result as Stage4FetchResult.Success
+            val state = success.state
+            assertTrue("Expected online success", !success.isOffline)
             assertEquals(7L, state.survey.id)
             assertEquals("DN240703-02", state.survey.eventId)
             assertNull(state.survey.tilesetId)
@@ -363,6 +366,66 @@ class Stage4RepositoryTest {
             val result = offlineRepository.getCandidatesState(7L)
 
             assertEquals(Stage4FetchResult.NetworkError, result)
+        }
+
+    @Test
+    fun `getCandidatesState returns cached data with isOffline flag on network failure`() =
+        runTest(testDispatcher) {
+            val deadServer = MockWebServer()
+            val deadUrl = deadServer.url("/")
+            deadServer.shutdown()
+
+            val retrofit =
+                Retrofit
+                    .Builder()
+                    .baseUrl(deadUrl)
+                    .addConverterFactory(MoshiConverterFactory.create(moshi))
+                    .build()
+
+            val deadService = retrofit.create(Stage4Service::class.java)
+
+            val surveyEntity =
+                SurveyEntity(
+                    id = 7L,
+                    eventId = "EVT_7",
+                    description = null,
+                    created = "2026-09-08T00:00:00Z",
+                    hasStage4 = true,
+                    activeSurvey = true,
+                    tilesetId = null,
+                    latestTaskCreated = "2026-08-20T09:30:00Z",
+                    baseLat = -29.0,
+                    baseLon = 115.0,
+                    surveyedAreasJson = "[]",
+                    detectionTagsJson = "[]",
+                    userLocationsJson = "[]",
+                    showGeolocationAccuracyCircle = true,
+                )
+
+            org.mockito.kotlin
+                .whenever(surveyDao.getById(7L))
+                .thenReturn(surveyEntity)
+
+            org.mockito.kotlin
+                .whenever(candidateDao.getCandidatesForSurvey(7L))
+                .thenReturn(emptyList())
+
+            val offlineRepository =
+                Stage4Repository(
+                    stage4Service = deadService,
+                    moshi = moshi,
+                    surveyDao = surveyDao,
+                    candidateDao = candidateDao,
+                    ioDispatcher = testDispatcher,
+                )
+
+            val result = offlineRepository.getCandidatesState(7L)
+
+            assertTrue("Expected Success but got $result", result is Stage4FetchResult.Success)
+            val success = result as Stage4FetchResult.Success
+            assertTrue("Expected offline success", success.isOffline)
+            assertEquals(7L, success.state.survey.id)
+            assertEquals("2026-08-20T09:30:00Z", success.state.latestTaskCreated)
         }
 
     @Test
