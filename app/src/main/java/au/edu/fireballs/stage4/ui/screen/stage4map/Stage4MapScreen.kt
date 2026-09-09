@@ -137,7 +137,6 @@ private fun LoadedMap(
     mapViewportState: MapViewportState,
     locationPermission: LocationPermissionUiState,
     surveyPositioned: Boolean,
-    surveyId: Long,
     tileStore: TileStore?,
     candidateId: Long?,
     onSurveyPositioned: () -> Unit,

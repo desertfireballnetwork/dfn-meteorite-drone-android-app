@@ -5,6 +5,8 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import au.edu.fireballs.stage4.data.tiles.LocalFileRasterTileProvider
 import au.edu.fireballs.stage4.data.tiles.TileStore
+import au.edu.fireballs.stage4.domain.model.Stage4State
+import au.edu.fireballs.stage4.domain.model.Stage4Survey
 import com.mapbox.maps.extension.compose.animation.viewport.rememberMapViewportState
 import org.junit.Rule
 import org.junit.Test
@@ -20,10 +22,9 @@ class CustomRasterOverlaySmokeTest {
             MapHost(
                 mapViewportState = rememberMapViewportState(),
                 locationPermissionGranted = false,
-                polygons = emptyList(),
-                tilesetId = null,
-                base = null,
-                surveyId = 1L,
+                state = emptyState(),
+                layerToggleState = LayerToggleState(),
+                onMarkerClick = {},
                 candidateId = 2L,
                 tileStore = null,
             )
@@ -39,10 +40,9 @@ class CustomRasterOverlaySmokeTest {
             MapHost(
                 mapViewportState = rememberMapViewportState(),
                 locationPermissionGranted = false,
-                polygons = emptyList(),
-                tilesetId = null,
-                base = null,
-                surveyId = 1L,
+                state = emptyState(),
+                layerToggleState = LayerToggleState(),
+                onMarkerClick = {},
                 candidateId = 2L,
                 tileStore = store,
             )
@@ -59,10 +59,9 @@ class CustomRasterOverlaySmokeTest {
             MapHost(
                 mapViewportState = rememberMapViewportState(),
                 locationPermissionGranted = false,
-                polygons = emptyList(),
-                tilesetId = null,
-                base = null,
-                surveyId = 1L,
+                state = emptyState(),
+                layerToggleState = LayerToggleState(),
+                onMarkerClick = {},
                 candidateId = 2L,
                 tileStore = store,
             )
@@ -79,10 +78,9 @@ class CustomRasterOverlaySmokeTest {
             MapHost(
                 mapViewportState = rememberMapViewportState(),
                 locationPermissionGranted = false,
-                polygons = emptyList(),
-                tilesetId = null,
-                base = null,
-                surveyId = 1L,
+                state = emptyState(),
+                layerToggleState = LayerToggleState(),
+                onMarkerClick = {},
                 candidateId = 2L,
                 tileStore = store,
             )
@@ -90,4 +88,18 @@ class CustomRasterOverlaySmokeTest {
         composeRule.waitForIdle()
         composeRule.onNodeWithTag("map-host-root").assertExists()
     }
+
+    private fun emptyState(): Stage4State =
+        Stage4State(
+            survey = Stage4Survey(id = 1L, eventId = "DN240703-02", tilesetId = null),
+            base = null,
+            surveyedAreas = emptyList(),
+            unprocessedCandidates = emptyList(),
+            yesMeteorites = emptyList(),
+            noMeteorites = emptyList(),
+            detectionTags = emptyList(),
+            userLocations = emptyList(),
+            showGeolocationAccuracyCircle = false,
+            latestTaskCreated = "2026-08-26T00:00:00Z",
+        )
 }
