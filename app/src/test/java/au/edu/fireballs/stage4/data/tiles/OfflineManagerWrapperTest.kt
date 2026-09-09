@@ -1,96 +1,159 @@
 package au.edu.fireballs.stage4.data.tiles
 
+import android.os.Handler
+import android.os.Looper
+import com.mapbox.bindgen.ExpectedFactory
+import com.mapbox.maps.AsyncOperationResultCallback
+import com.mapbox.maps.OfflineRegionDownloadState
+import com.mapbox.maps.OfflineRegionError
+import com.mapbox.maps.OfflineRegionObserver
+import com.mapbox.maps.OfflineRegionStatus
+import com.mapbox.maps.OfflineRegionTilePyramidDefinition
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.mockito.Mockito.mock
+import org.mockito.Mockito.`when`
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
 
+@RunWith(RobolectricTestRunner::class)
 class OfflineManagerWrapperTest {
-    private class FakeDownloader(
-        private val failFirst: Boolean = false,
-        private val duplicateCompletions: Boolean = false,
-        private val progressAfterCompletion: Boolean = false,
-    ) : OfflineRegionDownloader {
-        val downloadedBboxes = mutableListOf<Bbox>()
-        var lastProgress = 0.0
-        private var callCount = 0
+    private class FakeRegionHandle : OfflineRegionHandle {
+        var observer: OfflineRegionObserver? = null
+        var purgeCount = 0
 
-        override fun downloadSatelliteRegion(
-            bbox: Bbox,
-            minZoom: Int,
-            maxZoom: Int,
-            progressCb: (Double) -> Unit,
-            completionCb: (Result<Unit>) -> Unit,
+        override fun setOfflineRegionObserver(observer: OfflineRegionObserver) {
+            this.observer = observer
+        }
+
+        override fun setOfflineRegionDownloadState(state: OfflineRegionDownloadState) = Unit
+
+        override fun purge(callback: AsyncOperationResultCallback) {
+            purgeCount++
+            callback.run(ExpectedFactory.createNone())
+        }
+
+        override val identifier: Long = 1L
+    }
+
+    private class FakeSource : OfflineRegionSource {
+        val handles = mutableListOf<FakeRegionHandle>()
+
+        override fun createOfflineRegion(
+            definition: OfflineRegionTilePyramidDefinition,
+            callback: (Result<OfflineRegionHandle>) -> Unit,
         ) {
-            downloadedBboxes.add(bbox)
-            progressCb(1.0)
-            callCount++
-            if (failFirst && callCount == 1) {
-                completionCb(Result.failure(IllegalStateException("boom")))
-            } else {
-                completionCb(Result.success(Unit))
-            }
-            if (duplicateCompletions) {
-                completionCb(Result.success(Unit))
-            }
-            if (progressAfterCompletion) {
-                progressCb(0.5)
-            }
+            val handle = FakeRegionHandle()
+            handles.add(handle)
+            callback(Result.success(handle))
+        }
+
+        override fun getOfflineRegions(callback: (Result<List<OfflineRegionHandle>>) -> Unit) {
+            callback(Result.success(handles))
         }
     }
 
-    @Test
-    fun oversizedBboxIsRecursivelySplitUnderCap() {
-        val fake = FakeDownloader()
-        val wrapper = OfflineManagerWrapper(fake, maxTilesPerRegion = 100)
-        val bbox = Bbox(minLat = -85.0, minLon = -180.0, maxLat = 85.0, maxLon = 180.0)
+    private fun build(maxTilesPerRegion: Int): Pair<OfflineManagerWrapper, FakeSource> {
+        val source = FakeSource()
+        val regionWrapper =
+            OfflineRegionWrapper(
+                source = source,
+                mainHandler = Handler(Looper.getMainLooper()),
+                definitionFactory = { _, _, _ ->
+                    mock(OfflineRegionTilePyramidDefinition::class.java)
+                },
+            )
+        return OfflineManagerWrapper(regionWrapper, maxTilesPerRegion) to source
+    }
 
-        wrapper.splitAndDownload(
-            clusterBboxes = listOf(bbox),
-            minZoom = 5,
-            maxZoom = 5,
-            progressCb = {},
-            completionCb = {},
+    private fun statusWith(
+        required: Long,
+        completed: Long,
+    ): OfflineRegionStatus =
+        OfflineRegionStatus(
+            OfflineRegionDownloadState.ACTIVE,
+            completed,
+            0,
+            completed,
+            required,
+            0,
+            required,
+            true,
         )
 
-        assertTrue(fake.downloadedBboxes.size > 1)
-        for (sub in fake.downloadedBboxes) {
-            assertTrue(estimateTiles(sub, 5, 5) <= 100)
-        }
+    private fun idleMain() {
+        shadowOf(Looper.getMainLooper()).idle()
     }
 
     @Test
-    fun smallBboxIsDownloadedDirectly() {
-        val fake = FakeDownloader()
-        val wrapper = OfflineManagerWrapper(fake, maxTilesPerRegion = 100)
-        val bbox = Bbox(minLat = -0.001, minLon = -0.001, maxLat = 0.001, maxLon = 0.001)
-
-        wrapper.splitAndDownload(
-            clusterBboxes = listOf(bbox),
-            minZoom = 0,
-            maxZoom = 2,
-            progressCb = {},
-            completionCb = {},
-        )
-
-        assertEquals(1, fake.downloadedBboxes.size)
-        assertEquals(bbox, fake.downloadedBboxes.single())
-    }
-
-    @Test
-    fun failureThenLaterSuccessEmitsExactlyOneFailure() {
-        val failing = FakeDownloader(failFirst = true)
-        val wrapper = OfflineManagerWrapper(failing, maxTilesPerRegion = 100)
-        val bbox = Bbox(minLat = -85.0, minLon = -180.0, maxLat = 85.0, maxLon = 180.0)
+    fun regionWithinCapDownloadsOnce() {
+        val (wrapper, source) = build(maxTilesPerRegion = 100)
         val completions = mutableListOf<Result<Unit>>()
 
         wrapper.splitAndDownload(
-            clusterBboxes = listOf(bbox),
+            clusterBboxes = listOf(Bbox(-0.001, -0.001, 0.001, 0.001)),
+            minZoom = 0,
+            maxZoom = 2,
+            progressCb = {},
+            completionCb = { completions.add(it) },
+        )
+        assertEquals(1, source.handles.size)
+        source.handles[0].observer?.statusChanged(statusWith(10, 10))
+        idleMain()
+
+        assertEquals(1, completions.size)
+        assertTrue(completions.single().isSuccess)
+        assertEquals(1, source.handles.size)
+    }
+
+    @Test
+    fun regionOverCapIsSplitIntoQuadrants() {
+        val (wrapper, source) = build(maxTilesPerRegion = 100)
+        val completions = mutableListOf<Result<Unit>>()
+
+        wrapper.splitAndDownload(
+            clusterBboxes = listOf(Bbox(-85.0, -180.0, 85.0, 180.0)),
             minZoom = 5,
             maxZoom = 5,
             progressCb = {},
             completionCb = { completions.add(it) },
         )
+        assertEquals(1, source.handles.size)
+        source.handles[0].observer?.statusChanged(statusWith(200, 0))
+        idleMain()
+
+        assertTrue(source.handles.size > 1)
+        assertEquals(1, source.handles[0].purgeCount)
+        var index = 1
+        while (index < source.handles.size) {
+            source.handles[index].observer?.statusChanged(statusWith(10, 10))
+            idleMain()
+            index++
+        }
+
+        assertEquals(1, completions.size)
+        assertTrue(completions.single().isSuccess)
+    }
+
+    @Test
+    fun failureEmitsExactlyOneFailure() {
+        val (wrapper, source) = build(maxTilesPerRegion = 100)
+        val completions = mutableListOf<Result<Unit>>()
+
+        wrapper.splitAndDownload(
+            clusterBboxes = listOf(Bbox(-0.001, -0.001, 0.001, 0.001)),
+            minZoom = 0,
+            maxZoom = 2,
+            progressCb = {},
+            completionCb = { completions.add(it) },
+        )
+        val error = mock(OfflineRegionError::class.java)
+        `when`(error.message).thenReturn("boom")
+        source.handles[0].observer?.errorOccurred(error)
+        idleMain()
 
         assertEquals(1, completions.size)
         assertTrue(completions.single().isFailure)
@@ -98,7 +161,7 @@ class OfflineManagerWrapperTest {
 
     @Test
     fun nonFiniteBboxIsRejected() {
-        val wrapper = OfflineManagerWrapper(FakeDownloader(), maxTilesPerRegion = 100)
+        val (wrapper, _) = build(maxTilesPerRegion = 100)
         assertThrows(IllegalArgumentException::class.java) {
             wrapper.splitAndDownload(
                 clusterBboxes = listOf(Bbox(Double.NaN, 0.0, 1.0, 1.0)),
@@ -112,13 +175,10 @@ class OfflineManagerWrapperTest {
 
     @Test
     fun unorderedBboxIsRejected() {
-        val wrapper = OfflineManagerWrapper(FakeDownloader(), maxTilesPerRegion = 100)
+        val (wrapper, _) = build(maxTilesPerRegion = 100)
         assertThrows(IllegalArgumentException::class.java) {
             wrapper.splitAndDownload(
-                clusterBboxes =
-                    listOf(
-                        Bbox(minLat = 10.0, minLon = 0.0, maxLat = -10.0, maxLon = 1.0),
-                    ),
+                clusterBboxes = listOf(Bbox(10.0, 0.0, -10.0, 1.0)),
                 minZoom = 0,
                 maxZoom = 5,
                 progressCb = {},
@@ -129,7 +189,7 @@ class OfflineManagerWrapperTest {
 
     @Test
     fun invertedZoomsAreRejected() {
-        val wrapper = OfflineManagerWrapper(FakeDownloader(), maxTilesPerRegion = 100)
+        val (wrapper, _) = build(maxTilesPerRegion = 100)
         assertThrows(IllegalArgumentException::class.java) {
             wrapper.splitAndDownload(
                 clusterBboxes = listOf(Bbox(-1.0, -1.0, 1.0, 1.0)),
@@ -140,113 +200,4 @@ class OfflineManagerWrapperTest {
             )
         }
     }
-
-    @Test
-    fun tooManyClustersAreRejected() {
-        val wrapper = OfflineManagerWrapper(FakeDownloader(), maxTilesPerRegion = 100)
-        val clusters = List(101) { Bbox(-1.0, -1.0, 1.0, 1.0) }
-        assertThrows(IllegalArgumentException::class.java) {
-            wrapper.splitAndDownload(
-                clusterBboxes = clusters,
-                minZoom = 0,
-                maxZoom = 5,
-                progressCb = {},
-                completionCb = {},
-            )
-        }
-    }
-
-    @Test
-    fun degenerateOversizedRegionFailsInsteadOfViolatingCap() {
-        val fake = FakeDownloader()
-        val wrapper = OfflineManagerWrapper(fake, maxTilesPerRegion = 10)
-        val completions = mutableListOf<Result<Unit>>()
-
-        wrapper.splitAndDownload(
-            clusterBboxes =
-                listOf(
-                    Bbox(minLat = 0.0, minLon = -180.0, maxLat = 0.0, maxLon = 180.0),
-                ),
-            minZoom = 5,
-            maxZoom = 5,
-            progressCb = {},
-            completionCb = { completions.add(it) },
-        )
-
-        assertEquals(1, completions.size)
-        assertTrue(completions.single().isFailure)
-        assertTrue(fake.downloadedBboxes.isEmpty())
-    }
-
-    @Test
-    fun duplicateCompletionEmitsExactlyOneOverallCompletion() {
-        val fake = FakeDownloader(duplicateCompletions = true)
-        val wrapper = OfflineManagerWrapper(fake, maxTilesPerRegion = 100)
-        val bbox = Bbox(minLat = -0.001, minLon = -0.001, maxLat = 0.001, maxLon = 0.001)
-        val completions = mutableListOf<Result<Unit>>()
-
-        wrapper.splitAndDownload(
-            clusterBboxes = listOf(bbox),
-            minZoom = 0,
-            maxZoom = 2,
-            progressCb = {},
-            completionCb = { completions.add(it) },
-        )
-
-        assertEquals(1, completions.size)
-        assertTrue(completions.single().isSuccess)
-    }
-
-    @Test
-    fun progressAfterCompletionIsSuppressed() {
-        val fake = FakeDownloader(progressAfterCompletion = true)
-        val wrapper = OfflineManagerWrapper(fake, maxTilesPerRegion = 100)
-        val bbox = Bbox(minLat = -0.001, minLon = -0.001, maxLat = 0.001, maxLon = 0.001)
-        val events = mutableListOf<String>()
-
-        wrapper.splitAndDownload(
-            clusterBboxes = listOf(bbox),
-            minZoom = 0,
-            maxZoom = 2,
-            progressCb = { events.add("progress:$it") },
-            completionCb = { events.add("complete:${it.isSuccess}") },
-        )
-
-        assertEquals(1, events.count { it.startsWith("complete") })
-        assertEquals(events.last(), events.first { it.startsWith("complete") })
-    }
-
-    @Test
-    fun progressAfterFailureIsSuppressed() {
-        val fake = FakeDownloader(failFirst = true, progressAfterCompletion = true)
-        val wrapper = OfflineManagerWrapper(fake, maxTilesPerRegion = 100)
-        val bbox = Bbox(minLat = -85.0, minLon = -180.0, maxLat = 85.0, maxLon = 180.0)
-        val events = mutableListOf<String>()
-
-        wrapper.splitAndDownload(
-            clusterBboxes = listOf(bbox),
-            minZoom = 5,
-            maxZoom = 5,
-            progressCb = { events.add("progress:$it") },
-            completionCb = { events.add("complete:${it.isSuccess}") },
-        )
-
-        assertEquals(1, events.count { it.startsWith("complete") })
-        assertTrue(events.last().startsWith("complete:false"))
-    }
-
-    private fun estimateTiles(
-        bbox: Bbox,
-        minZoom: Int,
-        maxZoom: Int,
-    ): Long =
-        (minZoom..maxZoom).sumOf { zoom ->
-            TileMath.tileCountForBbox(
-                bbox.minLat,
-                bbox.minLon,
-                bbox.maxLat,
-                bbox.maxLon,
-                zoom,
-            )
-        }
 }

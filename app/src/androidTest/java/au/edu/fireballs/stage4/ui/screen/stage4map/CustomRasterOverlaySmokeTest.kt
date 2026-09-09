@@ -17,7 +17,7 @@ class CustomRasterOverlaySmokeTest {
     val composeRule = createAndroidComposeRule<ComponentActivity>()
 
     @Test
-    fun customRasterOverlay_nullTileStore_noCrash() {
+    fun customRasterOverlay_noTiles_noCrash() {
         composeRule.setContent {
             MapHost(
                 mapViewportState = rememberMapViewportState(),
@@ -34,46 +34,9 @@ class CustomRasterOverlaySmokeTest {
     }
 
     @Test
-    fun customRasterOverlay_noTilesForSurvey_noCrash() {
-        val store = TileStore(Files.createTempDirectory("tiles").toFile())
-        composeRule.setContent {
-            MapHost(
-                mapViewportState = rememberMapViewportState(),
-                locationPermissionGranted = false,
-                state = emptyState(),
-                layerToggleState = LayerToggleState(),
-                onMarkerClick = {},
-                candidateId = 2L,
-                tileStore = store,
-            )
-        }
-        composeRule.waitForIdle()
-        composeRule.onNodeWithTag("map-host-root").assertExists()
-    }
-
-    @Test
-    fun customRasterOverlay_withTilesForSurvey_noCrash() {
+    fun customRasterOverlay_withTiles_noCrash() {
         val store = TileStore(Files.createTempDirectory("tiles").toFile())
         store.write(1L, 2L, 0, 0, 0, LocalFileRasterTileProvider.TRANSPARENT_PNG)
-        composeRule.setContent {
-            MapHost(
-                mapViewportState = rememberMapViewportState(),
-                locationPermissionGranted = false,
-                state = emptyState(),
-                layerToggleState = LayerToggleState(),
-                onMarkerClick = {},
-                candidateId = 2L,
-                tileStore = store,
-            )
-        }
-        composeRule.waitForIdle()
-        composeRule.onNodeWithTag("map-host-root").assertExists()
-    }
-
-    @Test
-    fun customRasterOverlay_corruptTile_noCrash() {
-        val store = TileStore(Files.createTempDirectory("tiles").toFile())
-        store.write(1L, 2L, 0, 0, 0, byteArrayOf(1, 2, 3, 4, 5))
         composeRule.setContent {
             MapHost(
                 mapViewportState = rememberMapViewportState(),

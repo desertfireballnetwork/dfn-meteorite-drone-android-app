@@ -4,7 +4,6 @@ import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import au.edu.fireballs.stage4.data.local.Stage4Database
-import au.edu.fireballs.stage4.data.tiles.AccountScopeProvider
 import au.edu.fireballs.stage4.data.tiles.OfflineRegionWrapper
 import au.edu.fireballs.stage4.data.tiles.TileStore
 import kotlinx.coroutines.launch
@@ -33,7 +32,6 @@ class AccountManagerTest {
     private lateinit var cookieJar: PersistentCookieJar
     private lateinit var offlineRegionWrapper: OfflineRegionWrapper
     private lateinit var accountManager: AccountManager
-    private val scopeProvider = AccountScopeProvider { "session-testscope" }
 
     private val testDispatcher = UnconfinedTestDispatcher()
     private val testUrl: HttpUrl = "https://example.com/".toHttpUrl()
@@ -74,17 +72,16 @@ class AccountManagerTest {
                 database = database,
                 tileStore = TileStore(File.createTempFile("am-tiles", "").parentFile),
                 offlineRegionWrapper = offlineRegionWrapper,
-                accountScopeProvider = scopeProvider,
                 ioDispatcher = testDispatcher,
             )
     }
 
     private fun answerPurgeWith(result: Result<Unit>) {
         doAnswer { invocation ->
-            val callback = invocation.getArgument<(Result<Unit>) -> Unit>(1)
+            val callback = invocation.getArgument<(Result<Unit>) -> Unit>(0)
             callback(result)
             null
-        }.`when`(offlineRegionWrapper).purgeAllRegions(any(), any())
+        }.`when`(offlineRegionWrapper).purgeAllRegions(any())
     }
 
     @After
@@ -159,9 +156,9 @@ class AccountManagerTest {
         runTest {
             var purgeCallback: ((Result<Unit>) -> Unit)? = null
             doAnswer { invocation ->
-                purgeCallback = invocation.getArgument<(Result<Unit>) -> Unit>(1)
+                purgeCallback = invocation.getArgument<(Result<Unit>) -> Unit>(0)
                 null
-            }.`when`(offlineRegionWrapper).purgeAllRegions(any(), any())
+            }.`when`(offlineRegionWrapper).purgeAllRegions(any())
 
             val logoutJob = launch { accountManager.logout() }
             runCurrent()
@@ -172,7 +169,7 @@ class AccountManagerTest {
             runCurrent()
 
             assertTrue(logoutJob.isCompleted)
-            verify(offlineRegionWrapper).purgeAllRegions(any(), any())
+            verify(offlineRegionWrapper).purgeAllRegions(any())
         }
 
     @Test

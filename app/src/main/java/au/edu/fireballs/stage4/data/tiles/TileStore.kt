@@ -6,7 +6,6 @@ import java.io.InputStream
 
 class TileStore(
     private val baseDir: File,
-    private val scopeProvider: AccountScopeProvider = NoScopeProvider,
     private val quotaBytes: Long = DEFAULT_QUOTA_BYTES,
 ) {
     private val lock = Any()
@@ -31,7 +30,7 @@ class TileStore(
         candidateId: Long,
     ): Boolean {
         require(surveyId >= 0L && candidateId >= 0L) { "Identifiers must be non-negative" }
-        return File(scopeDir(), "$surveyId/$candidateId").isDirectory
+        return File(baseDir, "$surveyId/$candidateId").isDirectory
     }
 
     fun read(
@@ -81,7 +80,7 @@ class TileStore(
 
     fun surveyTilesDirectory(surveyId: Long): File {
         require(surveyId >= 0L) { "Survey id must be non-negative" }
-        return File(scopeDir(), surveyId.toString())
+        return File(baseDir, surveyId.toString())
     }
 
     fun hasSurvey(surveyId: Long): Boolean {
@@ -93,19 +92,6 @@ class TileStore(
         require(surveyId >= 0L) { "Survey id must be non-negative" }
         synchronized(lock) {
             val dir = surveyTilesDirectory(surveyId)
-            val removed = dirTotalSize(dir)
-            dir.deleteRecursively()
-            totalBytes = (totalBytes - removed).coerceAtLeast(0L)
-        }
-    }
-
-    fun deleteCurrentScope() {
-        deleteScope(scopeProvider.currentScope())
-    }
-
-    fun deleteScope(scope: String) {
-        synchronized(lock) {
-            val dir = scopedDir(scope)
             val removed = dirTotalSize(dir)
             dir.deleteRecursively()
             totalBytes = (totalBytes - removed).coerceAtLeast(0L)
@@ -132,30 +118,13 @@ class TileStore(
         require(x in 0 until span && y in 0 until span) { "Tile coordinates out of range" }
     }
 
-    private fun scopeDir(): File = scopedDir(scopeProvider.currentScope())
-
-    private fun scopedDir(scope: String): File {
-        if (scope.isEmpty()) {
-            return baseDir
-        }
-        require(SCOPE_PATTERN.matches(scope)) {
-            "Invalid tile storage scope"
-        }
-        val canonicalBase = baseDir.canonicalFile
-        val scopedDir = File(canonicalBase, scope).canonicalFile
-        require(scopedDir.parentFile == canonicalBase) {
-            "Tile storage scope escapes base directory"
-        }
-        return scopedDir
-    }
-
     private fun tileFile(
         surveyId: Long,
         candidateId: Long,
         z: Int,
         x: Int,
         y: Int,
-    ): File = File(scopeDir(), "$surveyId/$candidateId/$z/$x/$y.png")
+    ): File = File(baseDir, "$surveyId/$candidateId/$z/$x/$y.png")
 
     private fun computeTotalBytes(root: File): Long =
         root
@@ -174,10 +143,5 @@ class TileStore(
         const val MAX_TILE_BYTES = 1_048_576
         const val DEFAULT_QUOTA_BYTES = 512L * 1024L * 1024L
         private const val MAX_TILE_ZOOM = 30
-        private val SCOPE_PATTERN = Regex("[A-Za-z0-9_-]{1,128}")
-
-        private object NoScopeProvider : AccountScopeProvider {
-            override fun currentScope(): String = ""
-        }
     }
 }

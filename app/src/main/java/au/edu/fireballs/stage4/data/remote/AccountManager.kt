@@ -1,7 +1,6 @@
 package au.edu.fireballs.stage4.data.remote
 
 import au.edu.fireballs.stage4.data.local.Stage4Database
-import au.edu.fireballs.stage4.data.tiles.AccountScopeProvider
 import au.edu.fireballs.stage4.data.tiles.OfflineRegionWrapper
 import au.edu.fireballs.stage4.data.tiles.TileStore
 import au.edu.fireballs.stage4.di.IoDispatcher
@@ -23,7 +22,6 @@ class AccountManager
         private val database: Stage4Database,
         private val tileStore: TileStore,
         private val offlineRegionWrapper: OfflineRegionWrapper,
-        private val accountScopeProvider: AccountScopeProvider,
         @IoDispatcher private val ioDispatcher: CoroutineDispatcher,
     ) {
         fun isSignedIn(): Boolean {
@@ -33,17 +31,16 @@ class AccountManager
 
         suspend fun logout() =
             withContext(ioDispatcher) {
-                val scope = accountScopeProvider.currentScope()
-                tileStore.deleteScope(scope)
-                cookieJar.clear()
-                database.clearAllTables()
                 suspendCancellableCoroutine { continuation ->
-                    offlineRegionWrapper.purgeAllRegions(scope) { result ->
+                    offlineRegionWrapper.purgeAllRegions { result ->
                         result.fold(
                             onSuccess = { continuation.resume(Unit) },
                             onFailure = { continuation.resumeWithException(it) },
                         )
                     }
                 }
+                tileStore.deleteAll()
+                cookieJar.clear()
+                database.clearAllTables()
             }
     }

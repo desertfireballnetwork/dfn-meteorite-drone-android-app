@@ -14,19 +14,19 @@ import java.util.concurrent.CancellationException
 import java.util.concurrent.atomic.AtomicBoolean
 
 class OfflineRegionWrapper(
-    private val scopeProvider: AccountScopeProvider = NoScopeProvider,
     private val source: OfflineRegionSource = MapboxOfflineRegionSource(OfflineRegionManager()),
     private val mainHandler: Handler = Handler(Looper.getMainLooper()),
     private val definitionFactory: (Bbox, Int, Int) -> OfflineRegionTilePyramidDefinition =
         ::defaultDefinition,
-) : OfflineRegionDownloader {
+) {
     private var activeOperation: RegionOperation? = null
     private val operationLock = Any()
 
-    override fun downloadSatelliteRegion(
+    fun downloadSatelliteRegion(
         bbox: Bbox,
         minZoom: Int,
         maxZoom: Int,
+        resourceCountCb: (Long) -> Unit,
         progressCb: (Double) -> Unit,
         completionCb: (Result<Unit>) -> Unit,
     ) {
@@ -35,7 +35,7 @@ class OfflineRegionWrapper(
                 check(activeOperation?.isTerminal != false) {
                     "An offline region download is already active"
                 }
-                RegionOperation(mainHandler, progressCb, completionCb).also {
+                RegionOperation(mainHandler, resourceCountCb, progressCb, completionCb).also {
                     activeOperation = it
                 }
             }
@@ -53,13 +53,13 @@ class OfflineRegionWrapper(
                     return@createOfflineRegion
                 }
             operation.region = region
-            region.setMetadata(scopeProvider.currentScope().toByteArray()) { }
             region.setOfflineRegionObserver(
                 object : OfflineRegionObserver {
                     override fun statusChanged(status: OfflineRegionStatus) {
                         if (operation.isTerminal) {
                             return
                         }
+                        operation.reportResourceCount(status.requiredResourceCount)
                         val progress =
                             if (status.requiredResourceCount > 0) {
                                 status.completedResourceCount.toDouble() /
@@ -94,7 +94,6 @@ class OfflineRegionWrapper(
 
     fun deleteRegion(
         regionId: String,
-        scope: String = scopeProvider.currentScope(),
         callback: (Result<Unit>) -> Unit = {},
     ) {
         source.getOfflineRegions { result ->
@@ -103,10 +102,7 @@ class OfflineRegionWrapper(
                     mainHandler.post { callback(Result.failure(error)) }
                     return@getOfflineRegions
                 }
-            val region =
-                regions.firstOrNull {
-                    it.identifier.toString() == regionId && it.belongsTo(scope)
-                }
+            val region = regions.firstOrNull { it.identifier.toString() == regionId }
             if (region == null) {
                 mainHandler.post {
                     callback(Result.failure(IllegalStateException("Region not found: $regionId")))
@@ -127,24 +123,20 @@ class OfflineRegionWrapper(
         }
     }
 
-    fun purgeAllRegions(
-        scope: String = scopeProvider.currentScope(),
-        callback: (Result<Unit>) -> Unit = {},
-    ) {
+    fun purgeAllRegions(callback: (Result<Unit>) -> Unit = {}) {
         source.getOfflineRegions { result ->
             val regions =
                 result.getOrElse { error ->
                     mainHandler.post { callback(Result.failure(error)) }
                     return@getOfflineRegions
                 }
-            val owned = regions.filter { it.belongsTo(scope) }
-            var remaining = owned.size
+            var remaining = regions.size
             var failed: Throwable? = null
             if (remaining == 0) {
                 mainHandler.post { callback(Result.success(Unit)) }
                 return@getOfflineRegions
             }
-            owned.forEach { region ->
+            regions.forEach { region ->
                 region.purge {
                     mainHandler.post {
                         if (it.isError && failed == null) {
@@ -166,24 +158,15 @@ class OfflineRegionWrapper(
         }
     }
 
-    fun listRegions(
-        scope: String = scopeProvider.currentScope(),
-        callback: (Result<List<OfflineRegionHandle>>) -> Unit,
-    ) {
+    fun listRegions(callback: (Result<List<OfflineRegionHandle>>) -> Unit) {
         source.getOfflineRegions { result ->
-            val filtered =
-                result.map { regions ->
-                    regions.filter { it.belongsTo(scope) }
-                }
-            mainHandler.post { callback(filtered) }
+            mainHandler.post { callback(result) }
         }
     }
 
-    private fun OfflineRegionHandle.belongsTo(scope: String): Boolean =
-        String(getMetadata(), Charsets.UTF_8) == scope
-
     private class RegionOperation(
         private val mainHandler: Handler,
+        private val resourceCountCb: (Long) -> Unit,
         private val progressCb: (Double) -> Unit,
         private val completionCb: (Result<Unit>) -> Unit,
     ) {
@@ -197,6 +180,16 @@ class OfflineRegionWrapper(
 
         @Volatile
         private var cancelled = false
+
+        @Volatile
+        private var resourceCountReported = false
+
+        fun reportResourceCount(count: Long) {
+            if (count > 0 && !resourceCountReported) {
+                resourceCountReported = true
+                mainHandler.post { resourceCountCb(count) }
+            }
+        }
 
         fun postProgress(progress: Double) {
             if (terminal.get() || cancelled) {
@@ -247,10 +240,6 @@ class OfflineRegionWrapper(
 
     companion object {
         private const val SATELLITE_STYLE_URL = "mapbox://styles/mapbox/satellite-v9"
-
-        private object NoScopeProvider : AccountScopeProvider {
-            override fun currentScope(): String = ""
-        }
 
         private fun defaultDefinition(
             bbox: Bbox,

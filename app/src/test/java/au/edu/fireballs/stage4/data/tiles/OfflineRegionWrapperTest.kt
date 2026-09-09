@@ -13,14 +13,12 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.mockito.Mockito.doAnswer
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.never
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
 import org.mockito.kotlin.any
 import org.mockito.kotlin.argumentCaptor
-import org.mockito.kotlin.eq
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import java.util.concurrent.CancellationException
@@ -31,7 +29,6 @@ class OfflineRegionWrapperTest {
     private val source = FakeSource()
     private val wrapper =
         OfflineRegionWrapper(
-            scopeProvider = AccountScopeProvider { "session-testscope" },
             source = source,
             mainHandler = Handler(Looper.getMainLooper()),
             definitionFactory = { _, _, _ -> mock(OfflineRegionTilePyramidDefinition::class.java) },
@@ -44,6 +41,7 @@ class OfflineRegionWrapperTest {
             bbox(),
             0,
             10,
+            resourceCountCb = {},
             progressCb = {},
             completionCb = { completions.add(it) },
         )
@@ -69,6 +67,7 @@ class OfflineRegionWrapperTest {
             bbox(),
             0,
             10,
+            resourceCountCb = {},
             progressCb = {},
             completionCb = { completions.add(it) },
         )
@@ -93,6 +92,7 @@ class OfflineRegionWrapperTest {
             bbox(),
             0,
             10,
+            resourceCountCb = {},
             progressCb = {},
             completionCb = { completions.add(it) },
         )
@@ -116,6 +116,7 @@ class OfflineRegionWrapperTest {
             bbox(),
             0,
             10,
+            resourceCountCb = {},
             progressCb = {},
             completionCb = { completions.add(it) },
         )
@@ -130,6 +131,27 @@ class OfflineRegionWrapperTest {
 
         assertEquals(1, completions.size)
         assertTrue(completions.single().isFailure)
+    }
+
+    @Test
+    fun reportsActualResourceCountOnce() {
+        val counts = mutableListOf<Long>()
+        wrapper.downloadSatelliteRegion(
+            bbox(),
+            0,
+            10,
+            resourceCountCb = { counts.add(it) },
+            progressCb = {},
+            completionCb = {},
+        )
+        source.createCallback(Result.success(region))
+        val observer = captureObserver()
+
+        observer.statusChanged(completeStatus())
+        observer.statusChanged(completeStatus())
+        idleMain()
+
+        assertEquals(listOf(10L), counts)
     }
 
     private fun bbox(): Bbox = Bbox(-1.0, -1.0, 1.0, 1.0)
@@ -160,76 +182,25 @@ class OfflineRegionWrapperTest {
     fun definitionFactoryFailureCompletesAndAllowsRetry() {
         val throwing =
             OfflineRegionWrapper(
-                scopeProvider = AccountScopeProvider { "session-testscope" },
                 source = source,
                 mainHandler = Handler(Looper.getMainLooper()),
                 definitionFactory = { _, _, _ -> throw IllegalStateException("factory boom") },
             )
         val first = mutableListOf<Result<Unit>>()
-        throwing.downloadSatelliteRegion(bbox(), 0, 10, {}, { first.add(it) })
+        throwing.downloadSatelliteRegion(bbox(), 0, 10, {}, {}, { first.add(it) })
         idleMain()
         assertEquals(1, first.size)
         assertTrue(first.single().isFailure)
 
         val second = mutableListOf<Result<Unit>>()
-        throwing.downloadSatelliteRegion(bbox(), 0, 10, {}, { second.add(it) })
+        throwing.downloadSatelliteRegion(bbox(), 0, 10, {}, {}, { second.add(it) })
         idleMain()
         assertEquals(1, second.size)
         assertTrue(second.single().isFailure)
     }
 
-    @Test
-    fun createBindsScopeToRegionMetadata() {
-        wrapper.downloadSatelliteRegion(bbox(), 0, 10, {}, {})
-        source.createCallback(Result.success(region))
-        idleMain()
-
-        verify(region).setMetadata(eq("session-testscope".toByteArray()), any())
-    }
-
-    @Test
-    fun listRegionsFiltersByScope() {
-        val owned = regionWithMetadata("session-testscope")
-        val foreign = regionWithMetadata("session-otherscope")
-        source.regions = listOf(owned, foreign)
-
-        val results = mutableListOf<List<OfflineRegionHandle>>()
-        wrapper.listRegions { results.add(it.getOrElse { emptyList() }) }
-        idleMain()
-
-        assertEquals(listOf(owned), results.single())
-    }
-
-    @Test
-    fun purgeAllRegionsPurgesOnlyOwnedScope() {
-        val owned = regionWithMetadata("session-testscope")
-        val foreign = regionWithMetadata("session-otherscope")
-        doAnswer { invocation ->
-            val callback = invocation.getArgument<AsyncOperationResultCallback>(0)
-            callback.run(ExpectedFactory.createNone())
-            null
-        }.`when`(owned).purge(any())
-        source.regions = listOf(owned, foreign)
-
-        val completions = mutableListOf<Result<Unit>>()
-        wrapper.purgeAllRegions { completions.add(it) }
-        idleMain()
-
-        verify(owned).purge(any())
-        verify(foreign, never()).purge(any())
-        assertEquals(1, completions.size)
-        assertTrue(completions.single().isSuccess)
-    }
-
-    private fun regionWithMetadata(scope: String): OfflineRegionHandle {
-        val handle = mock(OfflineRegionHandle::class.java)
-        `when`(handle.getMetadata()).thenReturn(scope.toByteArray())
-        return handle
-    }
-
     private class FakeSource : OfflineRegionSource {
         lateinit var createCallback: (Result<OfflineRegionHandle>) -> Unit
-        var regions: List<OfflineRegionHandle> = emptyList()
 
         override fun createOfflineRegion(
             definition: OfflineRegionTilePyramidDefinition,
@@ -239,7 +210,7 @@ class OfflineRegionWrapperTest {
         }
 
         override fun getOfflineRegions(callback: (Result<List<OfflineRegionHandle>>) -> Unit) {
-            callback(Result.success(regions))
+            callback(Result.success(emptyList()))
         }
     }
 }

@@ -1,11 +1,8 @@
 package au.edu.fireballs.stage4.di
 
 import android.content.Context
-import au.edu.fireballs.stage4.data.remote.SessionAccountScopeProvider
-import au.edu.fireballs.stage4.data.tiles.AccountScopeProvider
 import au.edu.fireballs.stage4.data.tiles.BufferRadiusRepository
 import au.edu.fireballs.stage4.data.tiles.OfflineManagerWrapper
-import au.edu.fireballs.stage4.data.tiles.OfflineRegionDownloader
 import au.edu.fireballs.stage4.data.tiles.OfflineRegionWrapper
 import au.edu.fireballs.stage4.data.tiles.TileStore
 import dagger.Module
@@ -24,16 +21,9 @@ object TileModule {
 
     @Provides
     @Singleton
-    fun provideAccountScopeProvider(
-        sessionAccountScopeProvider: SessionAccountScopeProvider,
-    ): AccountScopeProvider = sessionAccountScopeProvider
-
-    @Provides
-    @Singleton
     fun provideTileStore(
         @ApplicationContext context: Context,
-        accountScopeProvider: AccountScopeProvider,
-    ): TileStore = TileStore(File(context.noBackupFilesDir, TILE_BASE_DIR), accountScopeProvider)
+    ): TileStore = TileStore(File(context.noBackupFilesDir, TILE_BASE_DIR))
 
     @Provides
     @Singleton
@@ -46,19 +36,11 @@ object TileModule {
 
     @Provides
     @Singleton
-    fun provideOfflineRegionWrapper(
-        accountScopeProvider: AccountScopeProvider,
-    ): OfflineRegionWrapper = OfflineRegionWrapper(scopeProvider = accountScopeProvider)
-
-    @Provides
-    @Singleton
-    fun provideOfflineRegionDownloader(
-        offlineRegionWrapper: OfflineRegionWrapper,
-    ): OfflineRegionDownloader = offlineRegionWrapper
+    fun provideOfflineRegionWrapper(): OfflineRegionWrapper = OfflineRegionWrapper()
 
     @Provides
     @Singleton
     fun provideOfflineManagerWrapper(
-        offlineRegionDownloader: OfflineRegionDownloader,
-    ): OfflineManagerWrapper = OfflineManagerWrapper(offlineRegionDownloader)
+        offlineRegionWrapper: OfflineRegionWrapper,
+    ): OfflineManagerWrapper = OfflineManagerWrapper(offlineRegionWrapper)
 }

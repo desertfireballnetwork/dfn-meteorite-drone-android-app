@@ -6,7 +6,6 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.io.File
 import java.nio.file.Files
 
 class TileStoreTest {
@@ -89,39 +88,6 @@ class TileStoreTest {
     }
 
     @Test
-    fun accountScopesAreIsolated() {
-        val base = Files.createTempDirectory("tiles-scope").toFile()
-        val storeA = TileStore(base, scopeProvider = { "account-a" })
-        val storeB = TileStore(base, scopeProvider = { "account-b" })
-
-        storeA.write(1, 2, 3, 4, 5, byteArrayOf(1, 2, 3))
-        storeB.write(6, 7, 8, 9, 10, byteArrayOf(4, 5, 6))
-
-        assertTrue(storeA.contains(1, 2, 3, 4, 5))
-        assertTrue(storeB.contains(6, 7, 8, 9, 10))
-
-        storeA.deleteSurveyTiles(1)
-
-        assertFalse(storeA.contains(1, 2, 3, 4, 5))
-        assertTrue(storeB.contains(6, 7, 8, 9, 10))
-    }
-
-    @Test
-    fun deleteScopeRemovesOnlyThatAccount() {
-        val base = Files.createTempDirectory("tiles-delete-scope").toFile()
-        val storeA = TileStore(base, scopeProvider = { "account-a" })
-        val storeB = TileStore(base, scopeProvider = { "account-b" })
-
-        storeA.write(1, 2, 3, 4, 5, byteArrayOf(1, 2, 3))
-        storeB.write(6, 7, 8, 9, 10, byteArrayOf(4, 5, 6))
-
-        storeA.deleteScope("account-a")
-
-        assertFalse(storeA.contains(1, 2, 3, 4, 5))
-        assertTrue(storeB.contains(6, 7, 8, 9, 10))
-    }
-
-    @Test
     fun aggregateQuotaRejectsExcessWrites() {
         val base = Files.createTempDirectory("tiles-quota").toFile()
         val store = TileStore(base, quotaBytes = 10)
@@ -149,24 +115,5 @@ class TileStoreTest {
 
         assertTrue(store.contains(1, 2, 3, 4, 5))
         assertTrue(store.contains(1, 2, 3, 4, 6))
-    }
-
-    @Test
-    fun invalidScopeIsRejected() {
-        val base = Files.createTempDirectory("tiles-scope-invalid").toFile()
-        for (badScope in listOf(".", "..", "a/b", "a\\b", "a b", "a.b", "x".repeat(129))) {
-            assertThrows(IllegalArgumentException::class.java) {
-                TileStore(base, scopeProvider = { badScope }).write(1, 2, 3, 4, 5, byteArrayOf(1))
-            }
-        }
-    }
-
-    @Test
-    fun validScopesStayContained() {
-        val base = Files.createTempDirectory("tiles-scope-valid").toFile()
-        val store = TileStore(base, scopeProvider = { "session-0123456789abcdef" })
-        store.write(1, 2, 3, 4, 5, byteArrayOf(1))
-        assertTrue(store.contains(1, 2, 3, 4, 5))
-        assertTrue(File(base, "session-0123456789abcdef/1/2/3/4/5.png").isFile)
     }
 }

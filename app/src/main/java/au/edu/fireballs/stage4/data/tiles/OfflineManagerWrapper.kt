@@ -4,7 +4,7 @@ import au.edu.fireballs.stage4.BuildConfig
 import java.util.concurrent.atomic.AtomicBoolean
 
 class OfflineManagerWrapper(
-    private val regionWrapper: OfflineRegionDownloader,
+    private val regionWrapper: OfflineRegionWrapper,
     private val maxTilesPerRegion: Int = BuildConfig.MAPBOX_MAX_TILES_PER_REGION,
 ) {
     fun splitAndDownload(
@@ -16,37 +16,22 @@ class OfflineManagerWrapper(
     ) {
         validateZooms(minZoom, maxZoom)
         require(maxTilesPerRegion > 0) { "maxTilesPerRegion must be positive" }
-        require(clusterBboxes.size <= MAX_CLUSTERS) { "Too many clusters" }
         clusterBboxes.forEach(::validateBbox)
 
-        val regions = mutableListOf<Bbox>()
-        try {
-            for (bbox in clusterBboxes) {
-                collectRegions(bbox, minZoom, maxZoom, regions, depth = 0)
-            }
-        } catch (error: IllegalStateException) {
-            completionCb(Result.failure(error))
-            return
+        val queue = ArrayDeque<Bbox>()
+        for (bbox in clusterBboxes) {
+            collectRegions(bbox, minZoom, maxZoom, queue)
         }
-        if (regions.isEmpty()) {
+        if (queue.isEmpty()) {
             completionCb(Result.success(Unit))
             return
         }
-        val totalTiles = regions.sumOf { estimateTiles(it, minZoom, maxZoom) }
-        if (regions.size > MAX_REGIONS || totalTiles > MAX_TOTAL_TILES) {
-            completionCb(
-                Result.failure(
-                    IllegalStateException("Offline plan exceeds configured limits"),
-                ),
-            )
-            return
-        }
+        val totalTiles = queue.sumOf { estimateTiles(it, minZoom, maxZoom) }
 
-        var completed = 0
-        var completedTiles = 0L
-        var lastProgress = 0.0
         val terminal = AtomicBoolean(false)
         val stateLock = Any()
+        var completedTiles = 0L
+        var lastProgress = 0.0
 
         fun report(progress: Double) {
             if (progress > lastProgress) {
@@ -56,49 +41,68 @@ class OfflineManagerWrapper(
         }
 
         fun startNext() {
-            if (terminal.get() || completed >= regions.size) {
-                return
+            synchronized(stateLock) {
+                if (terminal.get()) {
+                    return
+                }
+                val bbox = queue.removeFirstOrNull()
+                if (bbox == null) {
+                    terminal.set(true)
+                    completionCb(Result.success(Unit))
+                    return
+                }
+                val regionTiles = estimateTiles(bbox, minZoom, maxZoom)
+                var needsSplit = false
+                regionWrapper.downloadSatelliteRegion(
+                    bbox,
+                    minZoom,
+                    maxZoom,
+                    { actualCount ->
+                        synchronized(stateLock) {
+                            if (!terminal.get() && actualCount > maxTilesPerRegion && !needsSplit) {
+                                needsSplit = true
+                                regionWrapper.cancelDownload()
+                            }
+                        }
+                    },
+                    { progress ->
+                        synchronized(stateLock) {
+                            if (!terminal.get()) {
+                                report(
+                                    (
+                                        completedTiles +
+                                            regionTiles * progress.coerceIn(0.0, 1.0)
+                                    ) / totalTiles.toDouble(),
+                                )
+                            }
+                        }
+                    },
+                    { result ->
+                        synchronized(stateLock) {
+                            if (terminal.get()) {
+                                return@downloadSatelliteRegion
+                            }
+                            if (needsSplit) {
+                                val quadrants = splitQuadrants(bbox)
+                                if (quadrants.isEmpty()) {
+                                    completedTiles += regionTiles
+                                    report(completedTiles.toDouble() / totalTiles.toDouble())
+                                } else {
+                                    quadrants.forEach { queue.addFirst(it) }
+                                }
+                                startNext()
+                            } else if (result.isFailure) {
+                                terminal.set(true)
+                                completionCb(result)
+                            } else {
+                                completedTiles += regionTiles
+                                report(completedTiles.toDouble() / totalTiles.toDouble())
+                                startNext()
+                            }
+                        }
+                    },
+                )
             }
-            val region = regions[completed]
-            val regionTiles = estimateTiles(region, minZoom, maxZoom)
-            regionWrapper.downloadSatelliteRegion(
-                region,
-                minZoom,
-                maxZoom,
-                { progress ->
-                    synchronized(stateLock) {
-                        if (!terminal.get()) {
-                            report(
-                                (
-                                    completedTiles +
-                                        regionTiles * progress.coerceIn(0.0, 1.0)
-                                ) / totalTiles.toDouble(),
-                            )
-                        }
-                    }
-                },
-                { result ->
-                    synchronized(stateLock) {
-                        if (terminal.get()) {
-                            return@downloadSatelliteRegion
-                        }
-                        if (result.isFailure) {
-                            terminal.set(true)
-                            completionCb(result)
-                            return@downloadSatelliteRegion
-                        }
-                        completedTiles += regionTiles
-                        completed++
-                        report(completedTiles.toDouble() / totalTiles.toDouble())
-                        if (completed == regions.size) {
-                            terminal.set(true)
-                            completionCb(Result.success(Unit))
-                        } else {
-                            startNext()
-                        }
-                    }
-                },
-            )
         }
         startNext()
     }
@@ -144,56 +148,34 @@ class OfflineManagerWrapper(
         bbox: Bbox,
         minZoom: Int,
         maxZoom: Int,
-        out: MutableList<Bbox>,
-        depth: Int,
+        out: ArrayDeque<Bbox>,
     ) {
-        if (bbox.minLat == bbox.maxLat || bbox.minLon == bbox.maxLon) {
-            check(estimateTiles(bbox, minZoom, maxZoom) <= maxTilesPerRegion) {
-                "Unable to split degenerate offline region below the configured tile cap"
-            }
-            out.add(bbox)
-            return
-        }
-        if (depth > MAX_SPLIT_DEPTH || out.size >= MAX_REGIONS) {
-            check(estimateTiles(bbox, minZoom, maxZoom) <= maxTilesPerRegion) {
-                "Unable to split offline region below the configured tile cap"
-            }
-            out.add(bbox)
-            return
-        }
-        if (estimateTiles(bbox, minZoom, maxZoom) <= maxTilesPerRegion) {
+        if (estimateTiles(bbox, minZoom, maxZoom) <= maxTilesPerRegion ||
+            bbox.minLat == bbox.maxLat ||
+            bbox.minLon == bbox.maxLon
+        ) {
             out.add(bbox)
             return
         }
         val midLat = (bbox.minLat + bbox.maxLat) / 2.0
         val midLon = (bbox.minLon + bbox.maxLon) / 2.0
-        collectRegions(
+        collectRegions(Bbox(bbox.minLat, bbox.minLon, midLat, midLon), minZoom, maxZoom, out)
+        collectRegions(Bbox(bbox.minLat, midLon, midLat, bbox.maxLon), minZoom, maxZoom, out)
+        collectRegions(Bbox(midLat, bbox.minLon, bbox.maxLat, midLon), minZoom, maxZoom, out)
+        collectRegions(Bbox(midLat, midLon, bbox.maxLat, bbox.maxLon), minZoom, maxZoom, out)
+    }
+
+    private fun splitQuadrants(bbox: Bbox): List<Bbox> {
+        if (bbox.minLat == bbox.maxLat || bbox.minLon == bbox.maxLon) {
+            return emptyList()
+        }
+        val midLat = (bbox.minLat + bbox.maxLat) / 2.0
+        val midLon = (bbox.minLon + bbox.maxLon) / 2.0
+        return listOf(
             Bbox(bbox.minLat, bbox.minLon, midLat, midLon),
-            minZoom,
-            maxZoom,
-            out,
-            depth + 1,
-        )
-        collectRegions(
             Bbox(bbox.minLat, midLon, midLat, bbox.maxLon),
-            minZoom,
-            maxZoom,
-            out,
-            depth + 1,
-        )
-        collectRegions(
             Bbox(midLat, bbox.minLon, bbox.maxLat, midLon),
-            minZoom,
-            maxZoom,
-            out,
-            depth + 1,
-        )
-        collectRegions(
             Bbox(midLat, midLon, bbox.maxLat, bbox.maxLon),
-            minZoom,
-            maxZoom,
-            out,
-            depth + 1,
         )
     }
 
@@ -213,9 +195,5 @@ class OfflineManagerWrapper(
 
     companion object {
         private const val MAX_ZOOM = 22
-        private const val MAX_CLUSTERS = 100
-        private const val MAX_REGIONS = 256
-        private const val MAX_SPLIT_DEPTH = 12
-        private const val MAX_TOTAL_TILES = 2_000_000L
     }
 }
