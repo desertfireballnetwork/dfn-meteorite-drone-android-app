@@ -17,8 +17,6 @@ sealed interface TileDownloadResult {
 
     data object NetworkError : TileDownloadResult
 
-    data object Cancelled : TileDownloadResult
-
     data class StorageError(
         val message: String,
     ) : TileDownloadResult

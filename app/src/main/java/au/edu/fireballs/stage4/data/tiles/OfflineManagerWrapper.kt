@@ -34,9 +34,10 @@ class OfflineManagerWrapper(
         var lastProgress = 0.0
 
         fun report(progress: Double) {
-            if (progress > lastProgress) {
-                lastProgress = progress
-                progressCb(progress)
+            val clamped = progress.coerceIn(0.0, 1.0)
+            if (clamped > lastProgress) {
+                lastProgress = clamped
+                progressCb(clamped)
             }
         }
 

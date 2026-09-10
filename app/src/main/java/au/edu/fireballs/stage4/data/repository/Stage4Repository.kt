@@ -4,6 +4,7 @@ import au.edu.fireballs.stage4.data.local.CandidateEntity
 import au.edu.fireballs.stage4.data.local.SurveyEntity
 import au.edu.fireballs.stage4.data.local.dao.CandidateDao
 import au.edu.fireballs.stage4.data.local.dao.SurveyDao
+import au.edu.fireballs.stage4.data.remote.LoginRedirectDetector
 import au.edu.fireballs.stage4.data.remote.Stage4Service
 import au.edu.fireballs.stage4.data.remote.dto.Stage4StateDto
 import au.edu.fireballs.stage4.di.IoDispatcher
@@ -21,7 +22,6 @@ import com.squareup.moshi.Moshi
 import com.squareup.moshi.Types
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.withContext
-import okhttp3.HttpUrl
 import okhttp3.ResponseBody
 import retrofit2.HttpException
 import retrofit2.Response
@@ -278,7 +278,7 @@ class Stage4Repository
         private suspend fun resolveFetchResult(
             response: Response<ResponseBody>,
         ): Stage4FetchResult {
-            if (isLoginRedirect(response)) {
+            if (LoginRedirectDetector.isLoginRedirect(response)) {
                 return Stage4FetchResult.AuthExpired
             }
             return if (response.isSuccessful) {
@@ -286,33 +286,6 @@ class Stage4Repository
             } else {
                 errorForHttpCode(response.code())
             }
-        }
-
-        private fun isLoginRedirect(response: Response<ResponseBody>): Boolean {
-            val requestUrl = response.raw().request.url
-            var current = response.raw()
-            while (true) {
-                if (current.code == HttpURLConnection.HTTP_MOVED_TEMP) {
-                    val location = current.header("Location")
-                    if (location != null && isLoginLocation(location, requestUrl)) {
-                        return true
-                    }
-                }
-                val prior = current.priorResponse ?: return false
-                current = prior
-            }
-        }
-
-        private fun isLoginLocation(
-            location: String,
-            requestUrl: HttpUrl,
-        ): Boolean {
-            val resolved = requestUrl.resolve(location)
-            if (resolved != null) {
-                return resolved.encodedPath.contains("login", ignoreCase = true)
-            }
-            val pathOnly = location.substringBefore('?').substringBefore('#')
-            return pathOnly.contains("login", ignoreCase = true)
         }
 
         private suspend fun parseBody(body: ResponseBody?): Stage4FetchResult {

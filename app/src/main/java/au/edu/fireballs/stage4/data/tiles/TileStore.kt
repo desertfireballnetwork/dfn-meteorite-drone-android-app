@@ -1,7 +1,6 @@
 package au.edu.fireballs.stage4.data.tiles
 
 import java.io.File
-import java.io.IOException
 import java.io.InputStream
 
 class TileStore(
@@ -50,6 +49,7 @@ class TileStore(
         coord: TileCoord,
     ): InputStream? = read(surveyId, candidateId, coord.z, coord.x, coord.y)
 
+    @Suppress("SwallowedException")
     fun write(
         surveyId: Long,
         candidateId: Long,
@@ -70,9 +70,19 @@ class TileStore(
             }
             val temp = File(file.parentFile, "${file.name}.tmp")
             temp.writeBytes(bytes)
-            if (!temp.renameTo(file)) {
-                temp.delete()
-                throw IOException("Failed to commit tile $file")
+            try {
+                java.nio.file.Files.move(
+                    temp.toPath(),
+                    file.toPath(),
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                    java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+                )
+            } catch (error: java.nio.file.AtomicMoveNotSupportedException) {
+                java.nio.file.Files.move(
+                    temp.toPath(),
+                    file.toPath(),
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                )
             }
             totalBytes = updatedTotal
         }

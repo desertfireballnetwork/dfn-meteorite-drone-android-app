@@ -198,4 +198,36 @@ class CandidateTileDownloaderTest {
 
             assertTrue(result is TileDownloadResult.PermanentHttp)
         }
+
+    @Test
+    fun returnsAuthExpiredOnLoginRedirect() =
+        runTest {
+            server.enqueue(
+                MockResponse()
+                    .setResponseCode(302)
+                    .setHeader(
+                        "Location",
+                        "/accounts/login/?next=/image_geotiff_candidate_tile/1/2/0/0/0/",
+                    ),
+            )
+            server.enqueue(
+                MockResponse()
+                    .setHeader("Content-Type", "text/html")
+                    .setBody("<html>login</html>")
+                    .setResponseCode(200),
+            )
+
+            val result =
+                downloader.downloadCandidateTiles(
+                    surveyId = 1,
+                    candidateId = 2,
+                    centroidLat = 0.0,
+                    centroidLon = 0.0,
+                    bufferMeters = 100f,
+                    minZoom = 0,
+                    maxZoom = 0,
+                )
+
+            assertEquals(TileDownloadResult.AuthExpired, result)
+        }
 }

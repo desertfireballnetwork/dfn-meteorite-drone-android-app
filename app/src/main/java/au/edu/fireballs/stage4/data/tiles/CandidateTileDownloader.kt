@@ -1,5 +1,6 @@
 package au.edu.fireballs.stage4.data.tiles
 
+import au.edu.fireballs.stage4.data.remote.LoginRedirectDetector
 import au.edu.fireballs.stage4.data.remote.TileService
 import au.edu.fireballs.stage4.di.IoDispatcher
 import kotlinx.coroutines.CoroutineDispatcher
@@ -54,7 +55,6 @@ class CandidateTileDownloader
                             is TileDownloadResult.PermanentHttp -> return@withContext result
                             is TileDownloadResult.TransientHttp -> return@withContext result
                             is TileDownloadResult.NetworkError -> return@withContext result
-                            is TileDownloadResult.Cancelled -> return@withContext result
                             is TileDownloadResult.StorageError -> return@withContext result
                         }
                     }
@@ -106,6 +106,9 @@ class CandidateTileDownloader
                 } catch (e: IOException) {
                     return TileDownloadResult.NetworkError
                 }
+            if (LoginRedirectDetector.isLoginRedirect(response)) {
+                return TileDownloadResult.AuthExpired
+            }
             return when {
                 response.isSuccessful && response.body() != null -> {
                     val body = response.body()!!
