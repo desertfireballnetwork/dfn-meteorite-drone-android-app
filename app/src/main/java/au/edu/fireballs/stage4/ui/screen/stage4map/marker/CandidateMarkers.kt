@@ -1,102 +1,263 @@
 package au.edu.fireballs.stage4.ui.screen.stage4map.marker
 
-import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.key
+import androidx.compose.runtime.remember
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
+import au.edu.fireballs.stage4.R
 import au.edu.fireballs.stage4.domain.model.Stage4Candidate
 import au.edu.fireballs.stage4.domain.model.Stage4State
 import au.edu.fireballs.stage4.ui.screen.stage4map.LayerToggleState
 import au.edu.fireballs.stage4.ui.theme.LocalDFNColors
+import com.google.gson.JsonObject
+import com.mapbox.geojson.Feature
 import com.mapbox.geojson.Point
-import com.mapbox.maps.AnnotatedFeature
-import com.mapbox.maps.ViewAnnotationAnchor
-import com.mapbox.maps.ViewAnnotationAnchorConfig
-import com.mapbox.maps.ViewAnnotationOptions
+import com.mapbox.maps.ClickInteraction
+import com.mapbox.maps.MapboxDelicateApi
+import com.mapbox.maps.MapboxExperimental
+import com.mapbox.maps.extension.compose.DisposableMapEffect
 import com.mapbox.maps.extension.compose.MapboxMapComposable
-import com.mapbox.maps.extension.compose.annotation.ViewAnnotation
+import com.mapbox.maps.extension.compose.style.BooleanValue
+import com.mapbox.maps.extension.compose.style.ColorValue
+import com.mapbox.maps.extension.compose.style.DoubleValue
+import com.mapbox.maps.extension.compose.style.StyleImage
+import com.mapbox.maps.extension.compose.style.layers.Filter
+import com.mapbox.maps.extension.compose.style.layers.ImageValue
+import com.mapbox.maps.extension.compose.style.layers.generated.IconAnchorValue
+import com.mapbox.maps.extension.compose.style.layers.generated.SymbolLayer
+import com.mapbox.maps.extension.compose.style.rememberStyleImage
+import com.mapbox.maps.extension.compose.style.sources.GeoJSONData
+import com.mapbox.maps.extension.compose.style.sources.SourceState
+import com.mapbox.maps.extension.compose.style.sources.generated.rememberGeoJsonSourceState
+import com.mapbox.maps.extension.style.expressions.generated.Expression
+
+private const val CANDIDATE_SOURCE_ID = "candidate-markers"
+
+private const val LAYER_YES = "candidate-markers-yes"
+private const val LAYER_NO = "candidate-markers-no"
+private const val LAYER_UNPROCESSED = "candidate-markers-unprocessed"
+
+private const val PROP_INFERENCE_ID = "inferenceResultId"
+private const val PROP_VERDICT = "verdict"
+private const val PROP_CLAIMED = "claimed"
+
+private const val ICON_YES = "marker-yes"
+private const val ICON_NO = "marker-no"
+private const val ICON_UNPROCESSED = "marker-unprocessed"
+
+private const val VERDICT_UNPROCESSED = 0
+private const val VERDICT_YES = 1
+private const val VERDICT_NO = 2
+
+private const val CLAIM_NONE = 0
+private const val CLAIM_ME = 1
+private const val CLAIM_OTHER = 2
+
+private const val NO_OPACITY = 0.8
+private const val CLAIM_HALO_WIDTH = 3.0
+private const val TRANSPARENT = "rgba(0,0,0,0)"
+private const val ICON_SIZE = 0.4
+
+internal data class MarkerCandidate(
+    val candidate: Stage4Candidate,
+    val verdict: Int,
+    val claim: Int,
+)
 
 @Composable
 @MapboxMapComposable
+@OptIn(MapboxDelicateApi::class)
 fun CandidateMarkers(
     state: Stage4State,
     toggleState: LayerToggleState,
     onMarkerClick: (Stage4Candidate) -> Unit,
 ) {
-    if (toggleState.showYes) {
-        state.yesMeteorites.forEach { candidate ->
-            CandidateMarker(candidate, verdict = 1, onClick = onMarkerClick)
-        }
+    val candidates = remember(state, toggleState) { buildVisibleCandidates(state, toggleState) }
+    if (candidates.isEmpty()) return
+
+    val yesImage = rememberStyleImage(ICON_YES, R.drawable.marker_yes, 1f, false)
+    val noImage = rememberStyleImage(ICON_NO, R.drawable.marker_no, 1f, false)
+    val unprocessedImage =
+        rememberStyleImage(ICON_UNPROCESSED, R.drawable.marker_unprocessed, 1f, false)
+
+    val colors = LocalDFNColors.current
+    val claimedByMeHex = colors.markerClaimedByMeOutline.toHex()
+    val claimedByOtherHex = colors.markerClaimedByOtherOutline.toHex()
+
+    key(candidates) {
+        val sourceState =
+            rememberGeoJsonSourceState(key = CANDIDATE_SOURCE_ID) {
+                data = GeoJSONData(candidates.map { it.toFeature() })
+            }
+
+        CandidateLayer(
+            sourceState = sourceState,
+            layerId = LAYER_YES,
+            verdict = VERDICT_YES,
+            image = yesImage,
+            opacity = 1.0,
+            claimedByMeHex = claimedByMeHex,
+            claimedByOtherHex = claimedByOtherHex,
+        )
+        CandidateLayer(
+            sourceState = sourceState,
+            layerId = LAYER_NO,
+            verdict = VERDICT_NO,
+            image = noImage,
+            opacity = NO_OPACITY,
+            claimedByMeHex = claimedByMeHex,
+            claimedByOtherHex = claimedByOtherHex,
+        )
+        CandidateLayer(
+            sourceState = sourceState,
+            layerId = LAYER_UNPROCESSED,
+            verdict = VERDICT_UNPROCESSED,
+            image = unprocessedImage,
+            opacity = 1.0,
+            claimedByMeHex = claimedByMeHex,
+            claimedByOtherHex = claimedByOtherHex,
+        )
     }
-    if (toggleState.showNo) {
-        state.noMeteorites.forEach { candidate ->
-            CandidateMarker(candidate, verdict = 2, onClick = onMarkerClick)
-        }
-    }
-    if (toggleState.showUnprocessed) {
-        state.unprocessedCandidates.forEach { candidate ->
-            CandidateMarker(candidate, verdict = 0, onClick = onMarkerClick)
-        }
+
+    CandidateClickHandler(candidates = candidates, onMarkerClick = onMarkerClick)
+}
+
+@Composable
+@MapboxMapComposable
+private fun CandidateLayer(
+    sourceState: SourceState,
+    layerId: String,
+    verdict: Int,
+    image: StyleImage,
+    opacity: Double,
+    claimedByMeHex: String,
+    claimedByOtherHex: String,
+) {
+    SymbolLayer(sourceState, layerId) {
+        filter = Filter(verdictFilterExpression(verdict))
+        iconImage = ImageValue(image)
+        iconSize = DoubleValue(ICON_SIZE)
+        iconOpacity = DoubleValue(opacity)
+        iconAllowOverlap = BooleanValue(true)
+        iconIgnorePlacement = BooleanValue(true)
+        iconAnchor = IconAnchorValue.BOTTOM
+        iconHaloColor = ColorValue(haloColorExpression(claimedByMeHex, claimedByOtherHex))
+        iconHaloWidth = DoubleValue(haloWidthExpression())
     }
 }
 
 @Composable
 @MapboxMapComposable
-private fun CandidateMarker(
-    candidate: Stage4Candidate,
-    verdict: Int,
-    onClick: (Stage4Candidate) -> Unit,
+@OptIn(MapboxExperimental::class)
+private fun CandidateClickHandler(
+    candidates: List<MarkerCandidate>,
+    onMarkerClick: (Stage4Candidate) -> Unit,
 ) {
-    val coordinate = candidate.geoCentroid ?: return
-    val colors = LocalDFNColors.current
-    val style = getCandidateMarkerStyle(candidate, verdict, colors)
+    val candidateById =
+        remember(
+            candidates,
+        ) { candidates.associate { it.candidate.inferenceResultId to it.candidate } }
 
-    val options =
-        ViewAnnotationOptions
-            .Builder()
-            .annotatedFeature(
-                AnnotatedFeature(
-                    Point.fromLngLat(coordinate.longitude, coordinate.latitude),
-                ),
-            ).variableAnchors(
-                listOf(
-                    ViewAnnotationAnchorConfig
-                        .Builder()
-                        .anchor(ViewAnnotationAnchor.BOTTOM)
-                        .build(),
-                ),
-            ).build()
-
-    ViewAnnotation(options = options) {
-        Box(
-            modifier =
-                Modifier
-                    .clickable { onClick(candidate) }
-                    .testTag("candidate-marker-${candidate.inferenceResultId}"),
-            contentAlignment = Alignment.Center,
-        ) {
-            if (style.claimBorderColor != null) {
-                Canvas(modifier = Modifier.size(style.size + 6.dp)) {
-                    drawCircle(
-                        color = style.claimBorderColor,
-                        style = Stroke(width = 4.dp.toPx()),
-                    )
-                }
+    DisposableMapEffect(candidateById, onMarkerClick) { mapView ->
+        val cancelables =
+            listOf(LAYER_YES, LAYER_NO, LAYER_UNPROCESSED).map { layerId ->
+                val interaction =
+                    ClickInteraction.layer(layerId) { feature, _ ->
+                        val id =
+                            feature.originalFeature
+                                .getNumberProperty(
+                                    PROP_INFERENCE_ID,
+                                )?.toLong()
+                        if (id != null) {
+                            candidateById[id]?.let(onMarkerClick)
+                            true
+                        } else {
+                            false
+                        }
+                    }
+                mapView.mapboxMap.addInteraction(interaction)
             }
-            Image(
-                painter = painterResource(style.iconRes),
-                contentDescription = "Candidate #${candidate.inferenceResultId}",
-                modifier = Modifier.size(style.size),
-                alpha = style.opacity,
-            )
+        onDispose {
+            cancelables.forEach { it.cancel() }
         }
     }
 }
+
+internal fun buildVisibleCandidates(
+    state: Stage4State,
+    toggleState: LayerToggleState,
+): List<MarkerCandidate> {
+    val result = mutableListOf<MarkerCandidate>()
+    if (toggleState.showYes) {
+        state.yesMeteorites.forEach { candidate ->
+            candidate.geoCentroid?.let {
+                result += MarkerCandidate(candidate, VERDICT_YES, candidate.claimCode())
+            }
+        }
+    }
+    if (toggleState.showNo) {
+        state.noMeteorites.forEach { candidate ->
+            candidate.geoCentroid?.let {
+                result += MarkerCandidate(candidate, VERDICT_NO, candidate.claimCode())
+            }
+        }
+    }
+    if (toggleState.showUnprocessed) {
+        state.unprocessedCandidates.forEach { candidate ->
+            candidate.geoCentroid?.let {
+                result += MarkerCandidate(candidate, VERDICT_UNPROCESSED, candidate.claimCode())
+            }
+        }
+    }
+    return result
+}
+
+private fun Stage4Candidate.claimCode(): Int =
+    when {
+        claimedByMe -> CLAIM_ME
+        claimedByOther -> CLAIM_OTHER
+        else -> CLAIM_NONE
+    }
+
+private fun MarkerCandidate.toFeature(): Feature {
+    val properties = JsonObject()
+    properties.addProperty(PROP_INFERENCE_ID, candidate.inferenceResultId)
+    properties.addProperty(PROP_VERDICT, verdict)
+    properties.addProperty(PROP_CLAIMED, claim)
+    val centroid = candidate.geoCentroid ?: return Feature.fromGeometry(Point.fromLngLat(0.0, 0.0))
+    return Feature.fromGeometry(Point.fromLngLat(centroid.longitude, centroid.latitude), properties)
+}
+
+private fun verdictFilterExpression(verdict: Int): Expression =
+    Expression.match {
+        get(PROP_VERDICT)
+        literal(verdict.toDouble())
+        literal(true)
+        literal(false)
+    }
+
+private fun haloColorExpression(
+    claimedByMe: String,
+    claimedByOther: String,
+): Expression =
+    Expression.match {
+        get(PROP_CLAIMED)
+        literal(CLAIM_ME.toDouble())
+        literal(claimedByMe)
+        literal(CLAIM_OTHER.toDouble())
+        literal(claimedByOther)
+        literal(TRANSPARENT)
+    }
+
+private fun haloWidthExpression(): Expression =
+    Expression.match {
+        get(PROP_CLAIMED)
+        literal(CLAIM_ME.toDouble())
+        literal(CLAIM_HALO_WIDTH)
+        literal(CLAIM_OTHER.toDouble())
+        literal(CLAIM_HALO_WIDTH)
+        literal(0.0)
+    }
+
+private fun Color.toHex(): String = "#%06X".format(toArgb() and 0xFFFFFF)
