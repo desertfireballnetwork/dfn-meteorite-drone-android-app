@@ -46,7 +46,12 @@ class CandidateTileDownloaderTest {
     @Test
     fun downloadsTilesToXyzPaths() =
         runTest {
-            server.enqueue(MockResponse().setBody("tile-bytes").setResponseCode(200))
+            server.enqueue(
+                MockResponse()
+                    .setHeader("Content-Type", "image/png")
+                    .setBody("tile-bytes")
+                    .setResponseCode(200),
+            )
             server.enqueue(MockResponse().setResponseCode(204))
 
             val result =
@@ -69,7 +74,12 @@ class CandidateTileDownloaderTest {
     fun retriesTransientHttpThenSucceeds() =
         runTest {
             server.enqueue(MockResponse().setResponseCode(500))
-            server.enqueue(MockResponse().setBody("tile-bytes").setResponseCode(200))
+            server.enqueue(
+                MockResponse()
+                    .setHeader("Content-Type", "image/png")
+                    .setBody("tile-bytes")
+                    .setResponseCode(200),
+            )
 
             val result =
                 downloader.downloadCandidateTiles(
@@ -110,6 +120,70 @@ class CandidateTileDownloaderTest {
     fun returnsPermanentHttpOn404() =
         runTest {
             server.enqueue(MockResponse().setResponseCode(404))
+
+            val result =
+                downloader.downloadCandidateTiles(
+                    surveyId = 1,
+                    candidateId = 2,
+                    centroidLat = 0.0,
+                    centroidLon = 0.0,
+                    bufferMeters = 100f,
+                    minZoom = 0,
+                    maxZoom = 0,
+                )
+
+            assertTrue(result is TileDownloadResult.PermanentHttp)
+        }
+
+    @Test
+    fun returnsStorageErrorWhenWriteFails() =
+        runTest {
+            server.enqueue(
+                MockResponse()
+                    .setHeader("Content-Type", "image/png")
+                    .setBody("tile-bytes")
+                    .setResponseCode(200),
+            )
+            val fullStore =
+                TileStore(
+                    Files.createTempDirectory("full").toFile(),
+                    quotaBytes = 1,
+                )
+            val downloaderWithFullStore =
+                CandidateTileDownloader(
+                    Retrofit
+                        .Builder()
+                        .baseUrl(server.url("/"))
+                        .addConverterFactory(MoshiConverterFactory.create())
+                        .build()
+                        .create(TileService::class.java),
+                    fullStore,
+                    kotlinx.coroutines.Dispatchers.Unconfined,
+                )
+
+            val result =
+                downloaderWithFullStore.downloadCandidateTiles(
+                    surveyId = 1,
+                    candidateId = 2,
+                    centroidLat = 0.0,
+                    centroidLon = 0.0,
+                    bufferMeters = 100f,
+                    minZoom = 0,
+                    maxZoom = 0,
+                )
+
+            assertTrue(result is TileDownloadResult.StorageError)
+        }
+
+    @Test
+    fun returnsPermanentHttpForNonImageContentType() =
+        runTest {
+            server.enqueue(
+                MockResponse()
+                    .setHeader("Content-Type", "text/html")
+                    .setBody("<html></html>")
+                    .setResponseCode(200),
+            )
 
             val result =
                 downloader.downloadCandidateTiles(

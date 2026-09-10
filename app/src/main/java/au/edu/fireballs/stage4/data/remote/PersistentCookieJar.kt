@@ -160,7 +160,9 @@ class PersistentCookieJar(
     @Synchronized
     fun clear() {
         cookieStore.clear()
-        sharedPreferences.edit(commit = false) { clear() }
+        check(sharedPreferences.edit().clear().commit()) {
+            "Failed to persist cookie deletion"
+        }
     }
 
     companion object {

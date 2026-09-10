@@ -19,15 +19,37 @@ class OfflineBundleRepository
     ) {
         suspend fun deleteBundle(surveyId: Long) =
             withContext(ioDispatcher) {
-                runCatching { tileStore.deleteSurveyTiles(surveyId) }
-                runCatching { tileManifestDao.deleteForSurvey(surveyId) }
-                runCatching { offlineBundleDao.deleteForSurvey(surveyId) }
+                val cleanups =
+                    listOf<suspend () -> Unit>(
+                        { tileStore.deleteSurveyTiles(surveyId) },
+                        { tileManifestDao.deleteForSurvey(surveyId) },
+                        { offlineBundleDao.deleteForSurvey(surveyId) },
+                    )
+                runCleanups(cleanups)
             }
 
         suspend fun deleteAll() =
             withContext(ioDispatcher) {
-                runCatching { tileStore.deleteAll() }
-                runCatching { tileManifestDao.deleteAll() }
-                runCatching { offlineBundleDao.deleteAll() }
+                val cleanups =
+                    listOf<suspend () -> Unit>(
+                        { tileStore.deleteAll() },
+                        { tileManifestDao.deleteAll() },
+                        { offlineBundleDao.deleteAll() },
+                    )
+                runCleanups(cleanups)
             }
+
+        private suspend fun runCleanups(cleanups: List<suspend () -> Unit>) {
+            var failure: Throwable? = null
+            cleanups.forEach { cleanup ->
+                runCatching { cleanup() }.exceptionOrNull()?.let { error ->
+                    if (failure == null) {
+                        failure = error
+                    } else {
+                        failure?.addSuppressed(error)
+                    }
+                }
+            }
+            failure?.let { throw it }
+        }
     }

@@ -70,4 +70,36 @@ class OfflineBundleRepositoryTest {
             assertTrue(database.tileManifestDao().getTilesForSurvey(1).isEmpty())
             assertTrue(database.offlineBundleDao().observeLatestBundleForSurvey(1).first() == null)
         }
+
+    @Test
+    fun deleteBundlePropagatesFirstFailure() =
+        runTest {
+            store.write(1, 2, 3, 4, 5, byteArrayOf(1))
+            val failingDao = FailingTileManifestDao(database.tileManifestDao())
+            val failingRepository =
+                OfflineBundleRepository(
+                    store,
+                    failingDao,
+                    database.offlineBundleDao(),
+                    kotlinx.coroutines.Dispatchers.Unconfined,
+                )
+
+            var thrown: Throwable? = null
+            try {
+                failingRepository.deleteBundle(1)
+            } catch (error: IllegalStateException) {
+                thrown = error
+            }
+
+            assertTrue(thrown is IllegalStateException)
+            assertFalse(store.contains(1, 2, 3, 4, 5))
+        }
+
+    private class FailingTileManifestDao(
+        private val delegate: au.edu.fireballs.stage4.data.local.dao.TileManifestDao,
+    ) : au.edu.fireballs.stage4.data.local.dao.TileManifestDao by delegate {
+        override suspend fun deleteForSurvey(surveyId: Long) {
+            error("manifest delete failed")
+        }
+    }
 }

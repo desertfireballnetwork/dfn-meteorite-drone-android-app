@@ -44,9 +44,21 @@ class AccountManager
                         }
                     }
                 } finally {
-                    runCatching { cookieJar.clear() }
-                    runCatching { tileStore.deleteAll() }
-                    runCatching { database.clearAllTables() }
+                    val cleanups =
+                        listOf<() -> Unit>(
+                            { cookieJar.clear() },
+                            { tileStore.deleteAll() },
+                            { database.clearAllTables() },
+                        )
+                    cleanups.forEach { cleanup ->
+                        runCatching { cleanup() }.exceptionOrNull()?.let { error ->
+                            if (primary == null) {
+                                primary = error
+                            } else {
+                                primary?.addSuppressed(error)
+                            }
+                        }
+                    }
                 }
                 primary?.let { throw it }
             }

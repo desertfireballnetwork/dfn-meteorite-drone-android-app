@@ -5,6 +5,7 @@ import au.edu.fireballs.stage4.di.IoDispatcher
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import okhttp3.ResponseBody
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.util.concurrent.CancellationException
@@ -107,15 +108,19 @@ class CandidateTileDownloader
                 }
             return when {
                 response.isSuccessful && response.body() != null -> {
-                    val bytes = response.body()!!.bytes()
-                    try {
-                        tileStore.write(surveyId, candidateId, xyz.z, xyz.x, xyz.y, bytes)
-                    } catch (e: IOException) {
-                        TileDownloadResult.StorageError(e.localizedMessage ?: "Tile storage error")
-                    } catch (e: IllegalArgumentException) {
-                        TileDownloadResult.StorageError(e.localizedMessage ?: "Tile storage error")
+                    val body = response.body()!!
+                    val contentType = body.contentType()
+                    if (
+                        contentType?.type != "image" ||
+                        body.contentLength() > TileStore.MAX_TILE_BYTES
+                    ) {
+                        TileDownloadResult.PermanentHttp(response.code())
+                    } else {
+                        val bytes =
+                            readBoundedBody(body)
+                                ?: return TileDownloadResult.PermanentHttp(response.code())
+                        writeTile(surveyId, candidateId, xyz, bytes)
                     }
-                    TileDownloadResult.Success(1)
                 }
 
                 response.code() == HttpURLConnection.HTTP_NO_CONTENT ->
@@ -130,6 +135,41 @@ class CandidateTileDownloader
                 else -> TileDownloadResult.PermanentHttp(response.code())
             }
         }
+
+        private fun readBoundedBody(body: ResponseBody): ByteArray? {
+            val output = java.io.ByteArrayOutputStream()
+            val buffer = ByteArray(8 * 1024)
+            body.byteStream().use { input ->
+                while (true) {
+                    val read = input.read(buffer)
+                    if (read < 0) {
+                        break
+                    }
+                    if (output.size() + read > TileStore.MAX_TILE_BYTES) {
+                        return null
+                    }
+                    output.write(buffer, 0, read)
+                }
+            }
+            return output.toByteArray()
+        }
+
+        private fun writeTile(
+            surveyId: Long,
+            candidateId: Long,
+            xyz: TileCoord,
+            bytes: ByteArray,
+        ): TileDownloadResult =
+            try {
+                tileStore.write(surveyId, candidateId, xyz.z, xyz.x, xyz.y, bytes)
+                TileDownloadResult.Success(1)
+            } catch (e: IOException) {
+                TileDownloadResult.StorageError(e.localizedMessage ?: "Tile storage error")
+            } catch (e: IllegalArgumentException) {
+                TileDownloadResult.StorageError(e.localizedMessage ?: "Tile storage error")
+            } catch (e: IllegalStateException) {
+                TileDownloadResult.StorageError(e.localizedMessage ?: "Tile storage error")
+            }
 
         companion object {
             private const val MAX_RETRIES = 3
