@@ -17,19 +17,9 @@ class LocalFileRasterTileProviderTest {
     fun returnsFileBytesWhenPresent() {
         val store = tempStore()
         val bytes = byteArrayOf(1, 2, 3, 4, 5)
-        store.write(1, 2, 3, 4, 2, bytes)
+        store.write(1, 2, 3, 4, 5, bytes)
         val provider = LocalFileRasterTileProvider(store)
         assertArrayEquals(bytes, provider.tile(1, 2, 3, 4, 5))
-    }
-
-    @Test
-    fun convertsXyzToTmsBeforeReading() {
-        val store = tempStore()
-        val bytes = byteArrayOf(9, 8, 7)
-        store.write(1, 2, 3, 4, 2, bytes)
-        val provider = LocalFileRasterTileProvider(store)
-        assertArrayEquals(bytes, provider.tile(1, 2, 3, 4, 5))
-        assertArrayEquals(LocalFileRasterTileProvider.TRANSPARENT_PNG, provider.tile(1, 2, 3, 4, 2))
     }
 
     @Test
@@ -45,5 +35,24 @@ class LocalFileRasterTileProviderTest {
         val provider = LocalFileRasterTileProvider(tempStore())
         val result = provider.tile(1, 2, 3, 4, 5)
         assertEquals(67, result.size)
+    }
+
+    @Test
+    fun exactMaxSizeTileIsReturned() {
+        val store = tempStore()
+        val bytes = ByteArray(TileStore.MAX_TILE_BYTES) { 1 }
+        store.write(1, 2, 3, 4, 5, bytes)
+        val provider = LocalFileRasterTileProvider(store)
+        assertArrayEquals(bytes, provider.tile(1, 2, 3, 4, 5))
+    }
+
+    @Test
+    fun oversizedTileFallsBackToTransparent() {
+        val store = tempStore()
+        val file = java.io.File(store.surveyTilesDirectory(1), "2/3/4/5.png")
+        file.parentFile?.mkdirs()
+        file.writeBytes(ByteArray(TileStore.MAX_TILE_BYTES + 1) { 1 })
+        val provider = LocalFileRasterTileProvider(store)
+        assertArrayEquals(LocalFileRasterTileProvider.TRANSPARENT_PNG, provider.tile(1, 2, 3, 4, 5))
     }
 }

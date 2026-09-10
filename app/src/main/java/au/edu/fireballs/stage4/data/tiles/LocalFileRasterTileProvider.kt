@@ -12,8 +12,7 @@ class LocalFileRasterTileProvider(
         x: Int,
         y: Int,
     ): ByteArray {
-        val tms = TileMath.flipTileY(TileCoord(z, x, y))
-        val input = tileStore.read(surveyId, candidateId, tms)
+        val input = tileStore.read(surveyId, candidateId, z, x, y)
         return when (input) {
             null -> TRANSPARENT_PNG
             else -> input.use { readBounded(it) }
@@ -25,7 +24,7 @@ class LocalFileRasterTileProvider(
         var offset = 0
         while (true) {
             if (offset == buffer.size) {
-                if (buffer.size >= TileStore.MAX_TILE_BYTES) {
+                if (buffer.size > TileStore.MAX_TILE_BYTES) {
                     return TRANSPARENT_PNG
                 }
                 buffer = buffer.copyOf(minOf(buffer.size * 2, TileStore.MAX_TILE_BYTES + 1))

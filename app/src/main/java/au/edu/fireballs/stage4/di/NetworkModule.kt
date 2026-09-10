@@ -7,6 +7,7 @@ import au.edu.fireballs.stage4.data.remote.AuthService
 import au.edu.fireballs.stage4.data.remote.EvidenceService
 import au.edu.fireballs.stage4.data.remote.PersistentCookieJar
 import au.edu.fireballs.stage4.data.remote.Stage4Service
+import au.edu.fireballs.stage4.data.remote.TileService
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import dagger.Module
@@ -145,4 +146,9 @@ object NetworkModule {
     @Singleton
     fun provideEvidenceService(retrofit: Retrofit): EvidenceService =
         retrofit.create(EvidenceService::class.java)
+
+    @Provides
+    @Singleton
+    fun provideTileService(retrofit: Retrofit): TileService =
+        retrofit.create(TileService::class.java)
 }

@@ -175,6 +175,15 @@ class AccountManagerTest {
     @Test
     fun `logout propagates region purge failure`() =
         runTest {
+            val validCookie =
+                Cookie
+                    .Builder()
+                    .domain("example.com")
+                    .path("/")
+                    .name("sessionid")
+                    .value("valid_session_token_123")
+                    .build()
+            cookieJar.saveFromResponse(testUrl, listOf(validCookie))
             answerPurgeWith(Result.failure(IllegalStateException("purge failed")))
 
             var thrown: Throwable? = null
@@ -185,5 +194,7 @@ class AccountManagerTest {
             }
 
             assertTrue(thrown is IllegalStateException)
+            assertFalse(accountManager.isSignedIn())
+            assertTrue(cookieJar.loadForRequest(testUrl).isEmpty())
         }
 }

@@ -11,7 +11,6 @@ import okhttp3.HttpUrl
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
 
 @Singleton
 class AccountManager
@@ -31,16 +30,24 @@ class AccountManager
 
         suspend fun logout() =
             withContext(ioDispatcher) {
-                suspendCancellableCoroutine { continuation ->
-                    offlineRegionWrapper.purgeAllRegions { result ->
-                        result.fold(
-                            onSuccess = { continuation.resume(Unit) },
-                            onFailure = { continuation.resumeWithException(it) },
-                        )
+                var primary: Throwable? = null
+                try {
+                    suspendCancellableCoroutine { continuation ->
+                        offlineRegionWrapper.purgeAllRegions { result ->
+                            result.fold(
+                                onSuccess = { continuation.resume(Unit) },
+                                onFailure = {
+                                    primary = it
+                                    continuation.resume(Unit)
+                                },
+                            )
+                        }
                     }
+                } finally {
+                    runCatching { cookieJar.clear() }
+                    runCatching { tileStore.deleteAll() }
+                    runCatching { database.clearAllTables() }
                 }
-                tileStore.deleteAll()
-                cookieJar.clear()
-                database.clearAllTables()
+                primary?.let { throw it }
             }
     }
