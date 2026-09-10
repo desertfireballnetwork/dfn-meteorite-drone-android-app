@@ -1,0 +1,14 @@
+package au.edu.fireballs.stage4.ui.screen.candidate
+
+object CandidateMapDefaults {
+    const val BASE_STYLE_URI = "mapbox://styles/mapbox/standard-satellite"
+    const val CANDIDATE_ZOOM = 24.0
+    const val MAX_CAMERA_ZOOM = 25.0
+    const val SOURCE_KEY = "candidate_raster_tiles"
+    const val LAYER_ID = "candidate-tiles"
+    const val TILE_SIZE = 128L
+    const val MIN_ZOOM = 15L
+    const val MAX_ZOOM = 25L
+    const val ROOT_TAG = "candidate-map-root"
+    const val MARKER_TAG = "candidate-map-marker"
+}

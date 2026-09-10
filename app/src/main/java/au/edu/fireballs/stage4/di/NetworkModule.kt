@@ -23,6 +23,7 @@ import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.moshi.MoshiConverterFactory
 import java.util.concurrent.TimeUnit
+import javax.inject.Named
 import javax.inject.Singleton
 
 @Module
@@ -40,6 +41,11 @@ object NetworkModule {
         val baseUrl = if (rawUrl.endsWith("/")) rawUrl else "$rawUrl/"
         return baseUrl.toHttpUrl()
     }
+
+    @Provides
+    @Singleton
+    @Named("serverUrl")
+    fun provideServerUrl(baseUrl: HttpUrl): String = baseUrl.toString()
 
     @Provides
     @Singleton
