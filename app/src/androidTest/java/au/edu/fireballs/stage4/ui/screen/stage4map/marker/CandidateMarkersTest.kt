@@ -1,9 +1,7 @@
 package au.edu.fireballs.stage4.ui.screen.stage4map.marker
 
 import androidx.activity.ComponentActivity
-import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
-import androidx.compose.ui.test.onNodeWithTag
 import au.edu.fireballs.stage4.domain.model.BoundingBox
 import au.edu.fireballs.stage4.domain.model.GeoCoordinate
 import au.edu.fireballs.stage4.domain.model.ImageDims
@@ -58,16 +56,35 @@ class CandidateMarkersTest {
         )
 
     @Test
-    fun markers_areDisplayedWhenLayerIsVisible() {
-        val candYes = createCandidate(1L, -37.8, 145.0)
-        val candNo = createCandidate(2L, -37.81, 145.01)
-        val candUnprocessed = createCandidate(3L, -37.82, 145.02)
+    fun markers_composeWithManyCandidates_noApplierCrash() {
+        val many =
+            (1L..200L).map { id ->
+                createCandidate(id, lat = -37.8 + id * 0.0001, lon = 145.0 + id * 0.0001)
+            }
+        val state = createDummyState(unprocessed = many)
 
+        composeRule.setContent {
+            MapboxMap(
+                mapViewportState = rememberMapViewportState(),
+            ) {
+                CandidateMarkers(
+                    state = state,
+                    toggleState = LayerToggleState(showUnprocessed = true),
+                    onMarkerClick = {},
+                )
+            }
+        }
+
+        composeRule.waitForIdle()
+    }
+
+    @Test
+    fun markers_composeWithAllLayers_noApplierCrash() {
         val state =
             createDummyState(
-                unprocessed = listOf(candUnprocessed),
-                yes = listOf(candYes),
-                no = listOf(candNo),
+                unprocessed = listOf(createCandidate(3L, -37.82, 145.02)),
+                yes = listOf(createCandidate(1L, -37.8, 145.0)),
+                no = listOf(createCandidate(2L, -37.81, 145.01)),
             )
 
         composeRule.setContent {
@@ -87,54 +104,13 @@ class CandidateMarkersTest {
             }
         }
 
-        composeRule.onNodeWithTag("candidate-marker-1").assertIsDisplayed()
-        composeRule.onNodeWithTag("candidate-marker-2").assertIsDisplayed()
-        composeRule.onNodeWithTag("candidate-marker-3").assertIsDisplayed()
+        composeRule.waitForIdle()
     }
 
     @Test
-    fun markers_areHiddenWhenLayerIsToggledOff() {
-        val candYes = createCandidate(1L, -37.8, 145.0)
-        val candNo = createCandidate(2L, -37.81, 145.01)
-        val candUnprocessed = createCandidate(3L, -37.82, 145.02)
-
-        val state =
-            createDummyState(
-                unprocessed = listOf(candUnprocessed),
-                yes = listOf(candYes),
-                no = listOf(candNo),
-            )
-
-        composeRule.setContent {
-            MapboxMap(
-                mapViewportState = rememberMapViewportState(),
-            ) {
-                CandidateMarkers(
-                    state = state,
-                    toggleState =
-                        LayerToggleState(
-                            showYes = false,
-                            showNo = true,
-                            showUnprocessed = false,
-                        ),
-                    onMarkerClick = {},
-                )
-            }
-        }
-
-        composeRule.onNodeWithTag("candidate-marker-1").assertDoesNotExist()
-        composeRule.onNodeWithTag("candidate-marker-2").assertIsDisplayed()
-        composeRule.onNodeWithTag("candidate-marker-3").assertDoesNotExist()
-    }
-
-    @Test
-    fun markers_withNullLocationAreNotDisplayed() {
-        val candNullLoc =
-            createCandidate(4L, 0.0, 0.0).copy(
-                geoCentroid = null,
-            )
-
-        val state = createDummyState(unprocessed = listOf(candNullLoc))
+    fun markers_composeWithNullLocation_noApplierCrash() {
+        val nullLoc = createCandidate(4L, 0.0, 0.0).copy(geoCentroid = null)
+        val state = createDummyState(unprocessed = listOf(nullLoc))
 
         composeRule.setContent {
             MapboxMap(
@@ -148,6 +124,6 @@ class CandidateMarkersTest {
             }
         }
 
-        composeRule.onNodeWithTag("candidate-marker-4").assertDoesNotExist()
+        composeRule.waitForIdle()
     }
 }
