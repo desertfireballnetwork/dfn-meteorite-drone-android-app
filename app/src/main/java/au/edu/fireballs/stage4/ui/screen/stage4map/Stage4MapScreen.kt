@@ -7,12 +7,10 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -29,6 +27,7 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import au.edu.fireballs.stage4.data.tiles.TileStore
 import au.edu.fireballs.stage4.domain.model.Stage4Candidate
+import au.edu.fireballs.stage4.ui.screen.candidate.CandidateModal
 import com.mapbox.geojson.Point
 import com.mapbox.maps.dsl.cameraOptions
 import com.mapbox.maps.extension.compose.animation.viewport.MapViewportState
@@ -68,7 +67,16 @@ fun Stage4MapScreen(
             )
 
         is Stage4MapUiState.Loaded -> {
-            var selectedCandidate by remember { mutableStateOf<Stage4Candidate?>(null) }
+            var selectedCandidateId by rememberSaveable { mutableStateOf<Long?>(null) }
+
+            val selectedCandidate =
+                selectedCandidateId?.let { id ->
+                    (
+                        state.state.unprocessedCandidates +
+                            state.state.yesMeteorites +
+                            state.state.noMeteorites
+                    ).firstOrNull { it.inferenceResultId == id }
+                }
 
             LoadedMap(
                 loaded = state,
@@ -77,17 +85,17 @@ fun Stage4MapScreen(
                 surveyPositioned = positionedSurveyId == state.state.survey.id,
                 onSurveyPositioned = { positionedSurveyId = state.state.survey.id },
                 onToggleLayer = viewModel::toggleLayer,
-                onMarkerClick = { selectedCandidate = it },
+                onMarkerClick = { selectedCandidateId = it.inferenceResultId },
                 tileStore = viewModel.tileStore,
-                candidateId = selectedCandidate?.inferenceResultId,
+                candidateId = selectedCandidateId,
             )
 
             selectedCandidate?.let { candidate ->
-                CandidatePlaceholderDialog(
+                CandidateModal(
                     candidate = candidate,
-                    onDismiss = {
-                        selectedCandidate = null
-                    },
+                    surveyId = state.state.survey.id,
+                    onClose = { selectedCandidateId = null },
+                    onAuthExpired = onAuthExpired,
                 )
             }
         }
@@ -261,29 +269,4 @@ private fun PositionSurveyCamera(
             }
         }
     }
-}
-
-@Composable
-private fun CandidatePlaceholderDialog(
-    candidate: Stage4Candidate,
-    onDismiss: () -> Unit,
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Text(text = "Candidate #${candidate.inferenceResultId}")
-        },
-        text = {
-            Text(
-                text =
-                    "Inference ID: ${candidate.inferenceResultId}\n" +
-                        "Confidence: ${"%.2f".format(candidate.confidence)}",
-            )
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Dismiss")
-            }
-        },
-    )
 }
