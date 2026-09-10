@@ -67,7 +67,16 @@ fun Stage4MapScreen(
             )
 
         is Stage4MapUiState.Loaded -> {
-            var selectedCandidate by remember { mutableStateOf<Stage4Candidate?>(null) }
+            var selectedCandidateId by rememberSaveable { mutableStateOf<Long?>(null) }
+
+            val selectedCandidate =
+                selectedCandidateId?.let { id ->
+                    (
+                        state.state.unprocessedCandidates +
+                            state.state.yesMeteorites +
+                            state.state.noMeteorites
+                    ).firstOrNull { it.inferenceResultId == id }
+                }
 
             LoadedMap(
                 loaded = state,
@@ -76,16 +85,16 @@ fun Stage4MapScreen(
                 surveyPositioned = positionedSurveyId == state.state.survey.id,
                 onSurveyPositioned = { positionedSurveyId = state.state.survey.id },
                 onToggleLayer = viewModel::toggleLayer,
-                onMarkerClick = { selectedCandidate = it },
+                onMarkerClick = { selectedCandidateId = it.inferenceResultId },
                 tileStore = viewModel.tileStore,
-                candidateId = selectedCandidate?.inferenceResultId,
+                candidateId = selectedCandidateId,
             )
 
             selectedCandidate?.let { candidate ->
                 CandidateModal(
                     candidate = candidate,
                     surveyId = state.state.survey.id,
-                    onClose = { selectedCandidate = null },
+                    onClose = { selectedCandidateId = null },
                 )
             }
         }

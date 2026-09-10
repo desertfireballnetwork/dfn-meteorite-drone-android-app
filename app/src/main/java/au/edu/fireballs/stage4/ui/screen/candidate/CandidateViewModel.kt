@@ -19,7 +19,7 @@ data class CandidateUiState(
     val candidate: Stage4Candidate,
     val surveyId: Long,
     val viewMode: CandidateViewMode = CandidateViewMode.MAP,
-    val croppedImageUrl: String = "",
+    val croppedImageModel: Any? = null,
     val tileUrlPattern: String = "",
 )
 
@@ -50,8 +50,11 @@ class CandidateViewModel
                     candidate = candidate,
                     surveyId = surveyId,
                     viewMode = currentMode,
-                    croppedImageUrl =
-                        imageRepository.getCroppedImageUrl(candidate.inferenceResultId),
+                    croppedImageModel =
+                        imageRepository.buildCroppedImageRequest(
+                            inferenceResultId = candidate.inferenceResultId,
+                            surveyId = surveyId,
+                        ),
                     tileUrlPattern =
                         imageRepository.getCandidateTileUrlPattern(
                             surveyId = surveyId,

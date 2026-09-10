@@ -5,6 +5,7 @@ import au.edu.fireballs.stage4.data.repository.CandidateImageRepository
 import au.edu.fireballs.stage4.domain.model.BoundingBox
 import au.edu.fireballs.stage4.domain.model.ImageDims
 import au.edu.fireballs.stage4.domain.model.Stage4Candidate
+import coil.request.ImageRequest
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -45,15 +46,16 @@ class CandidateViewModelTest {
         }
 
     @Test
-    fun `initialization populates candidate and URLs`() =
+    fun `initialization populates candidate and media model`() =
         runTest {
             val candidate = createCandidate(id = 42L)
             val surveyId = 10L
-            val croppedUrl = "https://find.gfo.rocks/image_survey_cropped/42/"
+            val imageRequest: ImageRequest = mock()
             val tilePattern =
                 "https://find.gfo.rocks/image_geotiff_candidate_tile/10/42/{z}/{x}/{y}/"
 
-            whenever(imageRepository.getCroppedImageUrl(42L)).thenReturn(croppedUrl)
+            whenever(imageRepository.buildCroppedImageRequest(42L, surveyId))
+                .thenReturn(imageRequest)
             whenever(imageRepository.getCandidateTileUrlPattern(10L, 42L)).thenReturn(tilePattern)
 
             viewModel.uiState.test {
@@ -65,7 +67,7 @@ class CandidateViewModelTest {
                 assertEquals(candidate, state?.candidate)
                 assertEquals(surveyId, state?.surveyId)
                 assertEquals(CandidateViewMode.MAP, state?.viewMode)
-                assertEquals(croppedUrl, state?.croppedImageUrl)
+                assertEquals(imageRequest, state?.croppedImageModel)
                 assertEquals(tilePattern, state?.tileUrlPattern)
             }
         }
@@ -75,8 +77,8 @@ class CandidateViewModelTest {
         runTest {
             val candidate = createCandidate(id = 42L)
             val surveyId = 10L
-            whenever(imageRepository.getCroppedImageUrl(42L))
-                .thenReturn("https://find.gfo.rocks/crop/42")
+            whenever(imageRepository.buildCroppedImageRequest(42L, surveyId))
+                .thenReturn(mock())
             whenever(imageRepository.getCandidateTileUrlPattern(10L, 42L))
                 .thenReturn("https://find.gfo.rocks/tiles/10/42/{z}/{x}/{y}/")
 
@@ -101,8 +103,8 @@ class CandidateViewModelTest {
         runTest {
             val candidate = createCandidate(id = 42L)
             val surveyId = 10L
-            whenever(imageRepository.getCroppedImageUrl(42L))
-                .thenReturn("https://find.gfo.rocks/crop/42")
+            whenever(imageRepository.buildCroppedImageRequest(42L, surveyId))
+                .thenReturn(mock())
             whenever(imageRepository.getCandidateTileUrlPattern(10L, 42L))
                 .thenReturn("https://find.gfo.rocks/tiles/10/42/{z}/{x}/{y}/")
 
@@ -125,12 +127,12 @@ class CandidateViewModelTest {
             val candidate2 = createCandidate(id = 99L)
             val surveyId = 10L
 
-            whenever(imageRepository.getCroppedImageUrl(42L))
-                .thenReturn("https://find.gfo.rocks/crop/42")
+            whenever(imageRepository.buildCroppedImageRequest(42L, surveyId))
+                .thenReturn(mock())
             whenever(imageRepository.getCandidateTileUrlPattern(10L, 42L))
                 .thenReturn("https://find.gfo.rocks/tiles/10/42/{z}/{x}/{y}/")
-            whenever(imageRepository.getCroppedImageUrl(99L))
-                .thenReturn("https://find.gfo.rocks/crop/99")
+            whenever(imageRepository.buildCroppedImageRequest(99L, surveyId))
+                .thenReturn(mock())
             whenever(imageRepository.getCandidateTileUrlPattern(10L, 99L))
                 .thenReturn("https://find.gfo.rocks/tiles/10/99/{z}/{x}/{y}/")
 

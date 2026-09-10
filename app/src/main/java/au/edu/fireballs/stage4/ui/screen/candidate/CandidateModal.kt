@@ -94,7 +94,7 @@ fun CandidateModal(
     val activeCandidate = uiState?.candidate ?: candidate
     val currentMode = uiState?.viewMode ?: CandidateViewMode.MAP
     val tileUrlPattern = uiState?.tileUrlPattern ?: ""
-    val imageUrl = uiState?.croppedImageUrl ?: ""
+    val imageModel = uiState?.croppedImageModel
 
     Dialog(
         onDismissRequest = onClose,
@@ -145,7 +145,7 @@ fun CandidateModal(
                 ) {
                     CandidateImageView(
                         candidate = activeCandidate,
-                        imageModel = imageUrl,
+                        imageModel = imageModel,
                         modifier = Modifier.fillMaxSize(),
                     )
                 }
