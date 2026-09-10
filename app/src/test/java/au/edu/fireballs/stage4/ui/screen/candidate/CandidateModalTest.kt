@@ -154,8 +154,6 @@ class CandidateModalTest {
     fun candidateModal_withViewModel_initializesAndTogglesViewMode() {
         val candidate = createCandidate(id = 42L)
         val imageRepository: CandidateImageRepository = mock()
-        whenever(imageRepository.getCroppedImageUrl(42L))
-            .thenReturn("https://example.com/crop/42")
         whenever(imageRepository.getCandidateTileUrlPattern(10L, 42L))
             .thenReturn("https://example.com/tiles/10/42/{z}/{x}/{y}/")
 
@@ -185,21 +183,33 @@ class CandidateModalTest {
     }
 
     @Test
-    fun candidateModal_bothMapAndImageExistInComposition() {
+    fun candidateModal_inactiveViewIsExcludedFromSemantics() {
         val candidate = createCandidate()
 
         composeRule.setContent {
+            var currentMode by remember { mutableStateOf(CandidateViewMode.MAP) }
             CompositionLocalProvider(LocalInspectionMode provides true) {
                 CandidateModal(
                     candidate = candidate,
-                    uiState = CandidateUiState(candidate = candidate, surveyId = 1L),
+                    uiState =
+                        CandidateUiState(
+                            candidate = candidate,
+                            surveyId = 1L,
+                            viewMode = currentMode,
+                        ),
                     onClose = {},
-                    onSelectMode = {},
+                    onSelectMode = { currentMode = it },
                 )
             }
         }
 
         composeRule.onNodeWithTag("candidate-map-root").assertExists()
+        composeRule.onNodeWithTag("candidate-image-view").assertDoesNotExist()
+
+        composeRule.onNodeWithText("Image").performClick()
+        composeRule.waitForIdle()
+
         composeRule.onNodeWithTag("candidate-image-view").assertExists()
+        composeRule.onNodeWithTag("candidate-map-root").assertDoesNotExist()
     }
 }

@@ -95,6 +95,7 @@ fun Stage4MapScreen(
                     candidate = candidate,
                     surveyId = state.state.survey.id,
                     onClose = { selectedCandidateId = null },
+                    onAuthExpired = onAuthExpired,
                 )
             }
         }

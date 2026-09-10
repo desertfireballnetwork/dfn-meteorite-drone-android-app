@@ -151,4 +151,25 @@ class CandidateViewModelTest {
             viewModel.setViewMode(CandidateViewMode.IMAGE)
             assertNull(viewModel.uiState.value)
         }
+
+    @Test
+    fun `retryImage rebuilds cropped image model with a new retry key`() =
+        runTest {
+            val candidate = createCandidate(id = 42L)
+            val surveyId = 10L
+            val initialRequest: ImageRequest = mock()
+            val retriedRequest: ImageRequest = mock()
+            whenever(imageRepository.buildCroppedImageRequest(42L, surveyId, 0))
+                .thenReturn(initialRequest)
+            whenever(imageRepository.buildCroppedImageRequest(42L, surveyId, 1))
+                .thenReturn(retriedRequest)
+            whenever(imageRepository.getCandidateTileUrlPattern(10L, 42L))
+                .thenReturn("https://find.gfo.rocks/tiles/10/42/{z}/{x}/{y}/")
+
+            viewModel.initialize(candidate, surveyId)
+            assertEquals(initialRequest, viewModel.uiState.value?.croppedImageModel)
+
+            viewModel.retryImage()
+            assertEquals(retriedRequest, viewModel.uiState.value?.croppedImageModel)
+        }
 }

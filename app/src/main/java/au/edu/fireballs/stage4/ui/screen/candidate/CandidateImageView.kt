@@ -4,7 +4,11 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -12,6 +16,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
@@ -22,9 +27,16 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import au.edu.fireballs.stage4.domain.model.Stage4Candidate
-import coil.compose.AsyncImage
+import coil.compose.SubcomposeAsyncImage
+import coil.network.HttpException
+import kotlin.math.roundToInt
 
 fun calculateDisplayedBox(
     candidate: Stage4Candidate,
@@ -75,6 +87,8 @@ fun calculateDisplayedBox(
 fun CandidateImageView(
     candidate: Stage4Candidate,
     imageModel: Any?,
+    onRetry: () -> Unit = {},
+    onAuthExpired: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     var scale by remember { mutableFloatStateOf(1.0f) }
@@ -85,12 +99,33 @@ fun CandidateImageView(
         offset = Offset.Zero
     }
 
+    val zoomPercent = (scale * 100).roundToInt()
+
     Box(
         modifier =
             modifier
                 .testTag("candidate-image-view")
                 .clipToBounds()
-                .pointerInput(Unit) {
+                .semantics {
+                    contentDescription = "Candidate ${candidate.inferenceResultId}"
+                    stateDescription = "Zoom $zoomPercent%"
+                    customActions =
+                        listOf(
+                            CustomAccessibilityAction("Zoom in") {
+                                scale = (scale * 1.5f).coerceAtMost(10f)
+                                true
+                            },
+                            CustomAccessibilityAction("Zoom out") {
+                                scale = (scale / 1.5f).coerceAtLeast(1f)
+                                true
+                            },
+                            CustomAccessibilityAction("Reset zoom") {
+                                scale = 1.0f
+                                offset = Offset.Zero
+                                true
+                            },
+                        )
+                }.pointerInput(Unit) {
                     detectTapGestures(
                         onDoubleTap = {
                             if (scale > 1.0f) {
@@ -120,7 +155,7 @@ fun CandidateImageView(
                     }
                 },
     ) {
-        AsyncImage(
+        SubcomposeAsyncImage(
             model = imageModel,
             contentDescription = "Candidate ${candidate.inferenceResultId}",
             contentScale = ContentScale.Fit,
@@ -134,6 +169,36 @@ fun CandidateImageView(
                         translationX = offset.x
                         translationY = offset.y
                     },
+            loading = {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    CircularProgressIndicator()
+                }
+            },
+            error = { errorState ->
+                LaunchedEffect(errorState.result.throwable) {
+                    val throwable = errorState.result.throwable
+                    if (throwable is HttpException && throwable.response.code in 401..403) {
+                        onAuthExpired()
+                    }
+                }
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("Couldn't load candidate image")
+                        Button(
+                            onClick = onRetry,
+                            modifier = Modifier.testTag("candidate-image-retry"),
+                        ) {
+                            Text("Retry")
+                        }
+                    }
+                }
+            },
         )
 
         Canvas(

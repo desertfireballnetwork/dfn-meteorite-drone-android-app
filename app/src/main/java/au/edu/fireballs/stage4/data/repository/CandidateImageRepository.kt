@@ -37,14 +37,18 @@ class CandidateImageRepository
         fun buildCroppedImageRequest(
             inferenceResultId: Long,
             surveyId: Long,
+            retryKey: Int = 0,
         ): ImageRequest {
             val data =
                 getLocalCropImageFile(surveyId, inferenceResultId)
                     ?: getCroppedImageUrl(inferenceResultId)
+            val cacheKey = "crop-$surveyId-$inferenceResultId-$retryKey"
             return ImageRequest
                 .Builder(context)
                 .data(data)
                 .crossfade(true)
+                .memoryCacheKey(cacheKey)
+                .setParameter("retry", retryKey)
                 .build()
         }
     }

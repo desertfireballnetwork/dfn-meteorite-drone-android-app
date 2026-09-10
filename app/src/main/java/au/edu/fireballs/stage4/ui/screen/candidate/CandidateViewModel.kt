@@ -31,6 +31,7 @@ class CandidateViewModel
     ) : ViewModel() {
         private val _uiState = MutableStateFlow<CandidateUiState?>(null)
         val uiState: StateFlow<CandidateUiState?> = _uiState.asStateFlow()
+        private var retryCount = 0
 
         fun initialize(
             candidate: Stage4Candidate,
@@ -66,6 +67,21 @@ class CandidateViewModel
         fun setViewMode(mode: CandidateViewMode) {
             _uiState.update { current ->
                 current?.copy(viewMode = mode)
+            }
+        }
+
+        fun retryImage() {
+            val current = _uiState.value ?: return
+            retryCount++
+            _uiState.update { state ->
+                state?.copy(
+                    croppedImageModel =
+                        imageRepository.buildCroppedImageRequest(
+                            inferenceResultId = state.candidate.inferenceResultId,
+                            surveyId = state.surveyId,
+                            retryKey = retryCount,
+                        ),
+                )
             }
         }
     }

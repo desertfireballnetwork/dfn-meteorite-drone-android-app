@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
@@ -120,5 +121,23 @@ class CandidateImageRepositoryTest {
             )
 
         assertEquals(file, request.data)
+    }
+
+    @Test
+    fun buildCroppedImageRequest_retryKeyChangesCacheKey() {
+        val initial =
+            repository.buildCroppedImageRequest(
+                inferenceResultId = 42L,
+                surveyId = 10L,
+                retryKey = 0,
+            )
+        val retried =
+            repository.buildCroppedImageRequest(
+                inferenceResultId = 42L,
+                surveyId = 10L,
+                retryKey = 1,
+            )
+
+        assertNotEquals(initial.memoryCacheKey, retried.memoryCacheKey)
     }
 }

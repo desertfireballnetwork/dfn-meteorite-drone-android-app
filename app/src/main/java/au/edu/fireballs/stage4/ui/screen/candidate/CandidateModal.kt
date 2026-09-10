@@ -28,6 +28,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -68,6 +69,7 @@ fun CandidateModal(
     candidate: Stage4Candidate,
     surveyId: Long,
     onClose: () -> Unit,
+    onAuthExpired: () -> Unit = {},
     viewModel: CandidateViewModel = hiltViewModel(),
 ) {
     LaunchedEffect(candidate.inferenceResultId, surveyId) {
@@ -81,6 +83,8 @@ fun CandidateModal(
         uiState = uiState,
         onClose = onClose,
         onSelectMode = viewModel::setViewMode,
+        onRetry = viewModel::retryImage,
+        onAuthExpired = onAuthExpired,
     )
 }
 
@@ -90,6 +94,8 @@ fun CandidateModal(
     uiState: CandidateUiState?,
     onClose: () -> Unit,
     onSelectMode: (CandidateViewMode) -> Unit,
+    onRetry: () -> Unit = {},
+    onAuthExpired: () -> Unit = {},
 ) {
     val activeCandidate = uiState?.candidate ?: candidate
     val currentMode = uiState?.viewMode ?: CandidateViewMode.MAP
@@ -126,7 +132,13 @@ fun CandidateModal(
                             .zIndex(if (isMapActive) 1f else 0f)
                             .graphicsLayer {
                                 alpha = if (isMapActive) 1f else 0f
-                            }.pointerHitTestEnabled(isMapActive),
+                            }.then(
+                                if (isMapActive) {
+                                    Modifier
+                                } else {
+                                    Modifier.clearAndSetSemantics {}
+                                },
+                            ).pointerHitTestEnabled(isMapActive),
                 ) {
                     CandidateMap(
                         candidate = activeCandidate,
@@ -141,11 +153,19 @@ fun CandidateModal(
                             .zIndex(if (isImageActive) 1f else 0f)
                             .graphicsLayer {
                                 alpha = if (isImageActive) 1f else 0f
-                            }.pointerHitTestEnabled(isImageActive),
+                            }.then(
+                                if (isImageActive) {
+                                    Modifier
+                                } else {
+                                    Modifier.clearAndSetSemantics {}
+                                },
+                            ).pointerHitTestEnabled(isImageActive),
                 ) {
                     CandidateImageView(
                         candidate = activeCandidate,
                         imageModel = imageModel,
+                        onRetry = onRetry,
+                        onAuthExpired = onAuthExpired,
                         modifier = Modifier.fillMaxSize(),
                     )
                 }
