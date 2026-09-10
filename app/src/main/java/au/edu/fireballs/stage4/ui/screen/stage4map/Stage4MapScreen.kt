@@ -94,6 +94,7 @@ fun Stage4MapScreen(
                 CandidateModal(
                     candidate = candidate,
                     surveyId = state.state.survey.id,
+                    detectionTags = state.state.detectionTags,
                     onClose = { selectedCandidateId = null },
                     onAuthExpired = onAuthExpired,
                 )
