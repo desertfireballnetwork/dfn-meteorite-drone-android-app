@@ -5,12 +5,8 @@ import android.widget.ImageView
 import androidx.compose.runtime.Composable
 import au.edu.fireballs.stage4.R
 import au.edu.fireballs.stage4.domain.model.GeoCoordinate
-import com.mapbox.geojson.Point
-import com.mapbox.maps.AnnotatedFeature
+import au.edu.fireballs.stage4.ui.screen.stage4map.marker.viewAnnotationOptions
 import com.mapbox.maps.MapView
-import com.mapbox.maps.ViewAnnotationAnchor
-import com.mapbox.maps.ViewAnnotationAnchorConfig
-import com.mapbox.maps.ViewAnnotationOptions
 import com.mapbox.maps.extension.compose.DisposableMapEffect
 import kotlin.math.roundToInt
 
@@ -22,23 +18,7 @@ fun BaseMarker(base: GeoCoordinate?) {
 
     DisposableMapEffect(base) { mapView ->
         val markerView = createCarMarkerView(mapView)
-        val options =
-            ViewAnnotationOptions
-                .Builder()
-                .annotatedFeature(
-                    AnnotatedFeature(
-                        Point.fromLngLat(base.longitude, base.latitude),
-                    ),
-                ).variableAnchors(
-                    listOf(
-                        ViewAnnotationAnchorConfig
-                            .Builder()
-                            .anchor(ViewAnnotationAnchor.BOTTOM)
-                            .build(),
-                    ),
-                ).width(MARKER_SIZE_DP)
-                .height(MARKER_SIZE_DP)
-                .build()
+        val options = viewAnnotationOptions(base, MARKER_SIZE_DP, MARKER_SIZE_DP)
 
         mapView.viewAnnotationManager.addViewAnnotation(markerView, options)
 

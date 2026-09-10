@@ -57,13 +57,12 @@ internal fun MapHost(
             tilesetId = state.survey.tilesetId,
             visible = layerToggleState.showSurveyedAreas,
         )
-        BaseMarker(base = state.base)
-
         CandidateMarkers(
             state = state,
             toggleState = layerToggleState,
             onMarkerClick = onMarkerClick,
         )
+        BaseMarker(base = state.base)
         CustomRasterOverlay(
             surveyId = state.survey.id,
             candidateId = candidateId,

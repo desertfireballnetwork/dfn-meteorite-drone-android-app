@@ -16,11 +16,6 @@ import au.edu.fireballs.stage4.domain.model.Stage4Candidate
 import au.edu.fireballs.stage4.domain.model.Stage4State
 import au.edu.fireballs.stage4.ui.screen.stage4map.LayerToggleState
 import au.edu.fireballs.stage4.ui.theme.LocalDFNColors
-import com.mapbox.geojson.Point
-import com.mapbox.maps.AnnotatedFeature
-import com.mapbox.maps.ViewAnnotationAnchor
-import com.mapbox.maps.ViewAnnotationAnchorConfig
-import com.mapbox.maps.ViewAnnotationOptions
 import com.mapbox.maps.extension.compose.MapboxMapComposable
 import com.mapbox.maps.extension.compose.annotation.ViewAnnotation
 
@@ -59,21 +54,7 @@ private fun CandidateMarker(
     val colors = LocalDFNColors.current
     val style = getCandidateMarkerStyle(candidate, verdict, colors)
 
-    val options =
-        ViewAnnotationOptions
-            .Builder()
-            .annotatedFeature(
-                AnnotatedFeature(
-                    Point.fromLngLat(coordinate.longitude, coordinate.latitude),
-                ),
-            ).variableAnchors(
-                listOf(
-                    ViewAnnotationAnchorConfig
-                        .Builder()
-                        .anchor(ViewAnnotationAnchor.BOTTOM)
-                        .build(),
-                ),
-            ).build()
+    val options = viewAnnotationOptions(coordinate)
 
     ViewAnnotation(options = options) {
         Box(
