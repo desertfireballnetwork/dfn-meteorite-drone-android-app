@@ -7,6 +7,7 @@ import au.edu.fireballs.stage4.data.remote.AuthService
 import au.edu.fireballs.stage4.data.remote.EvidenceService
 import au.edu.fireballs.stage4.data.remote.PersistentCookieJar
 import au.edu.fireballs.stage4.data.remote.Stage4Service
+import au.edu.fireballs.stage4.data.remote.TileService
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import dagger.Module
@@ -17,7 +18,6 @@ import dagger.hilt.components.SingletonComponent
 import okhttp3.CookieJar
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
-import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
@@ -82,36 +82,11 @@ object NetworkModule {
                 .addInterceptor(authInterceptor)
 
         if (BuildConfig.DEBUG) {
-            val loggingInterceptor =
+            builder.addInterceptor(
                 HttpLoggingInterceptor().apply {
-                    level = HttpLoggingInterceptor.Level.BODY
-                }
-
-            // Interceptor to downgrade logging for auth/login endpoints
-            val selectiveLoggingInterceptor =
-                Interceptor { chain ->
-                    val request = chain.request()
-                    val isAuthEndpoint =
-                        request.url.encodedPath.contains(
-                            "login",
-                            ignoreCase = true,
-                        )
-
-                    if (isAuthEndpoint) {
-                        val originalLevel = loggingInterceptor.level
-                        loggingInterceptor.level = HttpLoggingInterceptor.Level.HEADERS
-                        try {
-                            chain.proceed(request)
-                        } finally {
-                            loggingInterceptor.level = originalLevel
-                        }
-                    } else {
-                        chain.proceed(request)
-                    }
-                }
-
-            builder.addInterceptor(selectiveLoggingInterceptor)
-            builder.addInterceptor(loggingInterceptor)
+                    level = HttpLoggingInterceptor.Level.BASIC
+                },
+            )
         }
 
         return builder.build()
@@ -145,4 +120,9 @@ object NetworkModule {
     @Singleton
     fun provideEvidenceService(retrofit: Retrofit): EvidenceService =
         retrofit.create(EvidenceService::class.java)
+
+    @Provides
+    @Singleton
+    fun provideTileService(retrofit: Retrofit): TileService =
+        retrofit.create(TileService::class.java)
 }

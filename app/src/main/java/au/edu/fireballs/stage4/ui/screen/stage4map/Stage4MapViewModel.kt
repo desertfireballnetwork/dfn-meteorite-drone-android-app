@@ -6,6 +6,7 @@ import au.edu.fireballs.stage4.data.local.LocalDecisionEntity
 import au.edu.fireballs.stage4.data.local.dao.LocalDecisionDao
 import au.edu.fireballs.stage4.data.repository.Stage4FetchResult
 import au.edu.fireballs.stage4.data.repository.Stage4Repository
+import au.edu.fireballs.stage4.data.tiles.TileStore
 import au.edu.fireballs.stage4.domain.model.MapCameraTarget
 import au.edu.fireballs.stage4.domain.model.Stage4Candidate
 import au.edu.fireballs.stage4.domain.model.Stage4State
@@ -60,6 +61,7 @@ class Stage4MapViewModel
     constructor(
         private val stage4Repository: Stage4Repository,
         private val localDecisionDao: LocalDecisionDao,
+        val tileStore: TileStore,
     ) : ViewModel() {
         private val layerToggleStateFlow = MutableStateFlow(LayerToggleState())
         private val sourceStateFlow = MutableStateFlow<Stage4State?>(null)

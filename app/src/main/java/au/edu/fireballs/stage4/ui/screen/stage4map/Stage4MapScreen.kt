@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import au.edu.fireballs.stage4.data.tiles.TileStore
 import au.edu.fireballs.stage4.domain.model.Stage4Candidate
 import com.mapbox.geojson.Point
 import com.mapbox.maps.dsl.cameraOptions
@@ -77,6 +78,8 @@ fun Stage4MapScreen(
                 onSurveyPositioned = { positionedSurveyId = state.state.survey.id },
                 onToggleLayer = viewModel::toggleLayer,
                 onMarkerClick = { selectedCandidate = it },
+                tileStore = viewModel.tileStore,
+                candidateId = selectedCandidate?.inferenceResultId,
             )
 
             selectedCandidate?.let { candidate ->
@@ -134,6 +137,8 @@ private fun LoadedMap(
     mapViewportState: MapViewportState,
     locationPermission: LocationPermissionUiState,
     surveyPositioned: Boolean,
+    tileStore: TileStore?,
+    candidateId: Long?,
     onSurveyPositioned: () -> Unit,
     onToggleLayer: (LayerType, Boolean) -> Unit,
     onMarkerClick: (Stage4Candidate) -> Unit,
@@ -172,6 +177,8 @@ private fun LoadedMap(
             state = loaded.state,
             layerToggleState = loaded.layerToggleState,
             onMarkerClick = onMarkerClick,
+            candidateId = candidateId,
+            tileStore = tileStore,
         )
 
         LayerToggleBar(
