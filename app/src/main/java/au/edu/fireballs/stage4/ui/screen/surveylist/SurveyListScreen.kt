@@ -55,6 +55,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun SurveyListScreen(
     onSurveySelected: (Long) -> Unit,
+    onBasecampSelected: (Long) -> Unit,
     onAuthExpired: () -> Unit,
     viewModel: SurveyListViewModel = hiltViewModel(),
 ) {
@@ -137,6 +138,15 @@ fun SurveyListScreen(
                                             }
                                         }
                                     },
+                                    onBasecampClick = {
+                                        if (survey.hasStage4) {
+                                            onBasecampSelected(survey.id)
+                                        } else {
+                                            scope.launch {
+                                                snackbarHostState.showSnackbar(notReadyMessage)
+                                            }
+                                        }
+                                    },
                                 )
                             }
                         }
@@ -190,6 +200,7 @@ fun SurveyListScreen(
 fun SurveyListItem(
     survey: Survey,
     onSurveyClick: () -> Unit,
+    onBasecampClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val alpha = if (survey.hasStage4) 1.0f else 0.5f
@@ -254,31 +265,46 @@ fun SurveyListItem(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            Surface(
-                shape = MaterialTheme.shapes.small,
-                color =
-                    if (survey.hasStage4) {
-                        MaterialTheme.colorScheme.primaryContainer
-                    } else {
-                        MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)
-                    },
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    text =
-                        if (survey.hasStage4) {
-                            stringResource(R.string.survey_stage4_ready)
-                        } else {
-                            stringResource(R.string.survey_stage4_not_ready)
-                        },
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                    style = MaterialTheme.typography.labelSmall,
+                Surface(
+                    shape = MaterialTheme.shapes.small,
                     color =
                         if (survey.hasStage4) {
-                            MaterialTheme.colorScheme.onPrimaryContainer
+                            MaterialTheme.colorScheme.primaryContainer
                         } else {
-                            MaterialTheme.colorScheme.onSecondaryContainer
+                            MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)
                         },
-                )
+                ) {
+                    Text(
+                        text =
+                            if (survey.hasStage4) {
+                                stringResource(R.string.survey_stage4_ready)
+                            } else {
+                                stringResource(R.string.survey_stage4_not_ready)
+                            },
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        style = MaterialTheme.typography.labelSmall,
+                        color =
+                            if (survey.hasStage4) {
+                                MaterialTheme.colorScheme.onPrimaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.onSecondaryContainer
+                            },
+                    )
+                }
+
+                if (survey.hasStage4) {
+                    Button(
+                        onClick = onBasecampClick,
+                        modifier = Modifier.height(32.dp),
+                    ) {
+                        Text(text = "Basecamp")
+                    }
+                }
             }
         }
     }
@@ -303,6 +329,7 @@ private fun SurveyListItemActivePreview() {
                     isActive = true,
                 ),
             onSurveyClick = {},
+            onBasecampClick = {},
         )
     }
 }
@@ -322,6 +349,7 @@ private fun SurveyListItemLongTextPreview() {
                     isActive = false,
                 ),
             onSurveyClick = {},
+            onBasecampClick = {},
         )
     }
 }
@@ -341,6 +369,7 @@ private fun SurveyListItemNotReadyPreview() {
                     isActive = false,
                 ),
             onSurveyClick = {},
+            onBasecampClick = {},
         )
     }
 }
@@ -387,6 +416,7 @@ private fun SurveyListLoadedPreview() {
                     SurveyListItem(
                         survey = survey,
                         onSurveyClick = {},
+                        onBasecampClick = {},
                     )
                 }
             }
