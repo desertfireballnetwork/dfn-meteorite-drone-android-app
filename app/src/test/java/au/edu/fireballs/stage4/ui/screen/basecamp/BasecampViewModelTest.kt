@@ -326,6 +326,14 @@ class BasecampViewModelTest {
             val fixture = state(candidate(1L, GeoCoordinate(0.0, 0.0)))
             whenever(stage4Repository.getCandidatesState(7L))
                 .thenReturn(Stage4FetchResult.Success(fixture))
+            wheneverBlocking { claimRepository.listClaims() }
+                .thenReturn(
+                    ClaimResult.Listed(
+                        claims = listOf(Claim(inferenceResultId = 1L, userId = 2L, isMe = true)),
+                    ),
+                )
+            wheneverBlocking { claimRepository.release(listOf(1L)) }
+                .thenReturn(ClaimResult.Released(released = listOf(1L)))
 
             viewModel = BasecampViewModel(stage4Repository, claimRepository)
             val collectJob = backgroundScope.launch(testDispatcher) { viewModel.uiState.collect {} }
@@ -336,6 +344,31 @@ class BasecampViewModelTest {
             advanceUntilIdle()
 
             verify(claimRepository).release(listOf(1L))
+            collectJob.cancel()
+        }
+
+    @Test
+    fun `releaseClaim refuses to release another users claim`() =
+        runTest(testDispatcher) {
+            val fixture = state(candidate(1L, GeoCoordinate(0.0, 0.0)))
+            whenever(stage4Repository.getCandidatesState(7L))
+                .thenReturn(Stage4FetchResult.Success(fixture))
+            wheneverBlocking { claimRepository.listClaims() }
+                .thenReturn(
+                    ClaimResult.Listed(
+                        claims = listOf(Claim(inferenceResultId = 1L, userId = 3L, isMe = false)),
+                    ),
+                )
+
+            viewModel = BasecampViewModel(stage4Repository, claimRepository)
+            val collectJob = backgroundScope.launch(testDispatcher) { viewModel.uiState.collect {} }
+            viewModel.openSurvey(7L)
+            advanceUntilIdle()
+
+            viewModel.releaseClaim(1L)
+            advanceUntilIdle()
+
+            verify(claimRepository, never()).release(any())
             collectJob.cancel()
         }
 }

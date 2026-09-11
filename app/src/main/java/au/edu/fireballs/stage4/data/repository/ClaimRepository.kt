@@ -66,11 +66,11 @@ class ClaimRepository
                     val response =
                         stage4Service.claimCandidate(
                             surveyId = surveyId.toString(),
-                            body = ClaimRequestDto(ids.map { it.toInt() }),
+                            body = ClaimRequestDto(ids),
                         )
                     ClaimResult.Claimed(
-                        claimed = response.claimed.map { it.toLong() },
-                        alreadyClaimed = response.alreadyClaimed.map { it.toLong() },
+                        claimed = response.claimed,
+                        alreadyClaimed = response.alreadyClaimed,
                     )
                 } catch (e: CancellationException) {
                     throw e
@@ -98,9 +98,9 @@ class ClaimRepository
                     val response =
                         stage4Service.releaseCandidate(
                             surveyId = surveyId.toString(),
-                            body = ReleaseRequestDto(ids.map { it.toInt() }),
+                            body = ReleaseRequestDto(ids),
                         )
-                    ClaimResult.Released(released = response.released.map { it.toLong() })
+                    ClaimResult.Released(released = response.released)
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: IOException) {

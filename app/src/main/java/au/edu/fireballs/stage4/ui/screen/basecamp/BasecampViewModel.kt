@@ -185,6 +185,13 @@ class BasecampViewModel
         }
 
         fun releaseClaim(inferenceResultId: Long) {
+            if (claimsFlow.value.none {
+                    it.inferenceResultId == inferenceResultId && it.isMe
+                }
+            ) {
+                emitMessage("Only your own claims can be released")
+                return
+            }
             releaseCandidates(listOf(inferenceResultId))
         }
 

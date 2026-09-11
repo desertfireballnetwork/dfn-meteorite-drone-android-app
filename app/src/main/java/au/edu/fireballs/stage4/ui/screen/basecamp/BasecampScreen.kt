@@ -99,9 +99,7 @@ fun BasecampScreen(
 
     LifecycleResumeEffect(Unit) {
         viewModel.openSurvey(surveyId)
-        onPauseOrDispose {
-            // May be later
-        }
+        onPauseOrDispose { }
     }
 
     LaunchedEffect(uiState) {

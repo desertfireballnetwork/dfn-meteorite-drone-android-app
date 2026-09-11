@@ -113,23 +113,23 @@ data class ClaimDto(
 
 @JsonClass(generateAdapter = true)
 data class ClaimRequestDto(
-    @Json(name = "inference_result_ids") val inferenceResultIds: List<Int>,
+    @Json(name = "inference_result_ids") val inferenceResultIds: List<Long>,
 )
 
 @JsonClass(generateAdapter = true)
 data class ClaimResponseDto(
-    @Json(name = "claimed") val claimed: List<Int> = emptyList(),
-    @Json(name = "already_claimed") val alreadyClaimed: List<Int> = emptyList(),
+    @Json(name = "claimed") val claimed: List<Long> = emptyList(),
+    @Json(name = "already_claimed") val alreadyClaimed: List<Long> = emptyList(),
 )
 
 @JsonClass(generateAdapter = true)
 data class ReleaseRequestDto(
-    @Json(name = "inference_result_ids") val inferenceResultIds: List<Int>,
+    @Json(name = "inference_result_ids") val inferenceResultIds: List<Long>,
 )
 
 @JsonClass(generateAdapter = true)
 data class ReleaseResponseDto(
-    @Json(name = "released") val released: List<Int> = emptyList(),
+    @Json(name = "released") val released: List<Long> = emptyList(),
 )
 
 @JsonClass(generateAdapter = true)

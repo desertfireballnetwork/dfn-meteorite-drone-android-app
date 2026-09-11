@@ -17,7 +17,7 @@ class ClaimDtosTest {
         val json =
             moshi
                 .adapter(ClaimRequestDto::class.java)
-                .toJson(ClaimRequestDto(listOf(1, 2, 3)))
+                .toJson(ClaimRequestDto(listOf(1L, 2L, 3L)))
         assertEquals("""{"inference_result_ids":[1,2,3]}""", json)
     }
 
@@ -26,7 +26,7 @@ class ClaimDtosTest {
         val json =
             moshi
                 .adapter(ReleaseRequestDto::class.java)
-                .toJson(ReleaseRequestDto(listOf(5)))
+                .toJson(ReleaseRequestDto(listOf(5L)))
         assertEquals("""{"inference_result_ids":[5]}""", json)
     }
 
@@ -36,8 +36,8 @@ class ClaimDtosTest {
             moshi
                 .adapter(ClaimResponseDto::class.java)
                 .fromJson("""{"claimed":[1],"already_claimed":[2]}""")
-        assertEquals(listOf(1), dto?.claimed)
-        assertEquals(listOf(2), dto?.alreadyClaimed)
+        assertEquals(listOf(1L), dto?.claimed)
+        assertEquals(listOf(2L), dto?.alreadyClaimed)
     }
 
     @Test
@@ -46,7 +46,7 @@ class ClaimDtosTest {
             moshi
                 .adapter(ReleaseResponseDto::class.java)
                 .fromJson("""{"released":[3]}""")
-        assertEquals(listOf(3), dto?.released)
+        assertEquals(listOf(3L), dto?.released)
     }
 
     @Test
