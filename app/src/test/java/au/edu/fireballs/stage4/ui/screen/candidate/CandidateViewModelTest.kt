@@ -251,7 +251,7 @@ class CandidateViewModelTest {
         }
 
     @Test
-    fun `switching from Yes to No clears tag`() =
+    fun `switching from No to Yes clears tag`() =
         runTest(testDispatcher) {
             val candidate = createCandidate(id = 42L)
             stubImageRepository()

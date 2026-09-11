@@ -260,7 +260,7 @@ private fun CandidateVerdictBar(
                     Text("Yes")
                 }
                 OutlinedButton(
-                    onClick = { onVerdict(false, detectionTagId) },
+                    onClick = { onVerdict(false, null) },
                     modifier =
                         Modifier
                             .weight(1f)
