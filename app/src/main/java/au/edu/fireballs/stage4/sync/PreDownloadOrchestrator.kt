@@ -68,6 +68,7 @@ class PreDownloadOrchestrator(
         val lon: Double,
     )
 
+    @Suppress("TooGenericExceptionCaught")
     suspend fun run(
         surveyId: Long,
         bufferMeters: Float,
@@ -101,8 +102,48 @@ class PreDownloadOrchestrator(
             return failure("Insufficient storage")
         }
 
+        return try {
+            acquireSurvey(
+                surveyId,
+                candidates,
+                clusters,
+                bufferRadius,
+                satelliteTotal,
+                tileTotal,
+                total,
+                bufferMeters,
+                reDownloadRecommended,
+                progress,
+            )
+        } catch (e: CancellationException) {
+            cleanupSurvey(surveyId)
+            throw e
+        } catch (e: Exception) {
+            cleanupSurvey(surveyId)
+            throw e
+        }
+    }
+
+    private suspend fun acquireSurvey(
+        surveyId: Long,
+        candidates: List<CandidatePoint>,
+        clusters: List<List<CandidatePoint>>,
+        bufferRadius: Double,
+        satelliteTotal: Int,
+        tileTotal: Int,
+        total: Int,
+        bufferMeters: Float,
+        reDownloadRecommended: Boolean,
+        progress: suspend (Data) -> Unit,
+    ): PreDownloadOutcome {
         if (clusters.isNotEmpty()) {
-            val satelliteOk = downloadSatellite(clusters, total, progress)
+            val satelliteOk =
+                downloadSatellite(
+                    clusters,
+                    bufferRadius,
+                    total,
+                    progress,
+                )
             if (!satelliteOk) {
                 return failure("Satellite download failed")
             }
@@ -150,6 +191,11 @@ class PreDownloadOrchestrator(
                 .putInt(KEY_CANDIDATE_COUNT, candidates.size)
                 .putBoolean(KEY_RE_DOWNLOAD_RECOMMENDED, reDownloadRecommended)
         return PreDownloadOutcome.Success(builder.build())
+    }
+
+    private fun cleanupSurvey(surveyId: Long) {
+        tileStore.deleteSurveyTiles(surveyId)
+        File(filesDir, "$CROP_DIR/$surveyId").deleteRecursively()
     }
 
     private suspend fun buildCandidates(surveyId: Long): List<CandidatePoint> {
@@ -233,22 +279,33 @@ class PreDownloadOrchestrator(
         return 2.0 * EARTH_RADIUS_METERS * asin(sqrt(h))
     }
 
-    private fun unionBbox(cluster: List<CandidatePoint>): Bbox =
-        Bbox(
-            minLat = cluster.minOf { it.lat },
-            minLon = cluster.minOf { it.lon },
-            maxLat = cluster.maxOf { it.lat },
-            maxLon = cluster.maxOf { it.lon },
-        )
+    private fun unionBbox(
+        cluster: List<CandidatePoint>,
+        bufferRadius: Double,
+    ): Bbox {
+        var minLat = Double.POSITIVE_INFINITY
+        var minLon = Double.POSITIVE_INFINITY
+        var maxLat = Double.NEGATIVE_INFINITY
+        var maxLon = Double.NEGATIVE_INFINITY
+        cluster.forEach { candidate ->
+            val bbox = TileMath.bufferBbox(candidate.lat, candidate.lon, bufferRadius)
+            minLat = minOf(minLat, bbox.minLat)
+            minLon = minOf(minLon, bbox.minLon)
+            maxLat = maxOf(maxLat, bbox.maxLat)
+            maxLon = maxOf(maxLon, bbox.maxLon)
+        }
+        return Bbox(minLat, minLon, maxLat, maxLon)
+    }
 
     private suspend fun downloadSatellite(
         clusters: List<List<CandidatePoint>>,
+        bufferRadius: Double,
         total: Int,
         progress: suspend (Data) -> Unit,
     ): Boolean {
         var completed = 0
         for (cluster in clusters) {
-            val bbox = unionBbox(cluster)
+            val bbox = unionBbox(cluster, bufferRadius)
             val result =
                 suspendCancellableCoroutine<Result<Unit>> { cont ->
                     val scope = CoroutineScope(cont.context)
@@ -291,27 +348,31 @@ class PreDownloadOrchestrator(
         progress: suspend (Data) -> Unit,
     ): Int {
         val limiter = ioDispatcher.limitedParallelism(TILE_CONCURRENCY)
+        var completed = 0
         var written = 0
         val lock = Mutex()
         coroutineScope {
             candidates.forEach { candidate ->
                 launch {
                     val tiles = tilesForCandidate(candidate, bufferRadius)
-                    val count =
-                        tiles.count { tile ->
+                    tiles.forEach { tile ->
+                        val ok =
                             withContext(limiter) {
                                 fetchTileWithRetry(surveyId, candidate.inferenceResultId, tile)
                             }
+                        lock.withLock {
+                            completed++
+                            if (ok) {
+                                written++
+                            }
+                            progress(
+                                workDataOf(
+                                    KEY_DONE to offset + completed,
+                                    KEY_TOTAL to total,
+                                    KEY_PHASE to PHASE_TILES,
+                                ),
+                            )
                         }
-                    lock.withLock {
-                        written += count
-                        progress(
-                            workDataOf(
-                                KEY_DONE to offset + written,
-                                KEY_TOTAL to total,
-                                KEY_PHASE to PHASE_TILES,
-                            ),
-                        )
                     }
                 }
             }
@@ -364,6 +425,7 @@ class PreDownloadOrchestrator(
         progress: suspend (Data) -> Unit,
     ): Int {
         val limiter = ioDispatcher.limitedParallelism(TILE_CONCURRENCY)
+        var completed = 0
         var written = 0
         val lock = Mutex()
         coroutineScope {
@@ -374,12 +436,13 @@ class PreDownloadOrchestrator(
                             fetchCrop(surveyId, candidate.inferenceResultId)
                         }
                     lock.withLock {
+                        completed++
                         if (ok) {
                             written++
                         }
                         progress(
                             workDataOf(
-                                KEY_DONE to offset + written,
+                                KEY_DONE to offset + completed,
                                 KEY_TOTAL to total,
                                 KEY_PHASE to PHASE_CROPS,
                             ),

@@ -6,8 +6,8 @@ import androidx.work.Data
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkInfo
-import au.edu.fireballs.stage4.data.local.dao.CandidateDao
-import au.edu.fireballs.stage4.data.local.dao.ClaimDao
+import au.edu.fireballs.stage4.data.repository.ClaimRepository
+import au.edu.fireballs.stage4.data.repository.Stage4Repository
 import au.edu.fireballs.stage4.data.tiles.BufferRadiusRepository
 import au.edu.fireballs.stage4.sync.PreDownloadOrchestrator
 import au.edu.fireballs.stage4.sync.PreDownloadWorker
@@ -28,6 +28,7 @@ sealed interface PreDownloadUiState {
     data class Ready(
         val claimedCandidateCount: Int,
         val estimatedSizeBytes: Long,
+        val isStale: Boolean = false,
     ) : PreDownloadUiState
 
     data class Running(
@@ -66,8 +67,8 @@ private const val UNIQUE_WORK_PREFIX = "pre_download_"
 class PreDownloadViewModel
     @Inject
     constructor(
-        private val candidateDao: CandidateDao,
-        private val claimDao: ClaimDao,
+        private val claimRepository: ClaimRepository,
+        private val stage4Repository: Stage4Repository,
         private val bufferRadiusRepository: BufferRadiusRepository,
         private val preDownloadWorkManager: PreDownloadWorkManager,
     ) : ViewModel() {
@@ -85,11 +86,12 @@ class PreDownloadViewModel
             observeJob?.cancel()
             observeJob = null
             viewModelScope.launch {
-                val claimed = countClaimedCandidates(surveyId)
+                val claimed = claimRepository.countActiveClaimedCandidates(surveyId)
                 _uiState.value =
                     PreDownloadUiState.Ready(
                         claimedCandidateCount = claimed,
                         estimatedSizeBytes = estimateSize(claimed),
+                        isStale = isLocalDataStale(surveyId),
                     )
             }
         }
@@ -192,16 +194,10 @@ class PreDownloadViewModel
         private fun isReDownloadRecommended(output: Data): Boolean =
             output.getBoolean(PreDownloadOrchestrator.KEY_RE_DOWNLOAD_RECOMMENDED, false)
 
-        private suspend fun countClaimedCandidates(surveyId: Long): Int {
-            val candidates = candidateDao.getCandidatesForSurvey(surveyId)
-            var count = 0
-            for (candidate in candidates) {
-                val claim = claimDao.getByCandidateId(candidate.inferenceResultId)
-                if (claim != null && claim.isActive && claim.isMine) {
-                    count++
-                }
-            }
-            return count
+        private suspend fun isLocalDataStale(surveyId: Long): Boolean {
+            val local = stage4Repository.getLocalLatestTaskCreated(surveyId) ?: return false
+            val fresh = stage4Repository.fetchLatestTaskCreated(surveyId) ?: return false
+            return fresh != local
         }
 
         private fun estimateSize(claimedCount: Int): Long {

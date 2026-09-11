@@ -315,6 +315,11 @@ class Stage4Repository
                 .adapter(Stage4StateDto::class.java)
                 .fromJson(body.string())
 
+        suspend fun getLocalLatestTaskCreated(surveyId: Long): String? =
+            withContext(ioDispatcher) {
+                surveyDao.getById(surveyId)?.latestTaskCreated
+            }
+
         @Suppress("TooGenericExceptionCaught", "SwallowedException")
         suspend fun fetchLatestTaskCreated(surveyId: Long): String? =
             withContext(ioDispatcher) {

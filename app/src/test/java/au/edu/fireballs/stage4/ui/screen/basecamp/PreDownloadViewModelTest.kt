@@ -5,10 +5,8 @@ import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequest
 import androidx.work.Operation
 import androidx.work.WorkInfo
-import au.edu.fireballs.stage4.data.local.CandidateEntity
-import au.edu.fireballs.stage4.data.local.ClaimEntity
-import au.edu.fireballs.stage4.data.local.dao.CandidateDao
-import au.edu.fireballs.stage4.data.local.dao.ClaimDao
+import au.edu.fireballs.stage4.data.repository.ClaimRepository
+import au.edu.fireballs.stage4.data.repository.Stage4Repository
 import au.edu.fireballs.stage4.data.tiles.BufferRadiusRepository
 import au.edu.fireballs.stage4.sync.PreDownloadOrchestrator
 import au.edu.fireballs.stage4.sync.PreDownloadWorker
@@ -16,7 +14,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
@@ -35,8 +33,8 @@ import java.util.UUID
 @OptIn(ExperimentalCoroutinesApi::class)
 class PreDownloadViewModelTest {
     private val testDispatcher = StandardTestDispatcher()
-    private lateinit var candidateDao: FakeCandidateDao
-    private lateinit var claimDao: FakeClaimDao
+    private lateinit var claimRepository: ClaimRepository
+    private lateinit var stage4Repository: Stage4Repository
     private lateinit var bufferRadiusRepository: BufferRadiusRepository
     private lateinit var workManager: FakePreDownloadWorkManager
     private lateinit var viewModel: PreDownloadViewModel
@@ -44,15 +42,22 @@ class PreDownloadViewModelTest {
     @Before
     fun setUp() {
         Dispatchers.setMain(testDispatcher)
-        candidateDao = FakeCandidateDao()
-        claimDao = FakeClaimDao()
+        claimRepository = mock<ClaimRepository>()
+        runBlocking {
+            whenever(claimRepository.countActiveClaimedCandidates(7L)).thenReturn(1)
+        }
+        stage4Repository = mock<Stage4Repository>()
+        runBlocking {
+            whenever(stage4Repository.getLocalLatestTaskCreated(7L)).thenReturn("local")
+            whenever(stage4Repository.fetchLatestTaskCreated(7L)).thenReturn("local")
+        }
         bufferRadiusRepository = mock<BufferRadiusRepository>()
         whenever(bufferRadiusRepository.getBufferRadiusMeters()).thenReturn(100.0f)
         workManager = FakePreDownloadWorkManager()
         viewModel =
             PreDownloadViewModel(
-                candidateDao,
-                claimDao,
+                claimRepository,
+                stage4Repository,
                 bufferRadiusRepository,
                 workManager,
             )
@@ -66,27 +71,43 @@ class PreDownloadViewModelTest {
     @Test
     fun `openSurvey computes claimed candidate count and estimated size`() =
         runTest(testDispatcher) {
-            candidateDao.candidates =
-                listOf(candidate(1L), candidate(2L), candidate(3L))
-            claimDao.claims =
-                listOf(
-                    claim(1L, isActive = true, isMine = true),
-                    claim(2L, isActive = true, isMine = false),
-                    claim(3L, isActive = false, isMine = true),
-                )
-
             viewModel.openSurvey(7L)
             advanceUntilIdle()
 
             val ready = viewModel.uiState.value as PreDownloadUiState.Ready
             assertEquals(1, ready.claimedCandidateCount)
             assertEquals(1_600_000L, ready.estimatedSizeBytes)
+            assertFalse(ready.isStale)
+        }
+
+    @Test
+    fun `openSurvey surfaces stale warning when server task is newer`() =
+        runTest(testDispatcher) {
+            whenever(stage4Repository.fetchLatestTaskCreated(7L)).thenReturn("newer")
+            whenever(stage4Repository.getLocalLatestTaskCreated(7L)).thenReturn("older")
+
+            viewModel.openSurvey(7L)
+            advanceUntilIdle()
+
+            val ready = viewModel.uiState.value as PreDownloadUiState.Ready
+            assertTrue(ready.isStale)
+        }
+
+    @Test
+    fun `openSurvey does not warn when server value unavailable`() =
+        runTest(testDispatcher) {
+            whenever(stage4Repository.fetchLatestTaskCreated(7L)).thenReturn(null)
+
+            viewModel.openSurvey(7L)
+            advanceUntilIdle()
+
+            val ready = viewModel.uiState.value as PreDownloadUiState.Ready
+            assertFalse(ready.isStale)
         }
 
     @Test
     fun `startDownload enqueues unique work and observes progress`() =
         runTest(testDispatcher) {
-            candidateDao.candidates = listOf(candidate(1L))
             viewModel.openSurvey(7L)
             advanceUntilIdle()
 
@@ -128,7 +149,6 @@ class PreDownloadViewModelTest {
     @Test
     fun `succeeded work surfaces done state with bundle info`() =
         runTest(testDispatcher) {
-            candidateDao.candidates = listOf(candidate(1L))
             viewModel.openSurvey(7L)
             advanceUntilIdle()
 
@@ -167,7 +187,6 @@ class PreDownloadViewModelTest {
     @Test
     fun `failed work surfaces error state`() =
         runTest(testDispatcher) {
-            candidateDao.candidates = listOf(candidate(1L))
             viewModel.openSurvey(7L)
             advanceUntilIdle()
 
@@ -196,7 +215,6 @@ class PreDownloadViewModelTest {
     @Test
     fun `cancel calls cancelUniqueWork`() =
         runTest(testDispatcher) {
-            candidateDao.candidates = listOf(candidate(1L))
             viewModel.openSurvey(7L)
             advanceUntilIdle()
 
@@ -213,7 +231,6 @@ class PreDownloadViewModelTest {
     @Test
     fun `stale task warning surfaced when re-download recommended`() =
         runTest(testDispatcher) {
-            candidateDao.candidates = listOf(candidate(1L))
             viewModel.openSurvey(7L)
             advanceUntilIdle()
 
@@ -240,105 +257,12 @@ class PreDownloadViewModelTest {
             assertTrue(done.reDownloadRecommended)
         }
 
-    private fun candidate(id: Long): CandidateEntity =
-        CandidateEntity(
-            inferenceResultId = id,
-            surveyId = 7L,
-            imageId = id,
-            imageFilename = "frame_$id.png",
-            imageWidth = 1920,
-            imageHeight = 1080,
-            geoCentroidLat = 0.0,
-            geoCentroidLon = 0.0,
-            geoAreaJson = "[]",
-            boxX = 0,
-            boxY = 0,
-            boxW = 10,
-            boxH = 10,
-            confidence = 0.9f,
-            sizeMw = null,
-            sizeMh = null,
-            isClaimedByMe = false,
-            claimOwnerUsername = null,
-        )
-
-    private fun claim(
-        id: Long,
-        isActive: Boolean,
-        isMine: Boolean,
-    ): ClaimEntity =
-        ClaimEntity(
-            inferenceResultId = id,
-            surveyId = 7L,
-            userId = 2L,
-            username = "jdoe",
-            claimedAt = "2026-01-01T00:00:00Z",
-            isMine = isMine,
-            isActive = isActive,
-        )
-
     private fun workInfo(
         id: UUID,
         state: WorkInfo.State,
         output: Data = Data.EMPTY,
         progress: Data = Data.EMPTY,
     ): WorkInfo = WorkInfo(id, state, emptySet(), output, progress)
-
-    private class FakeCandidateDao : CandidateDao {
-        var candidates: List<CandidateEntity> = emptyList()
-
-        override suspend fun upsertAll(candidates: List<CandidateEntity>) = Unit
-
-        override suspend fun upsert(candidate: CandidateEntity) = Unit
-
-        override fun observeCandidatesForSurvey(surveyId: Long): Flow<List<CandidateEntity>> =
-            flowOf(candidates.filter { it.surveyId == surveyId })
-
-        override suspend fun getCandidatesForSurvey(surveyId: Long): List<CandidateEntity> =
-            candidates.filter { it.surveyId == surveyId }
-
-        override suspend fun getById(inferenceResultId: Long): CandidateEntity? =
-            candidates.firstOrNull { it.inferenceResultId == inferenceResultId }
-
-        override suspend fun deleteForSurvey(surveyId: Long) = Unit
-
-        override suspend fun deleteAll() = Unit
-
-        override suspend fun replaceForSurvey(
-            surveyId: Long,
-            candidates: List<CandidateEntity>,
-        ) = Unit
-    }
-
-    private class FakeClaimDao : ClaimDao {
-        var claims: List<ClaimEntity> = emptyList()
-
-        override suspend fun upsert(claim: ClaimEntity) = Unit
-
-        override suspend fun upsertAll(claims: List<ClaimEntity>) = Unit
-
-        override fun getClaims(
-            surveyId: Long,
-            onlyActive: Boolean,
-        ): Flow<List<ClaimEntity>> =
-            flowOf(
-                claims.filter {
-                    it.surveyId == surveyId && (!onlyActive || it.isActive)
-                },
-            )
-
-        override suspend fun getByCandidateId(inferenceResultId: Long): ClaimEntity? =
-            claims.firstOrNull { it.inferenceResultId == inferenceResultId }
-
-        override suspend fun releaseClaimsForUser(
-            userId: Long,
-            candidateIds: List<Long>,
-        ) = Unit
-
-        override suspend fun deleteForSurvey(surveyId: Long) = Unit
-
-        override suspend fun deleteAll() = Unit
-    }
 
     private class FakePreDownloadWorkManager : PreDownloadWorkManager {
         val enqueued = mutableListOf<Pair<String, OneTimeWorkRequest>>()

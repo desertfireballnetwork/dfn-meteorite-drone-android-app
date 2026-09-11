@@ -164,6 +164,11 @@ class ClaimRepository
                 }
             }
 
+        suspend fun countActiveClaimedCandidates(surveyId: Long): Int =
+            withContext(ioDispatcher) {
+                claimDao.countActiveClaimedCandidates(surveyId)
+            }
+
         @Suppress("TooGenericExceptionCaught", "SwallowedException")
         suspend fun refreshClaimsToRoom(surveyId: Long): ClaimResult =
             withContext(ioDispatcher) {
@@ -185,6 +190,7 @@ class ClaimRepository
                                 isActive = true,
                             )
                         }
+                    claimDao.deactivateMineClaimsForSurvey(surveyId)
                     claimDao.upsertAll(entities)
                     ClaimResult.Refreshed(count = entities.size)
                 } catch (e: CancellationException) {

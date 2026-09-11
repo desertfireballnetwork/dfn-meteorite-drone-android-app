@@ -350,6 +350,49 @@ class ClaimRepositoryTest {
             assertEquals(ClaimResult.NetworkError, repository.refreshClaimsToRoom(7L))
         }
 
+    @Test
+    fun `refreshClaimsToRoom deactivates mine claims absent from response`() =
+        runTest(testDispatcher) {
+            claimDao.upserted.add(
+                ClaimEntity(
+                    inferenceResultId = 2L,
+                    surveyId = 7L,
+                    userId = 2L,
+                    username = "me",
+                    claimedAt = "2026-01-01T00:00:00Z",
+                    isMine = true,
+                    isActive = true,
+                ),
+            )
+            mockWebServer.enqueue(
+                MockResponse()
+                    .setResponseCode(200)
+                    .setBody(
+                        """
+                        {
+                          "claims": [
+                            {
+                              "inference_result_id": 1,
+                              "user_id": 2,
+                              "username": "jdoe",
+                              "claimed_at": "2026-01-01T00:00:00Z",
+                              "is_me": true
+                            }
+                          ]
+                        }
+                        """.trimIndent(),
+                    ),
+            )
+
+            repository.refreshClaimsToRoom(7L)
+
+            val released = claimDao.upserted.find { it.inferenceResultId == 2L }
+            assertTrue("Expected released claim to be deactivated", released != null)
+            assertTrue("Expected released claim inactive", released!!.isActive == false)
+            val kept = claimDao.upserted.find { it.inferenceResultId == 1L }
+            assertTrue("Expected fresh claim active", kept != null && kept.isActive)
+        }
+
     private fun retrofitService(): Stage4Service {
         val moshi =
             Moshi
@@ -384,10 +427,23 @@ private class FakeClaimDao : ClaimDao {
 
     override suspend fun getByCandidateId(inferenceResultId: Long): ClaimEntity? = null
 
+    override suspend fun countActiveClaimedCandidates(surveyId: Long): Int =
+        upserted.count { it.surveyId == surveyId && it.isActive && it.isMine }
+
     override suspend fun releaseClaimsForUser(
         userId: Long,
         candidateIds: List<Long>,
     ) = Unit
+
+    override suspend fun deactivateMineClaimsForSurvey(surveyId: Long) {
+        upserted.replaceAll { claim ->
+            if (claim.surveyId == surveyId && claim.isMine) {
+                claim.copy(isActive = false)
+            } else {
+                claim
+            }
+        }
+    }
 
     override suspend fun deleteForSurvey(surveyId: Long) {
         upserted.removeAll { it.surveyId == surveyId }

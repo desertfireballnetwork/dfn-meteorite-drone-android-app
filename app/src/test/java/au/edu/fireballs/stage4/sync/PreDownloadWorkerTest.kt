@@ -1,5 +1,6 @@
 package au.edu.fireballs.stage4.sync
 
+import androidx.work.Data
 import au.edu.fireballs.stage4.data.local.CandidateEntity
 import au.edu.fireballs.stage4.data.local.ClaimEntity
 import au.edu.fireballs.stage4.data.local.OfflineBundleEntity
@@ -16,6 +17,7 @@ import au.edu.fireballs.stage4.data.remote.dto.ClaimDto
 import au.edu.fireballs.stage4.data.remote.dto.ListClaimsResponseDto
 import au.edu.fireballs.stage4.data.repository.ClaimRepository
 import au.edu.fireballs.stage4.data.repository.Stage4Repository
+import au.edu.fireballs.stage4.data.tiles.Bbox
 import au.edu.fireballs.stage4.data.tiles.OfflineBundleRepository
 import au.edu.fireballs.stage4.data.tiles.OfflineManagerWrapper
 import au.edu.fireballs.stage4.data.tiles.TileStore
@@ -472,6 +474,322 @@ class PreDownloadWorkerTest {
             assertTrue(offlineBundleDao.inserted.isEmpty())
         }
 
+    @Test
+    fun oneCandidateClusterProducesBufferedSatelliteBounds() =
+        runTest {
+            val candidateDao = FakeCandidateDao(listOf(candidate(1L, 0.0, 0.0)))
+            val claimDao = FakeClaimDao()
+            val surveyDao = FakeSurveyDao(latestTaskCreated = null)
+            val tileStore = TileStore(Files.createTempDirectory("tiles").toFile())
+            val offlineBundleDao = FakeOfflineBundleDao()
+            val offlineBundleRepository =
+                OfflineBundleRepository(
+                    tileStore,
+                    FakeTileManifestDao(),
+                    offlineBundleDao,
+                    testDispatcher,
+                )
+
+            val stage4Service = mock(Stage4Service::class.java)
+            `when`(stage4Service.getClaims(SURVEY_ID.toString(), true))
+                .thenReturn(
+                    ListClaimsResponseDto(
+                        listOf(
+                            ClaimDto(
+                                inferenceResultId = 1L,
+                                userId = 2L,
+                                username = "me",
+                                claimedAt = "2026-01-01T00:00:00Z",
+                                isMe = true,
+                            ),
+                        ),
+                    ),
+                )
+            val claimRepository =
+                ClaimRepository(
+                    stage4Service,
+                    claimDao,
+                    testDispatcher,
+                )
+
+            val stage4Repository = mock(Stage4Repository::class.java)
+            `when`(stage4Repository.fetchLatestTaskCreated(SURVEY_ID)).thenReturn(null)
+
+            val tileService = mock(TileService::class.java)
+            `when`(
+                tileService.getCandidateTile(
+                    anyLong(),
+                    anyLong(),
+                    anyInt(),
+                    anyInt(),
+                    anyInt(),
+                ),
+            ).thenReturn(
+                Response.success(
+                    byteArrayOf(1, 2, 3)
+                        .toResponseBody("image/png".toMediaType()),
+                ),
+            )
+            `when`(tileService.getCandidateCrop(anyLong()))
+                .thenReturn(
+                    Response.success(
+                        byteArrayOf(9, 9, 9)
+                            .toResponseBody("image/jpeg".toMediaType()),
+                    ),
+                )
+
+            val capturedBboxes = mutableListOf<List<Bbox>>()
+            val offlineManagerWrapper = mock(OfflineManagerWrapper::class.java)
+            doAnswer { invocation ->
+                capturedBboxes.add(invocation.getArgument(0))
+                val completionCb =
+                    invocation.getArgument<(Result<Unit>) -> Unit>(4)
+                completionCb(Result.success(Unit))
+            }.`when`(offlineManagerWrapper)
+                .splitAndDownload(
+                    any(),
+                    any(),
+                    any(),
+                    any(),
+                    any(),
+                )
+
+            val filesDir = Files.createTempDirectory("crops").toFile()
+            val orchestrator =
+                PreDownloadOrchestrator(
+                    claimRepository = claimRepository,
+                    stage4Repository = stage4Repository,
+                    candidateDao = candidateDao,
+                    claimDao = claimDao,
+                    surveyDao = surveyDao,
+                    tileStore = tileStore,
+                    tileService = tileService,
+                    offlineManagerWrapper = offlineManagerWrapper,
+                    offlineBundleRepository = offlineBundleRepository,
+                    filesDir = filesDir,
+                    ioDispatcher = testDispatcher,
+                    freeBytes = { Long.MAX_VALUE },
+                )
+
+            val outcome = orchestrator.run(SURVEY_ID, BUFFER_METERS) {}
+
+            assertTrue("Expected success but got $outcome", outcome is PreDownloadOutcome.Success)
+            val bbox = capturedBboxes.single().single()
+            assertTrue("Expected non-zero latitude extent", bbox.minLat < bbox.maxLat)
+            assertTrue("Expected non-zero longitude extent", bbox.minLon < bbox.maxLon)
+            assertTrue("Expected buffer covered south", bbox.minLat < 0.0)
+            assertTrue("Expected buffer covered north", bbox.maxLat > 0.0)
+            assertTrue("Expected buffer covered west", bbox.minLon < 0.0)
+            assertTrue("Expected buffer covered east", bbox.maxLon > 0.0)
+        }
+
+    @Test
+    fun progressReachesTotalAfterExhaustedTileAndCropFailures() =
+        runTest {
+            val candidateDao = FakeCandidateDao(listOf(candidate(1L, 0.0, 0.0)))
+            val claimDao = FakeClaimDao()
+            val surveyDao = FakeSurveyDao(latestTaskCreated = null)
+            val tileStore = TileStore(Files.createTempDirectory("tiles").toFile())
+            val offlineBundleDao = FakeOfflineBundleDao()
+            val offlineBundleRepository =
+                OfflineBundleRepository(
+                    tileStore,
+                    FakeTileManifestDao(),
+                    offlineBundleDao,
+                    testDispatcher,
+                )
+
+            val stage4Service = mock(Stage4Service::class.java)
+            `when`(stage4Service.getClaims(SURVEY_ID.toString(), true))
+                .thenReturn(
+                    ListClaimsResponseDto(
+                        listOf(
+                            ClaimDto(
+                                inferenceResultId = 1L,
+                                userId = 2L,
+                                username = "me",
+                                claimedAt = "2026-01-01T00:00:00Z",
+                                isMe = true,
+                            ),
+                        ),
+                    ),
+                )
+            val claimRepository =
+                ClaimRepository(
+                    stage4Service,
+                    claimDao,
+                    testDispatcher,
+                )
+
+            val stage4Repository = mock(Stage4Repository::class.java)
+            `when`(stage4Repository.fetchLatestTaskCreated(SURVEY_ID)).thenReturn(null)
+
+            val tileService = mock(TileService::class.java)
+            `when`(
+                tileService.getCandidateTile(
+                    anyLong(),
+                    anyLong(),
+                    anyInt(),
+                    anyInt(),
+                    anyInt(),
+                ),
+            ).thenReturn(Response.error(500, "err".toResponseBody()))
+            `when`(tileService.getCandidateCrop(anyLong()))
+                .thenReturn(Response.error(500, "err".toResponseBody()))
+
+            val offlineManagerWrapper = mock(OfflineManagerWrapper::class.java)
+            doAnswer { invocation ->
+                val completionCb =
+                    invocation.getArgument<(Result<Unit>) -> Unit>(4)
+                completionCb(Result.success(Unit))
+            }.`when`(offlineManagerWrapper)
+                .splitAndDownload(
+                    any(),
+                    any(),
+                    any(),
+                    any(),
+                    any(),
+                )
+
+            val filesDir = Files.createTempDirectory("crops").toFile()
+            val orchestrator =
+                PreDownloadOrchestrator(
+                    claimRepository = claimRepository,
+                    stage4Repository = stage4Repository,
+                    candidateDao = candidateDao,
+                    claimDao = claimDao,
+                    surveyDao = surveyDao,
+                    tileStore = tileStore,
+                    tileService = tileService,
+                    offlineManagerWrapper = offlineManagerWrapper,
+                    offlineBundleRepository = offlineBundleRepository,
+                    filesDir = filesDir,
+                    ioDispatcher = testDispatcher,
+                    freeBytes = { Long.MAX_VALUE },
+                )
+
+            val progressUpdates = mutableListOf<Data>()
+            val outcome =
+                orchestrator.run(SURVEY_ID, BUFFER_METERS) { progressUpdates.add(it) }
+
+            assertTrue("Expected success but got $outcome", outcome is PreDownloadOutcome.Success)
+            val last = progressUpdates.last()
+            assertEquals(
+                last.getInt(PreDownloadOrchestrator.KEY_TOTAL, -1),
+                last.getInt(PreDownloadOrchestrator.KEY_DONE, -1),
+            )
+        }
+
+    @Test
+    @Suppress("SwallowedException")
+    fun failureAfterWriteLeavesNoOrphanFiles() =
+        runTest {
+            val candidateDao = FakeCandidateDao(listOf(candidate(1L, 0.0, 0.0)))
+            val claimDao = FakeClaimDao()
+            val surveyDao = FakeSurveyDao(latestTaskCreated = null)
+            val tileStore = TileStore(Files.createTempDirectory("tiles").toFile())
+            val offlineBundleDao = FakeOfflineBundleDao(failOnInsert = true)
+            val offlineBundleRepository =
+                OfflineBundleRepository(
+                    tileStore,
+                    FakeTileManifestDao(),
+                    offlineBundleDao,
+                    testDispatcher,
+                )
+
+            val stage4Service = mock(Stage4Service::class.java)
+            `when`(stage4Service.getClaims(SURVEY_ID.toString(), true))
+                .thenReturn(
+                    ListClaimsResponseDto(
+                        listOf(
+                            ClaimDto(
+                                inferenceResultId = 1L,
+                                userId = 2L,
+                                username = "me",
+                                claimedAt = "2026-01-01T00:00:00Z",
+                                isMe = true,
+                            ),
+                        ),
+                    ),
+                )
+            val claimRepository =
+                ClaimRepository(
+                    stage4Service,
+                    claimDao,
+                    testDispatcher,
+                )
+
+            val stage4Repository = mock(Stage4Repository::class.java)
+            `when`(stage4Repository.fetchLatestTaskCreated(SURVEY_ID)).thenReturn(null)
+
+            val tileService = mock(TileService::class.java)
+            `when`(
+                tileService.getCandidateTile(
+                    anyLong(),
+                    anyLong(),
+                    anyInt(),
+                    anyInt(),
+                    anyInt(),
+                ),
+            ).thenReturn(
+                Response.success(
+                    byteArrayOf(1, 2, 3)
+                        .toResponseBody("image/png".toMediaType()),
+                ),
+            )
+            `when`(tileService.getCandidateCrop(anyLong()))
+                .thenReturn(
+                    Response.success(
+                        byteArrayOf(9, 9, 9)
+                            .toResponseBody("image/jpeg".toMediaType()),
+                    ),
+                )
+
+            val offlineManagerWrapper = mock(OfflineManagerWrapper::class.java)
+            doAnswer { invocation ->
+                val completionCb =
+                    invocation.getArgument<(Result<Unit>) -> Unit>(4)
+                completionCb(Result.success(Unit))
+            }.`when`(offlineManagerWrapper)
+                .splitAndDownload(
+                    any(),
+                    any(),
+                    any(),
+                    any(),
+                    any(),
+                )
+
+            val filesDir = Files.createTempDirectory("crops").toFile()
+            val orchestrator =
+                PreDownloadOrchestrator(
+                    claimRepository = claimRepository,
+                    stage4Repository = stage4Repository,
+                    candidateDao = candidateDao,
+                    claimDao = claimDao,
+                    surveyDao = surveyDao,
+                    tileStore = tileStore,
+                    tileService = tileService,
+                    offlineManagerWrapper = offlineManagerWrapper,
+                    offlineBundleRepository = offlineBundleRepository,
+                    filesDir = filesDir,
+                    ioDispatcher = testDispatcher,
+                    freeBytes = { Long.MAX_VALUE },
+                )
+
+            var thrown = false
+            try {
+                orchestrator.run(SURVEY_ID, BUFFER_METERS) {}
+            } catch (e: IllegalStateException) {
+                thrown = true
+            }
+            assertTrue("Expected pre-insert failure to propagate", thrown)
+            assertFalse("Expected survey tiles cleaned up", tileStore.hasSurvey(SURVEY_ID))
+            assertFalse(
+                "Expected crops cleaned up",
+                File(filesDir, "crops/$SURVEY_ID").exists(),
+            )
+        }
+
     private class FakeCandidateDao(
         initial: List<CandidateEntity> = emptyList(),
     ) : CandidateDao {
@@ -525,10 +843,23 @@ class PreDownloadWorkerTest {
         override suspend fun getByCandidateId(inferenceResultId: Long): ClaimEntity? =
             claims.find { it.inferenceResultId == inferenceResultId }
 
+        override suspend fun countActiveClaimedCandidates(surveyId: Long): Int =
+            claims.count { it.surveyId == surveyId && it.isActive && it.isMine }
+
         override suspend fun releaseClaimsForUser(
             userId: Long,
             candidateIds: List<Long>,
         ) = Unit
+
+        override suspend fun deactivateMineClaimsForSurvey(surveyId: Long) {
+            claims.replaceAll { claim ->
+                if (claim.surveyId == surveyId && claim.isMine) {
+                    claim.copy(isActive = false)
+                } else {
+                    claim
+                }
+            }
+        }
 
         override suspend fun deleteForSurvey(surveyId: Long) {
             claims.removeAll { it.surveyId == surveyId }
@@ -595,10 +926,15 @@ class PreDownloadWorkerTest {
         override suspend fun deleteAll() = Unit
     }
 
-    private class FakeOfflineBundleDao : OfflineBundleDao {
+    private class FakeOfflineBundleDao(
+        private val failOnInsert: Boolean = false,
+    ) : OfflineBundleDao {
         val inserted = mutableListOf<OfflineBundleEntity>()
 
         override suspend fun insert(bundle: OfflineBundleEntity): Long {
+            if (failOnInsert) {
+                error("insert failed")
+            }
             inserted.add(bundle)
             return inserted.size.toLong()
         }

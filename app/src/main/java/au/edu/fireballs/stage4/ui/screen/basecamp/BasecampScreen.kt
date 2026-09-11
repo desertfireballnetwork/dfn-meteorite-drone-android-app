@@ -16,7 +16,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Polyline
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
@@ -155,7 +154,6 @@ fun BasecampScreen(
                                 onToggleMine = { viewModel.setMineFilter(!state.mineOnly) },
                                 onRefresh = viewModel::refresh,
                                 onDownload = { showDownloadDialog = true },
-                                onViewBundles = { },
                                 onSettings = onNavigateToSettings,
                             )
                         }
@@ -222,7 +220,6 @@ private fun BasecampToolbarActions(
     onToggleMine: () -> Unit,
     onRefresh: () -> Unit,
     onDownload: () -> Unit,
-    onViewBundles: () -> Unit,
     onSettings: () -> Unit,
 ) {
     FilterChip(
@@ -255,12 +252,6 @@ private fun BasecampToolbarActions(
             contentDescription = "Download for offline",
         )
     }
-    IconButton(onClick = onViewBundles) {
-        Icon(
-            imageVector = Icons.Default.Folder,
-            contentDescription = "View offline bundles",
-        )
-    }
     IconButton(onClick = onSettings) {
         Icon(
             imageVector = Icons.Default.Settings,
@@ -291,9 +282,17 @@ private fun DownloadDialog(
                         Text(
                             text = "Estimated size: ${formatBytes(state.estimatedSizeBytes)}",
                         )
+                        if (state.isStale) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "Local data is stale — re-download recommended",
+                                color = MaterialTheme.colorScheme.primary,
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                        }
                         Spacer(modifier = Modifier.height(16.dp))
                         Button(onClick = onStart) {
-                            Text(text = "Download")
+                            Text(text = if (state.isStale) "Re-download" else "Download")
                         }
                     }
                 }
