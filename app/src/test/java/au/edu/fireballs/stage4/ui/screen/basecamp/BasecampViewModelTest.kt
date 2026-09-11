@@ -371,4 +371,37 @@ class BasecampViewModelTest {
             verify(claimRepository, never()).release(any())
             collectJob.cancel()
         }
+
+    @Test
+    fun `release clears ownership flags on the map`() =
+        runTest(testDispatcher) {
+            val fixture = state(candidate(1L, GeoCoordinate(0.0, 0.0)))
+            whenever(stage4Repository.getCandidatesState(7L))
+                .thenReturn(Stage4FetchResult.Success(fixture))
+            var claimsToReturn: List<Claim> =
+                listOf(Claim(inferenceResultId = 1L, userId = 2L, isMe = true))
+            wheneverBlocking { claimRepository.listClaims() }
+                .thenAnswer { ClaimResult.Listed(claims = claimsToReturn) }
+            wheneverBlocking { claimRepository.release(listOf(1L)) }
+                .thenReturn(ClaimResult.Released(released = listOf(1L)))
+
+            viewModel = BasecampViewModel(stage4Repository, claimRepository)
+            val collectJob = backgroundScope.launch(testDispatcher) { viewModel.uiState.collect {} }
+            viewModel.openSurvey(7L)
+            advanceUntilIdle()
+
+            val claimed = viewModel.uiState.value as BasecampUiState.Loaded
+            val claimedCandidate = claimed.state.yesMeteorites.single()
+            assertTrue(claimedCandidate.claimedByMe)
+
+            claimsToReturn = emptyList()
+            viewModel.releaseClaim(1L)
+            advanceUntilIdle()
+
+            val released = viewModel.uiState.value as BasecampUiState.Loaded
+            val releasedCandidate = released.state.yesMeteorites.single()
+            assertTrue(!releasedCandidate.claimedByMe)
+            assertTrue(!releasedCandidate.claimedByOther)
+            collectJob.cancel()
+        }
 }

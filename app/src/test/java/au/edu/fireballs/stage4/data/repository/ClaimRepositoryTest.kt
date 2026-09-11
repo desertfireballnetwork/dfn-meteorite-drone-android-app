@@ -8,6 +8,7 @@ import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
+import okhttp3.mockwebserver.SocketPolicy
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -148,6 +149,23 @@ class ClaimRepositoryTest {
             val result = unselected.claim(listOf(1L))
 
             assertTrue("Expected Error but got $result", result is ClaimResult.Error)
+        }
+
+    @Test
+    fun `claim retry after ambiguous network failure is safe`() =
+        runTest(testDispatcher) {
+            mockWebServer.enqueue(
+                MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AT_START),
+            )
+            assertEquals(ClaimResult.NetworkError, repository.claim(listOf(1L)))
+
+            mockWebServer.enqueue(
+                MockResponse()
+                    .setResponseCode(200)
+                    .setBody("""{"claimed": [1], "already_claimed": []}"""),
+            )
+            val retry = repository.claim(listOf(1L))
+            assertTrue("Expected Claimed but got $retry", retry is ClaimResult.Claimed)
         }
 
     @Test

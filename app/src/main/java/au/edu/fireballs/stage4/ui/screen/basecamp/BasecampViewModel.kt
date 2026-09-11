@@ -320,10 +320,10 @@ class BasecampViewModel
             val claimMap = claims.associateBy { it.inferenceResultId }
 
             fun apply(candidate: Stage4Candidate): Stage4Candidate {
-                val claim = claimMap[candidate.inferenceResultId] ?: return candidate
+                val claim = claimMap[candidate.inferenceResultId]
                 return candidate.copy(
-                    claimedByMe = claim.isMe,
-                    claimedByOther = !claim.isMe,
+                    claimedByMe = claim?.isMe == true,
+                    claimedByOther = claim != null && !claim.isMe,
                 )
             }
             return state.copy(
