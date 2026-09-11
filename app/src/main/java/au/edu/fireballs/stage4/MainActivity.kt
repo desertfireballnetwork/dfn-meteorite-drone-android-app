@@ -20,6 +20,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import au.edu.fireballs.stage4.ui.screen.basecamp.BasecampScreen
 import au.edu.fireballs.stage4.ui.screen.login.LoginScreen
 import au.edu.fireballs.stage4.ui.screen.login.LoginViewModel
 import au.edu.fireballs.stage4.ui.screen.stage4map.Stage4MapScreen
@@ -86,6 +87,9 @@ class MainActivity : ComponentActivity() {
                                         onSurveySelected = { surveyId ->
                                             navController.navigate("stage4/$surveyId")
                                         },
+                                        onBasecampSelected = { surveyId ->
+                                            navController.navigate("basecamp/$surveyId")
+                                        },
                                         onAuthExpired = {
                                             navController.navigate("login") {
                                                 popUpTo("surveys") { inclusive = true }
@@ -112,6 +116,25 @@ class MainActivity : ComponentActivity() {
                                             }
                                         },
                                         viewModel = stage4ViewModel,
+                                    )
+                                }
+
+                                composable(
+                                    route = "basecamp/{surveyId}",
+                                    arguments =
+                                        listOf(
+                                            navArgument("surveyId") { type = NavType.LongType },
+                                        ),
+                                ) { backStackEntry ->
+                                    val surveyId =
+                                        backStackEntry.arguments?.getLong("surveyId") ?: -1L
+                                    BasecampScreen(
+                                        surveyId = surveyId,
+                                        onAuthExpired = {
+                                            navController.navigate("login") {
+                                                popUpTo("surveys") { inclusive = true }
+                                            }
+                                        },
                                     )
                                 }
                             }

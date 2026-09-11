@@ -103,34 +103,33 @@ data class Stage4SettingsDto(
 
 @JsonClass(generateAdapter = true)
 data class ClaimDto(
-    @Json(name = "id") val id: Int,
-    @Json(name = "candidate_id") val candidateId: Int,
-    @Json(name = "user_id") val userId: Int? = null,
+    @Json(name = "inference_result_id") val inferenceResultId: Long,
+    @Json(name = "user_id") val userId: Long,
+    @Json(name = "username") val username: String? = null,
+    @Json(name = "full_name") val fullName: String? = null,
     @Json(name = "claimed_at") val claimedAt: String? = null,
-    @Json(name = "status") val status: String? = null,
+    @Json(name = "is_me") val isMe: Boolean = false,
 )
 
 @JsonClass(generateAdapter = true)
 data class ClaimRequestDto(
-    @Json(name = "candidate_id") val candidateId: Int,
+    @Json(name = "inference_result_ids") val inferenceResultIds: List<Long>,
 )
 
 @JsonClass(generateAdapter = true)
 data class ClaimResponseDto(
-    @Json(name = "success") val success: Boolean,
-    @Json(name = "claim") val claim: ClaimDto? = null,
-    @Json(name = "message") val message: String? = null,
+    @Json(name = "claimed") val claimed: List<Long> = emptyList(),
+    @Json(name = "already_claimed") val alreadyClaimed: List<Long> = emptyList(),
 )
 
 @JsonClass(generateAdapter = true)
 data class ReleaseRequestDto(
-    @Json(name = "candidate_id") val candidateId: Int,
+    @Json(name = "inference_result_ids") val inferenceResultIds: List<Long>,
 )
 
 @JsonClass(generateAdapter = true)
 data class ReleaseResponseDto(
-    @Json(name = "success") val success: Boolean,
-    @Json(name = "message") val message: String? = null,
+    @Json(name = "released") val released: List<Long> = emptyList(),
 )
 
 @JsonClass(generateAdapter = true)

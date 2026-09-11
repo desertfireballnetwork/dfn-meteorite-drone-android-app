@@ -1,7 +1,7 @@
 package au.edu.fireballs.stage4.ui.screen.stage4map.marker
 
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.key
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
@@ -11,6 +11,7 @@ import au.edu.fireballs.stage4.domain.model.Stage4State
 import au.edu.fireballs.stage4.ui.screen.stage4map.LayerToggleState
 import au.edu.fireballs.stage4.ui.theme.LocalDFNColors
 import com.google.gson.JsonObject
+import com.mapbox.bindgen.Value
 import com.mapbox.geojson.Feature
 import com.mapbox.geojson.Point
 import com.mapbox.maps.ClickInteraction
@@ -20,10 +21,12 @@ import com.mapbox.maps.extension.compose.DisposableMapEffect
 import com.mapbox.maps.extension.compose.MapboxMapComposable
 import com.mapbox.maps.extension.compose.style.BooleanValue
 import com.mapbox.maps.extension.compose.style.ColorValue
+import com.mapbox.maps.extension.compose.style.DoubleListValue
 import com.mapbox.maps.extension.compose.style.DoubleValue
 import com.mapbox.maps.extension.compose.style.StyleImage
 import com.mapbox.maps.extension.compose.style.layers.Filter
 import com.mapbox.maps.extension.compose.style.layers.ImageValue
+import com.mapbox.maps.extension.compose.style.layers.generated.CircleLayer
 import com.mapbox.maps.extension.compose.style.layers.generated.IconAnchorValue
 import com.mapbox.maps.extension.compose.style.layers.generated.SymbolLayer
 import com.mapbox.maps.extension.compose.style.rememberStyleImage
@@ -33,10 +36,12 @@ import com.mapbox.maps.extension.compose.style.sources.generated.rememberGeoJson
 import com.mapbox.maps.extension.style.expressions.generated.Expression
 
 private const val CANDIDATE_SOURCE_ID = "candidate-markers"
+private const val CLAIMED_SOURCE_ID = "claimed-markers"
 
 private const val LAYER_YES = "candidate-markers-yes"
 private const val LAYER_NO = "candidate-markers-no"
 private const val LAYER_UNPROCESSED = "candidate-markers-unprocessed"
+private const val LAYER_CLAIMED_CIRCLE = "candidate-markers-claimed-circle"
 
 private const val PROP_INFERENCE_ID = "inferenceResultId"
 private const val PROP_VERDICT = "verdict"
@@ -55,9 +60,12 @@ private const val CLAIM_ME = 1
 private const val CLAIM_OTHER = 2
 
 private const val NO_OPACITY = 0.8
-private const val CLAIM_HALO_WIDTH = 3.0
-private const val TRANSPARENT = "rgba(0,0,0,0)"
 private const val ICON_SIZE = 0.4
+private const val CLAIM_CIRCLE_RADIUS = 20.0
+private const val CLAIM_CIRCLE_OPACITY = 0.4
+private const val CLAIM_CIRCLE_STROKE = 2.0
+private const val CLAIM_CIRCLE_TRANSLATE_Y = -10.0
+private const val TRANSPARENT = "rgba(0,0,0,0)"
 
 internal data class MarkerCandidate(
     val candidate: Stage4Candidate,
@@ -85,40 +93,57 @@ fun CandidateMarkers(
     val claimedByMeHex = colors.markerClaimedByMeOutline.toHex()
     val claimedByOtherHex = colors.markerClaimedByOtherOutline.toHex()
 
-    key(candidates) {
-        val sourceState =
-            rememberGeoJsonSourceState(key = CANDIDATE_SOURCE_ID) {
-                data = GeoJSONData(candidates.map { it.toFeature() })
-            }
+    val sourceState =
+        rememberGeoJsonSourceState(key = CANDIDATE_SOURCE_ID) {
+            data = GeoJSONData(candidates.map { it.toFeature() })
+        }
 
-        CandidateLayer(
-            sourceState = sourceState,
-            layerId = LAYER_YES,
-            verdict = VERDICT_YES,
-            image = yesImage,
-            opacity = 1.0,
-            claimedByMeHex = claimedByMeHex,
-            claimedByOtherHex = claimedByOtherHex,
-        )
-        CandidateLayer(
-            sourceState = sourceState,
-            layerId = LAYER_NO,
-            verdict = VERDICT_NO,
-            image = noImage,
-            opacity = NO_OPACITY,
-            claimedByMeHex = claimedByMeHex,
-            claimedByOtherHex = claimedByOtherHex,
-        )
-        CandidateLayer(
-            sourceState = sourceState,
-            layerId = LAYER_UNPROCESSED,
-            verdict = VERDICT_UNPROCESSED,
-            image = unprocessedImage,
-            opacity = 1.0,
-            claimedByMeHex = claimedByMeHex,
-            claimedByOtherHex = claimedByOtherHex,
-        )
+    LaunchedEffect(candidates) {
+        sourceState.data = GeoJSONData(candidates.map { it.toFeature() })
     }
+
+    val claimedCandidates = candidates.filter { it.claim != CLAIM_NONE }
+    val claimedSourceState =
+        rememberGeoJsonSourceState(key = CLAIMED_SOURCE_ID) {
+            data = GeoJSONData(claimedCandidates.map { it.toClaimedFeature() })
+        }
+
+    LaunchedEffect(claimedCandidates) {
+        claimedSourceState.data = GeoJSONData(claimedCandidates.map { it.toClaimedFeature() })
+    }
+
+    if (claimedCandidates.isNotEmpty()) {
+        CircleLayer(claimedSourceState, LAYER_CLAIMED_CIRCLE) {
+            circleColor = ColorValue(claimColorExpression(claimedByMeHex, claimedByOtherHex))
+            circleRadius = DoubleValue(CLAIM_CIRCLE_RADIUS)
+            circleOpacity = DoubleValue(CLAIM_CIRCLE_OPACITY)
+            circleStrokeColor = ColorValue(Value("#ffffff"))
+            circleStrokeWidth = DoubleValue(CLAIM_CIRCLE_STROKE)
+            circleTranslate = DoubleListValue(listOf(0.0, CLAIM_CIRCLE_TRANSLATE_Y))
+        }
+    }
+
+    CandidateLayer(
+        sourceState = sourceState,
+        layerId = LAYER_YES,
+        verdict = VERDICT_YES,
+        image = yesImage,
+        opacity = 1.0,
+    )
+    CandidateLayer(
+        sourceState = sourceState,
+        layerId = LAYER_NO,
+        verdict = VERDICT_NO,
+        image = noImage,
+        opacity = NO_OPACITY,
+    )
+    CandidateLayer(
+        sourceState = sourceState,
+        layerId = LAYER_UNPROCESSED,
+        verdict = VERDICT_UNPROCESSED,
+        image = unprocessedImage,
+        opacity = 1.0,
+    )
 
     CandidateClickHandler(candidates = candidates, onMarkerClick = onMarkerClick)
 }
@@ -131,8 +156,6 @@ private fun CandidateLayer(
     verdict: Int,
     image: StyleImage,
     opacity: Double,
-    claimedByMeHex: String,
-    claimedByOtherHex: String,
 ) {
     SymbolLayer(sourceState, layerId) {
         filter = Filter(verdictFilterExpression(verdict))
@@ -142,8 +165,6 @@ private fun CandidateLayer(
         iconAllowOverlap = BooleanValue(true)
         iconIgnorePlacement = BooleanValue(true)
         iconAnchor = IconAnchorValue.BOTTOM
-        iconHaloColor = ColorValue(haloColorExpression(claimedByMeHex, claimedByOtherHex))
-        iconHaloWidth = DoubleValue(haloWidthExpression())
     }
 }
 
@@ -229,6 +250,13 @@ private fun MarkerCandidate.toFeature(): Feature {
     return Feature.fromGeometry(Point.fromLngLat(centroid.longitude, centroid.latitude), properties)
 }
 
+private fun MarkerCandidate.toClaimedFeature(): Feature {
+    val properties = JsonObject()
+    properties.addProperty(PROP_CLAIMED, claim)
+    val centroid = candidate.geoCentroid ?: return Feature.fromGeometry(Point.fromLngLat(0.0, 0.0))
+    return Feature.fromGeometry(Point.fromLngLat(centroid.longitude, centroid.latitude), properties)
+}
+
 private fun verdictFilterExpression(verdict: Int): Expression =
     Expression.match {
         get(PROP_VERDICT)
@@ -237,7 +265,7 @@ private fun verdictFilterExpression(verdict: Int): Expression =
         literal(false)
     }
 
-private fun haloColorExpression(
+private fun claimColorExpression(
     claimedByMe: String,
     claimedByOther: String,
 ): Expression =
@@ -248,16 +276,6 @@ private fun haloColorExpression(
         literal(CLAIM_OTHER.toDouble())
         literal(claimedByOther)
         literal(TRANSPARENT)
-    }
-
-private fun haloWidthExpression(): Expression =
-    Expression.match {
-        get(PROP_CLAIMED)
-        literal(CLAIM_ME.toDouble())
-        literal(CLAIM_HALO_WIDTH)
-        literal(CLAIM_OTHER.toDouble())
-        literal(CLAIM_HALO_WIDTH)
-        literal(0.0)
     }
 
 private fun Color.toHex(): String = "#%06X".format(toArgb() and 0xFFFFFF)
