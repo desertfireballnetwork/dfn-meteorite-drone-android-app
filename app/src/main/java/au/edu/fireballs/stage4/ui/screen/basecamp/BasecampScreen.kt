@@ -33,7 +33,6 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -53,6 +52,7 @@ import au.edu.fireballs.stage4.domain.model.resolveInitialCamera
 import au.edu.fireballs.stage4.ui.screen.stage4map.LayerToggleState
 import au.edu.fireballs.stage4.ui.screen.stage4map.marker.CandidateMarkers
 import com.mapbox.bindgen.Value
+import com.mapbox.geojson.Feature
 import com.mapbox.geojson.LineString
 import com.mapbox.geojson.Point
 import com.mapbox.geojson.Polygon
@@ -80,10 +80,10 @@ private const val POLYGON_FILL_LAYER = "claim-polygon-fill"
 private const val POLYGON_STROKE_LAYER = "claim-polygon-stroke"
 private const val POLYGON_VERTEX_LAYER = "claim-polygon-vertices"
 private const val POLYGON_COLOR = "#007bff"
-private const val POLYGON_FILL_OPACITY = 0.2
-private const val POLYGON_STROKE_WIDTH = 2.0
-private const val VERTEX_RADIUS = 6.0
-private const val VERTEX_STROKE_WIDTH = 2.0
+private const val POLYGON_FILL_OPACITY = 0.3
+private const val POLYGON_STROKE_WIDTH = 4.0
+private const val VERTEX_RADIUS = 8.0
+private const val VERTEX_STROKE_WIDTH = 3.0
 private const val CLAIM_LIST_HEIGHT = 240
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -366,46 +366,49 @@ private fun PolygonOverlay(vertices: List<GeoCoordinate>) {
     if (vertices.isEmpty()) return
     val points = vertices.map { Point.fromLngLat(it.longitude, it.latitude) }
 
-    key(vertices.size) {
-        val sourceState =
-            rememberGeoJsonSourceState(key = POLYGON_SOURCE_ID) {
-                data = polygonData(vertices, points)
-            }
-
-        LaunchedEffect(vertices) {
-            sourceState.data = polygonData(vertices, points)
+    val sourceState =
+        rememberGeoJsonSourceState(key = POLYGON_SOURCE_ID) {
+            data = polygonData(vertices, points)
         }
 
-        if (vertices.size >= 3) {
-            FillLayer(sourceState, POLYGON_FILL_LAYER) {
-                fillColor = ColorValue(Value(POLYGON_COLOR))
-                fillOpacity = DoubleValue(POLYGON_FILL_OPACITY)
-            }
+    LaunchedEffect(vertices) {
+        sourceState.data = polygonData(vertices, points)
+    }
+
+    if (vertices.size >= 3) {
+        FillLayer(sourceState, POLYGON_FILL_LAYER) {
+            fillColor = ColorValue(Value(POLYGON_COLOR))
+            fillOpacity = DoubleValue(POLYGON_FILL_OPACITY)
         }
-        LineLayer(sourceState, POLYGON_STROKE_LAYER) {
-            lineColor = ColorValue(Value(POLYGON_COLOR))
-            lineWidth = DoubleValue(POLYGON_STROKE_WIDTH)
-        }
-        CircleLayer(sourceState, POLYGON_VERTEX_LAYER) {
-            circleRadius = DoubleValue(VERTEX_RADIUS)
-            circleColor = ColorValue(Value(POLYGON_COLOR))
-            circleStrokeWidth = DoubleValue(VERTEX_STROKE_WIDTH)
-            circleStrokeColor = ColorValue(Value("#ffffff"))
-        }
+    }
+    LineLayer(sourceState, POLYGON_STROKE_LAYER) {
+        lineColor = ColorValue(Value(POLYGON_COLOR))
+        lineWidth = DoubleValue(POLYGON_STROKE_WIDTH)
+    }
+    CircleLayer(sourceState, POLYGON_VERTEX_LAYER) {
+        circleRadius = DoubleValue(VERTEX_RADIUS)
+        circleColor = ColorValue(Value("#ffffff"))
+        circleStrokeWidth = DoubleValue(VERTEX_STROKE_WIDTH)
+        circleStrokeColor = ColorValue(Value(POLYGON_COLOR))
     }
 }
 
 private fun polygonData(
     vertices: List<GeoCoordinate>,
     points: List<Point>,
-): GeoJSONData =
-    GeoJSONData(
-        if (vertices.size >= 3) {
-            Polygon.fromLngLats(listOf(points))
-        } else {
-            LineString.fromLngLats(points)
-        },
-    )
+): GeoJSONData {
+    val features = mutableListOf<Feature>()
+    points.forEach { point ->
+        features += Feature.fromGeometry(point)
+    }
+    if (vertices.size >= 2) {
+        features += Feature.fromGeometry(LineString.fromLngLats(points))
+    }
+    if (vertices.size >= 3) {
+        features += Feature.fromGeometry(Polygon.fromLngLats(listOf(points)))
+    }
+    return GeoJSONData(features)
+}
 
 @Composable
 private fun PolygonControls(

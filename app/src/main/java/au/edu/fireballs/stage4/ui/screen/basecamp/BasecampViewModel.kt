@@ -103,7 +103,12 @@ class BasecampViewModel
                     status.error != null -> BasecampUiState.Error(status.error)
                     source != null ->
                         BasecampUiState.Loaded(
-                            state = mergeClaims(source, claims),
+                            state =
+                                if (status.mineOnly) {
+                                    filterToMine(mergeClaims(source, claims))
+                                } else {
+                                    mergeClaims(source, claims)
+                                },
                             polygonVertices = polygon,
                             claims =
                                 if (status.mineOnly) {
@@ -327,6 +332,13 @@ class BasecampViewModel
                 noMeteorites = state.noMeteorites.map(::apply),
             )
         }
+
+        private fun filterToMine(state: Stage4State): Stage4State =
+            state.copy(
+                unprocessedCandidates = state.unprocessedCandidates.filter { it.claimedByMe },
+                yesMeteorites = state.yesMeteorites.filter { it.claimedByMe },
+                noMeteorites = state.noMeteorites.filter { it.claimedByMe },
+            )
 
         private fun allCandidates(state: Stage4State): List<Stage4Candidate> =
             state.unprocessedCandidates + state.yesMeteorites + state.noMeteorites
