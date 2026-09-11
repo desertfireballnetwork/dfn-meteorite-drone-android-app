@@ -311,7 +311,7 @@ class CandidateViewModelTest {
         }
 
     @Test
-    fun `clearVerdict clears in-modal selection without touching Room`() =
+    fun `clearVerdict clears selection and deletes the Room row`() =
         runTest(testDispatcher) {
             val candidate = createCandidate(id = 42L)
             stubImageRepository()
@@ -321,9 +321,9 @@ class CandidateViewModelTest {
 
             viewModel.clearVerdict()
 
+            val row = db.localDecisionDao().getVerdict(42L).first { it == null }
+            assertNull(row)
             assertNull(viewModel.verdict.value)
             assertNull(viewModel.detectionTagId.value)
-            val row = db.localDecisionDao().getVerdict(42L).first()
-            assertEquals(true, row?.verdict)
         }
 }

@@ -135,7 +135,13 @@ class CandidateViewModel
         }
 
         fun clearVerdict() {
+            val state = _uiState.value ?: return
             _verdict.value = null
             _detectionTagId.value = null
+            viewModelScope.launch {
+                decisionRepository
+                    .clearVerdict(state.candidate.inferenceResultId)
+                    .first()
+            }
         }
     }

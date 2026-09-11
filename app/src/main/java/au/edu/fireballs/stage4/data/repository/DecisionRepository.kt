@@ -50,6 +50,12 @@ class DecisionRepository
         fun getVerdict(inferenceResultId: Long): Flow<LocalDecisionEntity?> =
             localDecisionDao.getVerdict(inferenceResultId).flowOn(io)
 
+        fun clearVerdict(inferenceResultId: Long): Flow<Unit> =
+            flow {
+                localDecisionDao.deleteByInferenceResultId(inferenceResultId)
+                emit(Unit)
+            }.flowOn(io)
+
         fun getVerdictCounts(surveyId: Long): Flow<VerdictCounts> =
             localDecisionDao
                 .observeDecisionsForSurvey(surveyId)

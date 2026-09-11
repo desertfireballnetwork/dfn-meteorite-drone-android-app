@@ -9,6 +9,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -98,5 +99,16 @@ class DecisionRepositoryTest {
             val counts = repository.getVerdictCounts(10L).first()
             assertEquals(1, counts.yes)
             assertEquals(2, counts.no)
+        }
+
+    @Test
+    fun `clearVerdict deletes the row for an inference result`() =
+        runBlocking {
+            repository.upsertVerdict(1L, 10L, true, null).first()
+
+            repository.clearVerdict(1L).first()
+
+            val row = db.localDecisionDao().getVerdict(1L).first()
+            assertNull(row)
         }
 }
