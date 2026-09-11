@@ -208,6 +208,7 @@ fun CandidateModal(
                     onClearVerdict = onClearVerdict,
                     modifier =
                         Modifier
+                            .zIndex(2f)
                             .align(Alignment.BottomCenter)
                             .fillMaxWidth(),
                 )
