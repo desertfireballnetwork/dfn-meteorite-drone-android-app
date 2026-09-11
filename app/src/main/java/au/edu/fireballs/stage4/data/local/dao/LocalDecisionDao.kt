@@ -17,6 +17,12 @@ interface LocalDecisionDao {
     @Query("SELECT * FROM local_decision WHERE surveyId = :surveyId")
     fun observeDecisionsForSurvey(surveyId: Long): Flow<List<LocalDecisionEntity>>
 
+    @Query("SELECT * FROM local_decision WHERE inferenceResultId = :inferenceResultId")
+    fun getVerdict(inferenceResultId: Long): Flow<LocalDecisionEntity?>
+
+    @Query("DELETE FROM local_decision WHERE inferenceResultId = :inferenceResultId")
+    suspend fun deleteByInferenceResultId(inferenceResultId: Long)
+
     @Query(
         """
         UPDATE local_decision

@@ -11,19 +11,33 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuAnchorType
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
@@ -36,8 +50,11 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.zIndex
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import au.edu.fireballs.stage4.domain.model.DetectionTag
 import au.edu.fireballs.stage4.domain.model.GeoCoordinate
 import au.edu.fireballs.stage4.domain.model.Stage4Candidate
+import au.edu.fireballs.stage4.ui.theme.dfnMarkerNo
+import au.edu.fireballs.stage4.ui.theme.dfnMarkerYes
 import java.util.Locale
 import kotlin.math.abs
 
@@ -70,6 +87,7 @@ fun CandidateModal(
     surveyId: Long,
     onClose: () -> Unit,
     onAuthExpired: () -> Unit = {},
+    detectionTags: List<DetectionTag> = emptyList(),
     viewModel: CandidateViewModel = hiltViewModel(),
 ) {
     LaunchedEffect(candidate.inferenceResultId, surveyId) {
@@ -77,6 +95,8 @@ fun CandidateModal(
     }
 
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val verdict by viewModel.verdict.collectAsStateWithLifecycle()
+    val detectionTagId by viewModel.detectionTagId.collectAsStateWithLifecycle()
 
     CandidateModal(
         candidate = candidate,
@@ -85,6 +105,11 @@ fun CandidateModal(
         onSelectMode = viewModel::setViewMode,
         onRetry = viewModel::retryImage,
         onAuthExpired = onAuthExpired,
+        verdict = verdict,
+        detectionTagId = detectionTagId,
+        detectionTags = detectionTags,
+        onVerdict = viewModel::submitVerdict,
+        onClearVerdict = viewModel::clearVerdict,
     )
 }
 
@@ -96,6 +121,11 @@ fun CandidateModal(
     onSelectMode: (CandidateViewMode) -> Unit,
     onRetry: () -> Unit = {},
     onAuthExpired: () -> Unit = {},
+    verdict: Boolean? = null,
+    detectionTagId: Long? = null,
+    detectionTags: List<DetectionTag> = emptyList(),
+    onVerdict: (Boolean, Long?) -> Unit = { _, _ -> },
+    onClearVerdict: () -> Unit = {},
 ) {
     val activeCandidate = uiState?.candidate ?: candidate
     val currentMode = uiState?.viewMode ?: CandidateViewMode.MAP
@@ -167,6 +197,152 @@ fun CandidateModal(
                         onRetry = onRetry,
                         onAuthExpired = onAuthExpired,
                         modifier = Modifier.fillMaxSize(),
+                    )
+                }
+
+                CandidateVerdictBar(
+                    verdict = verdict,
+                    detectionTagId = detectionTagId,
+                    detectionTags = detectionTags,
+                    onVerdict = onVerdict,
+                    onClearVerdict = onClearVerdict,
+                    modifier =
+                        Modifier
+                            .zIndex(2f)
+                            .align(Alignment.BottomCenter)
+                            .fillMaxWidth(),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CandidateVerdictBar(
+    verdict: Boolean?,
+    detectionTagId: Long?,
+    detectionTags: List<DetectionTag>,
+    onVerdict: (Boolean, Long?) -> Unit,
+    onClearVerdict: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier,
+        tonalElevation = 2.dp,
+    ) {
+        Column(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Button(
+                    onClick = { onVerdict(true, null) },
+                    modifier =
+                        Modifier
+                            .weight(1f)
+                            .testTag("verdict-yes"),
+                    colors =
+                        ButtonDefaults.buttonColors(
+                            containerColor =
+                                if (verdict == true) {
+                                    dfnMarkerYes
+                                } else {
+                                    MaterialTheme.colorScheme.surfaceVariant
+                                },
+                        ),
+                ) {
+                    Text("Yes")
+                }
+                OutlinedButton(
+                    onClick = { onVerdict(false, null) },
+                    modifier =
+                        Modifier
+                            .weight(1f)
+                            .testTag("verdict-no"),
+                    colors =
+                        ButtonDefaults.outlinedButtonColors(
+                            containerColor =
+                                if (verdict == false) {
+                                    dfnMarkerNo
+                                } else {
+                                    Color.Transparent
+                                },
+                        ),
+                ) {
+                    Text("No")
+                }
+                TextButton(
+                    onClick = onClearVerdict,
+                    modifier = Modifier.testTag("verdict-clear"),
+                ) {
+                    Text("Clear")
+                }
+            }
+            if (verdict == false) {
+                DetectionTagPicker(
+                    detectionTags = detectionTags,
+                    selectedTagId = detectionTagId,
+                    onTagSelected = { tagId -> onVerdict(false, tagId) },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DetectionTagPicker(
+    detectionTags: List<DetectionTag>,
+    selectedTagId: Long?,
+    onTagSelected: (Long?) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    if (detectionTags.isEmpty()) {
+        OutlinedTextField(
+            value = "",
+            onValueChange = {},
+            label = { Text("Tag (optional)") },
+            readOnly = true,
+            modifier = modifier,
+        )
+    } else {
+        var expanded by remember { mutableStateOf(false) }
+        val selectedTag = detectionTags.firstOrNull { it.id == selectedTagId }
+        ExposedDropdownMenuBox(
+            expanded = expanded,
+            onExpandedChange = { expanded = it },
+            modifier = modifier,
+        ) {
+            OutlinedTextField(
+                value = selectedTag?.name ?: "",
+                onValueChange = {},
+                readOnly = true,
+                label = { Text("Tag (optional)") },
+                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                modifier =
+                    Modifier
+                        .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
+                        .fillMaxWidth(),
+            )
+            ExposedDropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false },
+            ) {
+                detectionTags.forEach { tag ->
+                    DropdownMenuItem(
+                        text = { Text(tag.name) },
+                        onClick = {
+                            onTagSelected(tag.id)
+                            expanded = false
+                        },
                     )
                 }
             }

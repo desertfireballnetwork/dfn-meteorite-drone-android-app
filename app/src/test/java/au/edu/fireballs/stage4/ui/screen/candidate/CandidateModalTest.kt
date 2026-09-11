@@ -12,15 +12,19 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import au.edu.fireballs.stage4.data.repository.CandidateImageRepository
+import au.edu.fireballs.stage4.data.repository.DecisionRepository
 import au.edu.fireballs.stage4.domain.model.BoundingBox
+import au.edu.fireballs.stage4.domain.model.DetectionTag
 import au.edu.fireballs.stage4.domain.model.GeoCoordinate
 import au.edu.fireballs.stage4.domain.model.ImageDims
 import au.edu.fireballs.stage4.domain.model.Stage4Candidate
+import kotlinx.coroutines.flow.flowOf
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.mockito.kotlin.any
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.whenever
 import org.robolectric.RobolectricTestRunner
@@ -156,8 +160,10 @@ class CandidateModalTest {
         val imageRepository: CandidateImageRepository = mock()
         whenever(imageRepository.getCandidateTileUrlPattern(10L, 42L))
             .thenReturn("https://example.com/tiles/10/42/{z}/{x}/{y}/")
+        val decisionRepository: DecisionRepository = mock()
+        whenever(decisionRepository.getVerdict(any())).thenReturn(flowOf(null))
 
-        val viewModel = CandidateViewModel(imageRepository)
+        val viewModel = CandidateViewModel(imageRepository, decisionRepository)
 
         composeRule.setContent {
             CompositionLocalProvider(LocalInspectionMode provides true) {
@@ -211,5 +217,74 @@ class CandidateModalTest {
 
         composeRule.onNodeWithTag("candidate-image-view").assertExists()
         composeRule.onNodeWithTag("candidate-map-root").assertDoesNotExist()
+    }
+
+    @Test
+    fun candidateModal_yesAndNoButtonsRender() {
+        val candidate = createCandidate()
+
+        composeRule.setContent {
+            CompositionLocalProvider(LocalInspectionMode provides true) {
+                CandidateModal(
+                    candidate = candidate,
+                    uiState = CandidateUiState(candidate = candidate, surveyId = 1L),
+                    onClose = {},
+                    onSelectMode = {},
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag("verdict-yes").assertExists()
+        composeRule.onNodeWithTag("verdict-no").assertExists()
+        composeRule.onNodeWithText("Yes").assertExists()
+        composeRule.onNodeWithText("No").assertExists()
+    }
+
+    @Test
+    fun candidateModal_tagPickerOnlyShownWhenVerdictIsNo() {
+        val candidate = createCandidate()
+        val tags = listOf(DetectionTag(id = 1L, name = "Fusion crust", category = "Surface"))
+
+        composeRule.setContent {
+            var verdict by remember { mutableStateOf<Boolean?>(null) }
+            CompositionLocalProvider(LocalInspectionMode provides true) {
+                CandidateModal(
+                    candidate = candidate,
+                    uiState = CandidateUiState(candidate = candidate, surveyId = 1L),
+                    onClose = {},
+                    onSelectMode = {},
+                    verdict = verdict,
+                    detectionTags = tags,
+                    onVerdict = { isMeteorite, _ -> verdict = isMeteorite },
+                )
+            }
+        }
+
+        composeRule.onNodeWithText("Tag (optional)").assertDoesNotExist()
+
+        composeRule.onNodeWithTag("verdict-no").performClick()
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithText("Tag (optional)").assertExists()
+    }
+
+    @Test
+    fun candidateModal_emptyTagListShowsPlainTagField() {
+        val candidate = createCandidate()
+
+        composeRule.setContent {
+            CompositionLocalProvider(LocalInspectionMode provides true) {
+                CandidateModal(
+                    candidate = candidate,
+                    uiState = CandidateUiState(candidate = candidate, surveyId = 1L),
+                    onClose = {},
+                    onSelectMode = {},
+                    verdict = false,
+                    detectionTags = emptyList(),
+                )
+            }
+        }
+
+        composeRule.onNodeWithText("Tag (optional)").assertExists()
     }
 }
