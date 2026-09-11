@@ -254,7 +254,7 @@ private fun CandidateVerdictBar(
                                 if (verdict == true) {
                                     dfnMarkerYes
                                 } else {
-                                    MaterialTheme.colorScheme.primary
+                                    MaterialTheme.colorScheme.surfaceVariant
                                 },
                         ),
                 ) {
