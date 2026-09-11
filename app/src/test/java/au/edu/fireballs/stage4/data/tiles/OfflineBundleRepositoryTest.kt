@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -44,6 +45,31 @@ class OfflineBundleRepositoryTest {
     fun tearDown() {
         database.close()
     }
+
+    @Test
+    fun insertBundlePersistsEntity() =
+        runTest {
+            val bundle =
+                OfflineBundleEntity(
+                    surveyId = 1,
+                    created = "now",
+                    totalBytes = 1,
+                    tileCount = 1,
+                    satelliteRegionCount = 0,
+                    candidateCount = 1,
+                    bufferMeters = 100f,
+                )
+
+            val rowId = repository.insertBundle(bundle)
+
+            assertTrue(rowId > 0)
+            val persisted = database.offlineBundleDao().observeLatestBundleForSurvey(1).first()
+            assertNotNull(persisted)
+            val row = persisted!!
+            assertTrue(row.rowId == rowId)
+            assertTrue(row.surveyId == 1L)
+            assertTrue(row.totalBytes == 1L)
+        }
 
     @Test
     fun deleteBundleRemovesFilesAndRows() =

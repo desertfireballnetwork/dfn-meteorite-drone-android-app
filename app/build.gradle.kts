@@ -132,6 +132,7 @@ dependencies {
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
     implementation(libs.hilt.navigation.compose)
+    implementation(libs.hilt.work)
     implementation(libs.room.runtime)
     implementation(libs.room.ktx)
     ksp(libs.room.compiler)
@@ -162,6 +163,7 @@ dependencies {
     androidTestImplementation(libs.androidx.test.core)
     androidTestImplementation(libs.junit)
     androidTestImplementation(libs.room.testing)
+    androidTestImplementation(libs.okhttp.mockwebserver)
 
     testImplementation(libs.androidx.test.core)
     testImplementation(libs.junit)

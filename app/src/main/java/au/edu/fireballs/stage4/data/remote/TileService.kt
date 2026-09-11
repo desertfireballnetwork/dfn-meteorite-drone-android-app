@@ -14,4 +14,9 @@ interface TileService {
         @Path("x") x: Int,
         @Path("y") y: Int,
     ): Response<ResponseBody>
+
+    @GET("image_survey_cropped/{inference_result}/")
+    suspend fun getCandidateCrop(
+        @Path("inference_result") inferenceResultId: Long,
+    ): Response<ResponseBody>
 }

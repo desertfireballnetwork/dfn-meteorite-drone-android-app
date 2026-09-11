@@ -314,4 +314,25 @@ class Stage4Repository
             moshi
                 .adapter(Stage4StateDto::class.java)
                 .fromJson(body.string())
+
+        @Suppress("TooGenericExceptionCaught", "SwallowedException")
+        suspend fun fetchLatestTaskCreated(surveyId: Long): String? =
+            withContext(ioDispatcher) {
+                try {
+                    val response = stage4Service.getCandidates(surveyId.toString())
+                    if (LoginRedirectDetector.isLoginRedirect(response)) {
+                        null
+                    } else if (response.isSuccessful) {
+                        (parseBody(response.body()) as? Stage4FetchResult.Success)
+                            ?.state
+                            ?.latestTaskCreated
+                    } else {
+                        null
+                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    null
+                }
+            }
     }

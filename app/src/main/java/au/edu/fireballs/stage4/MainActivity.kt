@@ -21,6 +21,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import au.edu.fireballs.stage4.ui.screen.basecamp.BasecampScreen
+import au.edu.fireballs.stage4.ui.screen.dataentry.SettingsScreen
 import au.edu.fireballs.stage4.ui.screen.login.LoginScreen
 import au.edu.fireballs.stage4.ui.screen.login.LoginViewModel
 import au.edu.fireballs.stage4.ui.screen.stage4map.Stage4MapScreen
@@ -135,6 +136,15 @@ class MainActivity : ComponentActivity() {
                                                 popUpTo("surveys") { inclusive = true }
                                             }
                                         },
+                                        onNavigateToSettings = {
+                                            navController.navigate("settings")
+                                        },
+                                    )
+                                }
+
+                                composable("settings") {
+                                    SettingsScreen(
+                                        onBack = { navController.popBackStack() },
                                     )
                                 }
                             }

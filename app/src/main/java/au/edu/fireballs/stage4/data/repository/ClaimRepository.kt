@@ -1,5 +1,7 @@
 package au.edu.fireballs.stage4.data.repository
 
+import au.edu.fireballs.stage4.data.local.ClaimEntity
+import au.edu.fireballs.stage4.data.local.dao.ClaimDao
 import au.edu.fireballs.stage4.data.remote.Stage4Service
 import au.edu.fireballs.stage4.data.remote.dto.ClaimRequestDto
 import au.edu.fireballs.stage4.data.remote.dto.ReleaseRequestDto
@@ -31,6 +33,10 @@ sealed interface ClaimResult {
         val claims: List<Claim>,
     ) : ClaimResult
 
+    data class Refreshed(
+        val count: Int,
+    ) : ClaimResult
+
     data class Error(
         val message: String? = null,
     ) : ClaimResult
@@ -45,6 +51,7 @@ class ClaimRepository
     @Inject
     constructor(
         private val stage4Service: Stage4Service,
+        private val claimDao: ClaimDao,
         @param:IoDispatcher private val ioDispatcher: CoroutineDispatcher,
     ) {
         private val surveyIdFlow = MutableStateFlow<Long?>(null)
@@ -142,6 +149,44 @@ class ClaimRepository
                                 )
                             },
                     )
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: IOException) {
+                    ClaimResult.NetworkError
+                } catch (e: HttpException) {
+                    if (e.code() == HttpURLConnection.HTTP_UNAUTHORIZED) {
+                        ClaimResult.AuthExpired
+                    } else {
+                        ClaimResult.Error(e.message())
+                    }
+                } catch (e: Exception) {
+                    ClaimResult.Error(e.localizedMessage ?: "An unexpected error occurred")
+                }
+            }
+
+        @Suppress("TooGenericExceptionCaught", "SwallowedException")
+        suspend fun refreshClaimsToRoom(surveyId: Long): ClaimResult =
+            withContext(ioDispatcher) {
+                try {
+                    val response =
+                        stage4Service.getClaims(
+                            surveyId = surveyId.toString(),
+                            mine = true,
+                        )
+                    val entities =
+                        response.claims.map {
+                            ClaimEntity(
+                                inferenceResultId = it.inferenceResultId,
+                                surveyId = surveyId,
+                                userId = it.userId,
+                                username = it.username.orEmpty(),
+                                claimedAt = it.claimedAt.orEmpty(),
+                                isMine = true,
+                                isActive = true,
+                            )
+                        }
+                    claimDao.upsertAll(entities)
+                    ClaimResult.Refreshed(count = entities.size)
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: IOException) {

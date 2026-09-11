@@ -88,6 +88,8 @@ class TileStore(
         }
     }
 
+    fun remainingQuotaBytes(): Long = quotaBytes - totalBytes
+
     fun surveyTilesDirectory(surveyId: Long): File {
         require(surveyId >= 0L) { "Survey id must be non-negative" }
         return File(baseDir, surveyId.toString())
