@@ -31,6 +31,16 @@ interface ClaimDao {
 
     @Query(
         """
+        SELECT COUNT(*) FROM claim
+        WHERE surveyId = :surveyId
+        AND isActive = 1
+        AND isMine = 1
+        """,
+    )
+    suspend fun countActiveClaimedCandidates(surveyId: Long): Int
+
+    @Query(
+        """
         UPDATE claim
         SET isActive = 0
         WHERE userId = :userId
@@ -41,6 +51,9 @@ interface ClaimDao {
         userId: Long,
         candidateIds: List<Long>,
     )
+
+    @Query("UPDATE claim SET isActive = 0 WHERE surveyId = :surveyId AND isMine = 1")
+    suspend fun deactivateMineClaimsForSurvey(surveyId: Long)
 
     @Query("DELETE FROM claim WHERE surveyId = :surveyId")
     suspend fun deleteForSurvey(surveyId: Long)

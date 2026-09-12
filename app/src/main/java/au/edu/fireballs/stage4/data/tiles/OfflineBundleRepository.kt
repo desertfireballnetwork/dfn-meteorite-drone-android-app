@@ -1,5 +1,6 @@
 package au.edu.fireballs.stage4.data.tiles
 
+import au.edu.fireballs.stage4.data.local.OfflineBundleEntity
 import au.edu.fireballs.stage4.data.local.dao.OfflineBundleDao
 import au.edu.fireballs.stage4.data.local.dao.TileManifestDao
 import au.edu.fireballs.stage4.di.IoDispatcher
@@ -17,6 +18,11 @@ class OfflineBundleRepository
         private val offlineBundleDao: OfflineBundleDao,
         @IoDispatcher private val ioDispatcher: CoroutineDispatcher,
     ) {
+        suspend fun insertBundle(bundle: OfflineBundleEntity): Long =
+            withContext(ioDispatcher) {
+                offlineBundleDao.insert(bundle)
+            }
+
         suspend fun deleteBundle(surveyId: Long) =
             withContext(ioDispatcher) {
                 val cleanups =

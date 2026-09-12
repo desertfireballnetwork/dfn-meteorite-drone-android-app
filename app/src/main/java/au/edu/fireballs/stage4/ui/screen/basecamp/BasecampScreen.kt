@@ -1,5 +1,6 @@
 package au.edu.fireballs.stage4.ui.screen.basecamp
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,8 +15,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Polyline
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -23,12 +27,14 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -73,6 +79,7 @@ import com.mapbox.maps.plugin.gestures.OnMapClickListener
 import com.mapbox.maps.plugin.gestures.addOnMapClickListener
 import com.mapbox.maps.plugin.gestures.removeOnMapClickListener
 import kotlinx.coroutines.launch
+import java.util.Locale
 
 private const val BASE_STYLE_URI = "mapbox://styles/mapbox/standard-satellite"
 private const val POLYGON_SOURCE_ID = "claim-polygon-source"
@@ -91,11 +98,15 @@ private const val CLAIM_LIST_HEIGHT = 240
 fun BasecampScreen(
     surveyId: Long,
     onAuthExpired: () -> Unit,
+    onNavigateToSettings: () -> Unit = {},
     viewModel: BasecampViewModel = hiltViewModel(),
+    preDownloadViewModel: PreDownloadViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val preDownloadState by preDownloadViewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+    var showDownloadDialog by rememberSaveable { mutableStateOf(false) }
 
     LifecycleResumeEffect(Unit) {
         viewModel.openSurvey(surveyId)
@@ -113,6 +124,12 @@ fun BasecampScreen(
             when (event) {
                 is BasecampEvent.ShowMessage -> snackbarHostState.showSnackbar(event.message)
             }
+        }
+    }
+
+    LaunchedEffect(showDownloadDialog) {
+        if (showDownloadDialog) {
+            preDownloadViewModel.openSurvey(surveyId)
         }
     }
 
@@ -136,6 +153,8 @@ fun BasecampScreen(
                                 },
                                 onToggleMine = { viewModel.setMineFilter(!state.mineOnly) },
                                 onRefresh = viewModel::refresh,
+                                onDownload = { showDownloadDialog = true },
+                                onSettings = onNavigateToSettings,
                             )
                         }
 
@@ -181,6 +200,15 @@ fun BasecampScreen(
             }
         }
     }
+
+    if (showDownloadDialog) {
+        DownloadDialog(
+            state = preDownloadState,
+            onDismiss = { showDownloadDialog = false },
+            onStart = preDownloadViewModel::startDownload,
+            onCancel = preDownloadViewModel::cancel,
+        )
+    }
 }
 
 @Composable
@@ -191,6 +219,8 @@ private fun BasecampToolbarActions(
     onTogglePolygon: () -> Unit,
     onToggleMine: () -> Unit,
     onRefresh: () -> Unit,
+    onDownload: () -> Unit,
+    onSettings: () -> Unit,
 ) {
     FilterChip(
         selected = drawing,
@@ -216,6 +246,125 @@ private fun BasecampToolbarActions(
             contentDescription = "Refresh",
         )
     }
+    IconButton(onClick = onDownload) {
+        Icon(
+            imageVector = Icons.Default.Download,
+            contentDescription = "Download for offline",
+        )
+    }
+    IconButton(onClick = onSettings) {
+        Icon(
+            imageVector = Icons.Default.Settings,
+            contentDescription = "Settings",
+        )
+    }
+}
+
+@Composable
+private fun DownloadDialog(
+    state: PreDownloadUiState,
+    onDismiss: () -> Unit,
+    onStart: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(text = "Download for offline") },
+        text = {
+            when (state) {
+                is PreDownloadUiState.Idle -> Text(text = "Preparing download…")
+                is PreDownloadUiState.Ready -> {
+                    Column {
+                        Text(
+                            text = "Claimed candidates: ${state.claimedCandidateCount}",
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Estimated size: ${formatBytes(state.estimatedSizeBytes)}",
+                        )
+                        if (state.isStale) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "Local data is stale — re-download recommended",
+                                color = MaterialTheme.colorScheme.primary,
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Button(onClick = onStart) {
+                            Text(text = if (state.isStale) "Re-download" else "Download")
+                        }
+                    }
+                }
+
+                is PreDownloadUiState.Running -> {
+                    Column {
+                        Text(text = state.phase)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        LinearProgressIndicator(
+                            progress = {
+                                if (state.total > 0) {
+                                    state.done.toFloat() / state.total
+                                } else {
+                                    0f
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "${state.done} / ${state.total}",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                }
+
+                is PreDownloadUiState.Done -> {
+                    Column {
+                        Text(text = "Download complete")
+                        if (state.reDownloadRecommended) {
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text(
+                                text = "Re-download recommended — ML task changed",
+                                color = MaterialTheme.colorScheme.primary,
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier =
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .clickable(onClick = onStart)
+                                        .padding(vertical = 8.dp),
+                            )
+                        }
+                    }
+                }
+
+                is PreDownloadUiState.Error -> Text(text = state.message)
+                is PreDownloadUiState.Cancelled -> Text(text = "Download cancelled")
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(text = "Done")
+            }
+        },
+        dismissButton = {
+            if (state is PreDownloadUiState.Running) {
+                TextButton(onClick = onCancel) {
+                    Text(text = "Cancel")
+                }
+            }
+        },
+    )
+}
+
+private fun formatBytes(bytes: Long): String {
+    if (bytes < 1024) return "$bytes B"
+    val kb = bytes / 1024.0
+    if (kb < 1024) return String.format(Locale.ROOT, "%.1f KB", kb)
+    val mb = kb / 1024.0
+    if (mb < 1024) return String.format(Locale.ROOT, "%.1f MB", mb)
+    val gb = mb / 1024.0
+    return String.format(Locale.ROOT, "%.1f GB", gb)
 }
 
 @Composable

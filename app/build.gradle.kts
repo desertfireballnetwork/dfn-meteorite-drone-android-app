@@ -132,6 +132,7 @@ dependencies {
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
     implementation(libs.hilt.navigation.compose)
+    implementation(libs.hilt.work)
     implementation(libs.room.runtime)
     implementation(libs.room.ktx)
     ksp(libs.room.compiler)
@@ -155,19 +156,20 @@ dependencies {
     implementation(libs.maps.compose)
 
     debugImplementation(libs.compose.ui.tooling)
-    debugImplementation("androidx.compose.ui:ui-test-manifest")
+    debugImplementation(libs.compose.ui.test.manifest)
 
     androidTestImplementation(platform(libs.compose.bom))
-    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    androidTestImplementation(libs.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.test.core)
     androidTestImplementation(libs.junit)
     androidTestImplementation(libs.room.testing)
+    androidTestImplementation(libs.okhttp.mockwebserver)
 
     testImplementation(libs.androidx.test.core)
     testImplementation(libs.junit)
     testImplementation(libs.robolectric)
     testImplementation(platform(libs.compose.bom))
-    testImplementation("androidx.compose.ui:ui-test-junit4")
+    testImplementation(libs.compose.ui.test.junit4)
 
     testImplementation(libs.okhttp.mockwebserver)
     testImplementation(libs.kotlinx.coroutines.test)

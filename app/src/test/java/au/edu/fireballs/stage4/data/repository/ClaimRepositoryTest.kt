@@ -1,9 +1,13 @@
 package au.edu.fireballs.stage4.data.repository
 
+import au.edu.fireballs.stage4.data.local.ClaimEntity
+import au.edu.fireballs.stage4.data.local.dao.ClaimDao
 import au.edu.fireballs.stage4.data.remote.Stage4Service
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
 import okhttp3.mockwebserver.MockResponse
@@ -21,6 +25,7 @@ import retrofit2.converter.moshi.MoshiConverterFactory
 class ClaimRepositoryTest {
     private lateinit var mockWebServer: MockWebServer
     private lateinit var repository: ClaimRepository
+    private lateinit var claimDao: FakeClaimDao
     private val testDispatcher = UnconfinedTestDispatcher()
 
     @Before
@@ -42,9 +47,11 @@ class ClaimRepositoryTest {
                 .build()
 
         val service = retrofit.create(Stage4Service::class.java)
+        claimDao = FakeClaimDao()
         repository =
             ClaimRepository(
                 stage4Service = service,
+                claimDao = claimDao,
                 ioDispatcher = testDispatcher,
             )
         repository.setSurveyId(7L)
@@ -130,6 +137,7 @@ class ClaimRepositoryTest {
             val deadRepository =
                 ClaimRepository(
                     stage4Service = retrofit.create(Stage4Service::class.java),
+                    claimDao = FakeClaimDao(),
                     ioDispatcher = testDispatcher,
                 )
             deadRepository.setSurveyId(7L)
@@ -143,6 +151,7 @@ class ClaimRepositoryTest {
             val unselected =
                 ClaimRepository(
                     stage4Service = retrofitService(),
+                    claimDao = FakeClaimDao(),
                     ioDispatcher = testDispatcher,
                 )
 
@@ -270,6 +279,120 @@ class ClaimRepositoryTest {
             assertEquals(ClaimResult.AuthExpired, repository.listClaims())
         }
 
+    @Test
+    fun `refreshClaimsToRoom persists mapped claim entities`() =
+        runTest(testDispatcher) {
+            mockWebServer.enqueue(
+                MockResponse()
+                    .setResponseCode(200)
+                    .setBody(
+                        """
+                        {
+                          "claims": [
+                            {
+                              "inference_result_id": 1,
+                              "user_id": 2,
+                              "username": "jdoe",
+                              "claimed_at": "2026-01-01T00:00:00Z",
+                              "is_me": true
+                            }
+                          ]
+                        }
+                        """.trimIndent(),
+                    ),
+            )
+
+            val result = repository.refreshClaimsToRoom(7L)
+
+            assertTrue("Expected Refreshed but got $result", result is ClaimResult.Refreshed)
+            assertEquals(1, (result as ClaimResult.Refreshed).count)
+            val entity = claimDao.upserted.single()
+            assertEquals(1L, entity.inferenceResultId)
+            assertEquals(7L, entity.surveyId)
+            assertEquals(2L, entity.userId)
+            assertEquals("jdoe", entity.username)
+            assertEquals("2026-01-01T00:00:00Z", entity.claimedAt)
+            assertTrue(entity.isMine)
+            assertTrue(entity.isActive)
+        }
+
+    @Test
+    fun `refreshClaimsToRoom sends mine query with canonical survey id`() =
+        runTest(testDispatcher) {
+            mockWebServer.enqueue(
+                MockResponse()
+                    .setResponseCode(200)
+                    .setBody("""{"claims": []}"""),
+            )
+
+            repository.refreshClaimsToRoom(7L)
+
+            val request = mockWebServer.takeRequest()
+            assertEquals("/api/stage4/surveys/7/claims/", request.requestUrl?.encodedPath)
+            assertEquals("mine=true", request.requestUrl?.query)
+        }
+
+    @Test
+    fun `refreshClaimsToRoom maps HTTP 401 to AuthExpired`() =
+        runTest(testDispatcher) {
+            mockWebServer.enqueue(MockResponse().setResponseCode(401))
+
+            assertEquals(ClaimResult.AuthExpired, repository.refreshClaimsToRoom(7L))
+        }
+
+    @Test
+    fun `refreshClaimsToRoom maps connection failure to NetworkError`() =
+        runTest(testDispatcher) {
+            mockWebServer.enqueue(
+                MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AT_START),
+            )
+
+            assertEquals(ClaimResult.NetworkError, repository.refreshClaimsToRoom(7L))
+        }
+
+    @Test
+    fun `refreshClaimsToRoom deactivates mine claims absent from response`() =
+        runTest(testDispatcher) {
+            claimDao.upserted.add(
+                ClaimEntity(
+                    inferenceResultId = 2L,
+                    surveyId = 7L,
+                    userId = 2L,
+                    username = "me",
+                    claimedAt = "2026-01-01T00:00:00Z",
+                    isMine = true,
+                    isActive = true,
+                ),
+            )
+            mockWebServer.enqueue(
+                MockResponse()
+                    .setResponseCode(200)
+                    .setBody(
+                        """
+                        {
+                          "claims": [
+                            {
+                              "inference_result_id": 1,
+                              "user_id": 2,
+                              "username": "jdoe",
+                              "claimed_at": "2026-01-01T00:00:00Z",
+                              "is_me": true
+                            }
+                          ]
+                        }
+                        """.trimIndent(),
+                    ),
+            )
+
+            repository.refreshClaimsToRoom(7L)
+
+            val released = claimDao.upserted.find { it.inferenceResultId == 2L }
+            assertTrue("Expected released claim to be deactivated", released != null)
+            assertTrue("Expected released claim inactive", released!!.isActive == false)
+            val kept = claimDao.upserted.find { it.inferenceResultId == 1L }
+            assertTrue("Expected fresh claim active", kept != null && kept.isActive)
+        }
+
     private fun retrofitService(): Stage4Service {
         val moshi =
             Moshi
@@ -283,5 +406,50 @@ class ClaimRepositoryTest {
                 .addConverterFactory(MoshiConverterFactory.create(moshi))
                 .build()
         return retrofit.create(Stage4Service::class.java)
+    }
+}
+
+private class FakeClaimDao : ClaimDao {
+    val upserted = mutableListOf<ClaimEntity>()
+
+    override suspend fun upsert(claim: ClaimEntity) {
+        upserted.add(claim)
+    }
+
+    override suspend fun upsertAll(claims: List<ClaimEntity>) {
+        upserted.addAll(claims)
+    }
+
+    override fun getClaims(
+        surveyId: Long,
+        onlyActive: Boolean,
+    ): Flow<List<ClaimEntity>> = flowOf(emptyList())
+
+    override suspend fun getByCandidateId(inferenceResultId: Long): ClaimEntity? = null
+
+    override suspend fun countActiveClaimedCandidates(surveyId: Long): Int =
+        upserted.count { it.surveyId == surveyId && it.isActive && it.isMine }
+
+    override suspend fun releaseClaimsForUser(
+        userId: Long,
+        candidateIds: List<Long>,
+    ) = Unit
+
+    override suspend fun deactivateMineClaimsForSurvey(surveyId: Long) {
+        upserted.replaceAll { claim ->
+            if (claim.surveyId == surveyId && claim.isMine) {
+                claim.copy(isActive = false)
+            } else {
+                claim
+            }
+        }
+    }
+
+    override suspend fun deleteForSurvey(surveyId: Long) {
+        upserted.removeAll { it.surveyId == surveyId }
+    }
+
+    override suspend fun deleteAll() {
+        upserted.clear()
     }
 }
