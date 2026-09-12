@@ -55,6 +55,7 @@ import au.edu.fireballs.stage4.domain.model.GeoCoordinate
 import au.edu.fireballs.stage4.domain.model.Stage4Candidate
 import au.edu.fireballs.stage4.domain.model.Stage4State
 import au.edu.fireballs.stage4.domain.model.resolveInitialCamera
+import au.edu.fireballs.stage4.ui.screen.stage4map.BaseMarker
 import au.edu.fireballs.stage4.ui.screen.stage4map.LayerToggleState
 import au.edu.fireballs.stage4.ui.screen.stage4map.marker.CandidateMarkers
 import com.mapbox.bindgen.Value
@@ -155,6 +156,10 @@ fun BasecampScreen(
                                 onRefresh = viewModel::refresh,
                                 onDownload = { showDownloadDialog = true },
                                 onSettings = onNavigateToSettings,
+                                onSetLocation = viewModel::setCarLocation,
+                                onMessage = { message ->
+                                    scope.launch { snackbarHostState.showSnackbar(message) }
+                                },
                             )
                         }
 
@@ -221,6 +226,8 @@ private fun BasecampToolbarActions(
     onRefresh: () -> Unit,
     onDownload: () -> Unit,
     onSettings: () -> Unit,
+    onSetLocation: (Double, Double) -> Unit,
+    onMessage: (String) -> Unit,
 ) {
     FilterChip(
         selected = drawing,
@@ -258,6 +265,10 @@ private fun BasecampToolbarActions(
             contentDescription = "Settings",
         )
     }
+    SetCarLocationButton(
+        onSetLocation = onSetLocation,
+        onMessage = onMessage,
+    )
 }
 
 @Composable
@@ -483,6 +494,7 @@ private fun BasecampMap(
                 toggleState = LayerToggleState(),
                 onMarkerClick = onMarkerClick,
             )
+            BaseMarker(base = state.base)
             polygonVertices?.let { vertices ->
                 PolygonOverlay(vertices = vertices)
             }

@@ -130,4 +130,76 @@ class SurveyRepositoryTest {
                 .onSuccess { error("Should have thrown CancellationException") }
                 .onFailure { assertTrue(it is CancellationException) }
         }
+
+    @Test
+    fun `setCarLocation returns Success on OK response`() =
+        runTest(testDispatcher) {
+            mockWebServer.enqueue(MockResponse().setResponseCode(200).setBody("OK"))
+
+            val result = repository.setCarLocation(7L, -25.0, 134.0)
+
+            assertEquals(SetCarLocationResult.Success, result)
+
+            val request = mockWebServer.takeRequest()
+            assertEquals("POST", request.method)
+            assertEquals("/survey/7/stage4/set_car_location/", request.path)
+            val body = request.body.readUtf8()
+            assertTrue(body.contains("latitude"))
+            assertTrue(body.contains("longitude"))
+        }
+
+    @Test
+    fun `setCarLocation returns Error on invalid coordinates`() =
+        runTest(testDispatcher) {
+            mockWebServer.enqueue(
+                MockResponse().setResponseCode(400).setBody("Invalid coordinates"),
+            )
+
+            val result = repository.setCarLocation(7L, -25.0, 134.0)
+
+            assertEquals(SetCarLocationResult.Error("Invalid coordinates"), result)
+        }
+
+    @Test
+    fun `setCarLocation maps connection failure to NetworkError`() =
+        runTest(testDispatcher) {
+            val deadServer = MockWebServer()
+            val deadUrl = deadServer.url("/")
+            deadServer.shutdown()
+
+            val moshi =
+                Moshi
+                    .Builder()
+                    .addLast(KotlinJsonAdapterFactory())
+                    .build()
+            val retrofit =
+                Retrofit
+                    .Builder()
+                    .baseUrl(deadUrl)
+                    .addConverterFactory(MoshiConverterFactory.create(moshi))
+                    .build()
+            val deadRepository =
+                SurveyRepository(
+                    stage4Service = retrofit.create(Stage4Service::class.java),
+                    ioDispatcher = testDispatcher,
+                )
+
+            val result = deadRepository.setCarLocation(7L, -25.0, 134.0)
+
+            assertEquals(SetCarLocationResult.NetworkError, result)
+        }
+
+    @Test
+    fun `setCarLocation handles HTTP 302 redirect to login as AuthExpired`() =
+        runTest(testDispatcher) {
+            mockWebServer.enqueue(
+                MockResponse()
+                    .setResponseCode(302)
+                    .setHeader("Location", "https://example.com/login"),
+            )
+
+            val result = repository.setCarLocation(7L, -25.0, 134.0)
+
+            assertEquals(SetCarLocationResult.AuthExpired, result)
+        }
 }

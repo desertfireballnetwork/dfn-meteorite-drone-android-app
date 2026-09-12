@@ -4,8 +4,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import au.edu.fireballs.stage4.data.repository.ClaimRepository
 import au.edu.fireballs.stage4.data.repository.ClaimResult
+import au.edu.fireballs.stage4.data.repository.SetCarLocationResult
 import au.edu.fireballs.stage4.data.repository.Stage4FetchResult
 import au.edu.fireballs.stage4.data.repository.Stage4Repository
+import au.edu.fireballs.stage4.data.repository.SurveyRepository
 import au.edu.fireballs.stage4.domain.model.Claim
 import au.edu.fireballs.stage4.domain.model.GeoCoordinate
 import au.edu.fireballs.stage4.domain.model.Stage4Candidate
@@ -63,6 +65,7 @@ class BasecampViewModel
     constructor(
         private val stage4Repository: Stage4Repository,
         private val claimRepository: ClaimRepository,
+        private val surveyRepository: SurveyRepository,
     ) : ViewModel() {
         private val sourceStateFlow = MutableStateFlow<Stage4State?>(null)
         private val claimsFlow = MutableStateFlow<List<Claim>>(emptyList())
@@ -216,6 +219,31 @@ class BasecampViewModel
                 }
                 loadClaims()
                 isRefreshingFlow.value = false
+            }
+        }
+
+        fun setCarLocation(
+            latitude: Double,
+            longitude: Double,
+        ) {
+            val surveyId = surveyIdFlow.value ?: return
+            viewModelScope.launch {
+                when (
+                    val result = surveyRepository.setCarLocation(surveyId, latitude, longitude)
+                ) {
+                    is SetCarLocationResult.Success -> {
+                        sourceStateFlow.value =
+                            sourceStateFlow.value?.copy(
+                                base = GeoCoordinate(latitude, longitude),
+                            )
+                        emitMessage("Car location set")
+                    }
+
+                    is SetCarLocationResult.Error -> emitMessage(result.message)
+                    is SetCarLocationResult.AuthExpired -> authExpiredFlow.value = true
+                    is SetCarLocationResult.NetworkError ->
+                        emitMessage("Network error setting car location")
+                }
             }
         }
 

@@ -12,6 +12,8 @@ import okhttp3.RequestBody
 import okhttp3.ResponseBody
 import retrofit2.Response
 import retrofit2.http.Body
+import retrofit2.http.Field
+import retrofit2.http.FormUrlEncoded
 import retrofit2.http.GET
 import retrofit2.http.Multipart
 import retrofit2.http.POST
@@ -45,6 +47,14 @@ interface Stage4Service {
         @Path("survey_id") surveyId: String,
         @Query("mine") mine: Boolean? = null,
     ): ListClaimsResponseDto
+
+    @FormUrlEncoded
+    @POST("survey/{survey_id}/stage4/set_car_location/")
+    suspend fun setCarLocation(
+        @Path("survey_id") surveyId: String,
+        @Field("latitude") latitude: String,
+        @Field("longitude") longitude: String,
+    ): Response<ResponseBody>
 }
 
 interface EvidenceService {

@@ -147,7 +147,7 @@ private data class LocationPermissionSnapshot(
     val shouldShowRationale: Boolean,
 )
 
-internal fun isLocationPermissionGranted(context: Context): Boolean {
+fun isLocationPermissionGranted(context: Context): Boolean {
     val snapshot = locationPermissionSnapshot(context)
     return snapshot.fineGranted || snapshot.coarseGranted
 }
