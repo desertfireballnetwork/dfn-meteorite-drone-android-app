@@ -9,6 +9,9 @@ object LoginRedirectDetector {
 
     fun isLoginRedirect(response: okhttp3.Response): Boolean {
         val requestUrl = response.request.url
+        if (requestUrl.encodedPath.contains("login", ignoreCase = true)) {
+            return true
+        }
         var current = response
         while (true) {
             if (current.code == HttpURLConnection.HTTP_MOVED_TEMP) {

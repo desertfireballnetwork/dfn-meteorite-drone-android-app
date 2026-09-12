@@ -24,6 +24,7 @@ import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -518,6 +519,62 @@ class AuthenticatedTileHttpInterceptorTest {
             cancellableInterceptor.cancel(url)
             assertTrue(capturedCalls.first().isCanceled())
         }
+
+    @Test
+    fun cancelReachesAllConcurrentSameUrlRequests() =
+        runBlocking {
+            val capturedCalls = mutableListOf<Call>()
+            val cancellableClient =
+                OkHttpClient
+                    .Builder()
+                    .addInterceptor { chain ->
+                        capturedCalls.add(chain.call())
+                        chain.proceed(chain.request())
+                    }.build()
+            server.enqueue(
+                MockResponse()
+                    .setBodyDelay(2, TimeUnit.SECONDS)
+                    .setHeader("Content-Type", "image/png")
+                    .setBody("tile"),
+            )
+            server.enqueue(
+                MockResponse()
+                    .setBodyDelay(2, TimeUnit.SECONDS)
+                    .setHeader("Content-Type", "image/png")
+                    .setBody("tile"),
+            )
+            val cancellableInterceptor =
+                newInterceptor(cancellableClient, onlineConnectivityManager())
+            val url = candidateUrl()
+            val request =
+                HttpRequest
+                    .Builder()
+                    .method(HttpMethod.GET)
+                    .url(url)
+                    .headers(HashMap())
+                    .networkRestriction(NetworkRestriction.NONE)
+                    .sdkInformation(SdkInformation("test", "1.0", "test"))
+                    .build()
+
+            cancellableInterceptor.onRequest(request, CapturingContinuation())
+            cancellableInterceptor.onRequest(request, CapturingContinuation())
+            while (capturedCalls.size < 2) {
+                delay(10)
+            }
+            cancellableInterceptor.cancel(url)
+            assertTrue(capturedCalls.all { it.isCanceled() })
+        }
+
+    @Test
+    fun cleartextOriginAcceptedInDebug() {
+        val httpInterceptor =
+            newInterceptor(
+                client,
+                onlineConnectivityManager(),
+                "http://example.com/",
+            )
+        assertNotNull(httpInterceptor)
+    }
 
     private fun newInterceptor(
         okHttpClient: OkHttpClient,

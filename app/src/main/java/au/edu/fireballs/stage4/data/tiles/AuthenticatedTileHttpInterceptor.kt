@@ -2,6 +2,7 @@ package au.edu.fireballs.stage4.data.tiles
 
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import au.edu.fireballs.stage4.BuildConfig
 import au.edu.fireballs.stage4.data.remote.LoginRedirectDetector
 import au.edu.fireballs.stage4.di.IoDispatcher
 import com.mapbox.bindgen.ExpectedFactory
@@ -50,11 +51,16 @@ class AuthenticatedTileHttpInterceptor
         private val connectivityManager: ConnectivityManager,
         @IoDispatcher private val ioDispatcher: CoroutineDispatcher,
     ) : HttpServiceInterceptorInterface {
-        private val serverOrigin: HttpUrl = serverUrl.toHttpUrl()
+        private val serverOrigin: HttpUrl =
+            serverUrl.toHttpUrl().also { origin ->
+                if (!BuildConfig.DEBUG) {
+                    require(origin.isHttps) { "Authenticated tile server URL must use HTTPS" }
+                }
+            }
         private val localProvider = LocalFileRasterTileProvider(tileStore)
         private val scope = CoroutineScope(SupervisorJob() + ioDispatcher)
-        private val inFlight = ConcurrentHashMap<String, Job>()
-        private val inFlightCalls = ConcurrentHashMap<String, Call>()
+        private val inFlight = ConcurrentHashMap<String, MutableSet<Job>>()
+        private val inFlightCalls = ConcurrentHashMap<String, MutableSet<Call>>()
 
         var onAuthLost: () -> Unit = {}
 
@@ -78,8 +84,14 @@ class AuthenticatedTileHttpInterceptor
                     val response = fetchCandidateTile(request, tile)
                     continuation.run(HttpRequestOrResponse(response))
                 }
-            inFlight[request.url] = job
-            job.invokeOnCompletion { inFlight.remove(request.url) }
+            val jobs = inFlight.computeIfAbsent(request.url) { ConcurrentHashMap.newKeySet() }
+            jobs += job
+            job.invokeOnCompletion {
+                jobs -= job
+                if (jobs.isEmpty()) {
+                    inFlight.remove(request.url, jobs)
+                }
+            }
         }
 
         override fun onResponse(
@@ -90,8 +102,8 @@ class AuthenticatedTileHttpInterceptor
         }
 
         fun cancel(url: String) {
-            inFlight.remove(url)?.cancel()
-            inFlightCalls.remove(url)?.cancel()
+            inFlight.remove(url)?.forEach(Job::cancel)
+            inFlightCalls.remove(url)?.forEach(Call::cancel)
         }
 
         @Suppress("SwallowedException")
@@ -104,7 +116,8 @@ class AuthenticatedTileHttpInterceptor
                 return imageResponse(request, local)
             }
             val call = buildCall(request.url)
-            inFlightCalls[request.url] = call
+            val calls = inFlightCalls.computeIfAbsent(request.url) { ConcurrentHashMap.newKeySet() }
+            calls += call
             return try {
                 val response = executeCall(call)
                 processResponse(request, local, response)
@@ -113,7 +126,10 @@ class AuthenticatedTileHttpInterceptor
             } catch (e: IOException) {
                 imageResponse(request, local)
             } finally {
-                inFlightCalls.remove(request.url)
+                calls -= call
+                if (calls.isEmpty()) {
+                    inFlightCalls.remove(request.url, calls)
+                }
             }
         }
 
