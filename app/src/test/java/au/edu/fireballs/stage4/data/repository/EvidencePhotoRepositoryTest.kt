@@ -4,10 +4,13 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
+import androidx.exifinterface.media.ExifInterface
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import au.edu.fireballs.stage4.data.local.Stage4Database
 import au.edu.fireballs.stage4.data.local.dao.PendingPhotoUploadDao
+import io.mockk.coEvery
+import io.mockk.mockk
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.first
@@ -44,6 +47,7 @@ class EvidencePhotoRepositoryTest {
         dao = db.pendingPhotoUploadDao()
         repository = EvidencePhotoRepository(context, dao, testDispatcher)
         evidenceDir().deleteRecursively()
+        context.cacheDir.listFiles()?.forEach { it.delete() }
     }
 
     @After
@@ -69,6 +73,13 @@ class EvidencePhotoRepositoryTest {
             .walkTopDown()
             .filter { it.isFile && it.extension == "jpg" }
             .toList()
+
+    private suspend fun <T> suspendRunCatching(block: suspend () -> T): Result<T> =
+        try {
+            Result.success(block())
+        } catch (e: Throwable) {
+            Result.failure(e)
+        }
 
     @Test
     fun saveLocally_writesFileAndInsertsRow() =
@@ -127,7 +138,7 @@ class EvidencePhotoRepositoryTest {
             val missing = Uri.fromFile(File(context.cacheDir, "does_not_exist.jpg"))
 
             val result =
-                runCatching {
+                suspendRunCatching {
                     repository.saveLocally(missing, surveyId = 10L, inferenceResultId = 42L)
                 }
 
@@ -136,4 +147,111 @@ class EvidencePhotoRepositoryTest {
             assertTrue(rows.isEmpty())
             assertTrue(orphanJpgs().isEmpty())
         }
+
+    @Test
+    fun saveLocally_daoFailureLeavesNoOrphan() =
+        runTest(testDispatcher) {
+            val uri = writeSourceBitmap(100, 100)
+            val failingDao =
+                mockk<PendingPhotoUploadDao> {
+                    coEvery { insert(any()) } throws RuntimeException("insert failed")
+                }
+            val repo = EvidencePhotoRepository(context, failingDao, testDispatcher)
+
+            val result =
+                suspendRunCatching {
+                    repo.saveLocally(uri, surveyId = 10L, inferenceResultId = 42L)
+                }
+
+            assertTrue(result.isFailure)
+            assertTrue(orphanJpgs().isEmpty())
+        }
+
+    @Test
+    fun saveLocally_deleteSourceDeletesSourceOnSuccess() =
+        runTest(testDispatcher) {
+            val file = File(context.cacheDir, "source_delete_success.jpg")
+            Bitmap.createBitmap(100, 100, Bitmap.Config.ARGB_8888).apply {
+                file.outputStream().use { compress(Bitmap.CompressFormat.JPEG, 90, it) }
+                recycle()
+            }
+            val uri = Uri.fromFile(file)
+
+            repository.saveLocally(
+                uri,
+                surveyId = 10L,
+                inferenceResultId = 42L,
+                deleteSource = true,
+            )
+
+            assertFalse(file.exists())
+        }
+
+    @Test
+    fun saveLocally_deleteSourceDeletesSourceOnFailure() =
+        runTest(testDispatcher) {
+            val file = File(context.cacheDir, "source_delete_fail.jpg")
+            Bitmap.createBitmap(100, 100, Bitmap.Config.ARGB_8888).apply {
+                file.outputStream().use { compress(Bitmap.CompressFormat.JPEG, 90, it) }
+                recycle()
+            }
+            val uri = Uri.fromFile(file)
+            val failingDao =
+                mockk<PendingPhotoUploadDao> {
+                    coEvery { insert(any()) } throws RuntimeException("insert failed")
+                }
+            val repo = EvidencePhotoRepository(context, failingDao, testDispatcher)
+
+            val result =
+                suspendRunCatching {
+                    repo.saveLocally(
+                        uri,
+                        surveyId = 10L,
+                        inferenceResultId = 42L,
+                        deleteSource = true,
+                    )
+                }
+
+            assertTrue(result.isFailure)
+            assertFalse(file.exists())
+        }
+
+    @Test
+    fun exifOrientationMatrix_appliesAllEightOrientations() {
+        val width = 20
+        val height = 30
+        val cases =
+            mapOf(
+                ExifInterface.ORIENTATION_FLIP_HORIZONTAL to (17f to 3f),
+                ExifInterface.ORIENTATION_ROTATE_180 to (17f to 26f),
+                ExifInterface.ORIENTATION_FLIP_VERTICAL to (2f to 26f),
+                ExifInterface.ORIENTATION_TRANSPOSE to (3f to 2f),
+                ExifInterface.ORIENTATION_ROTATE_90 to (26f to 2f),
+                ExifInterface.ORIENTATION_TRANSVERSE to (26f to 17f),
+                ExifInterface.ORIENTATION_ROTATE_270 to (3f to 17f),
+            )
+        cases.forEach { (orientation, expected) ->
+            val matrix = exifOrientationMatrix(orientation, width, height)
+            val point = floatArrayOf(2f, 3f)
+            matrix.mapPoints(point)
+            assertEquals(
+                "orientation $orientation x",
+                expected.first,
+                point[0],
+                0.001f,
+            )
+            assertEquals(
+                "orientation $orientation y",
+                expected.second,
+                point[1],
+                0.001f,
+            )
+        }
+    }
+
+    @Test
+    fun exifOrientationMatrix_normalIsIdentity() {
+        val matrix = exifOrientationMatrix(ExifInterface.ORIENTATION_NORMAL, 20, 30)
+        assertTrue(matrix.isIdentity)
+    }
 }

@@ -1,9 +1,7 @@
 package au.edu.fireballs.stage4.ui.screen.candidate
 
-import android.content.ContentValues
 import android.content.Context
 import android.net.Uri
-import android.provider.MediaStore
 import android.util.Log
 import androidx.camera.core.CameraInfoUnavailableException
 import androidx.camera.core.CameraSelector
@@ -42,6 +40,7 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.coroutines.launch
+import java.io.File
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlin.coroutines.suspendCoroutine
@@ -153,19 +152,12 @@ private suspend fun captureImage(
     context: Context,
     imageCapture: ImageCapture,
 ): Uri? {
-    val contentValues =
-        ContentValues().apply {
-            put(MediaStore.Images.Media.DISPLAY_NAME, "evidence_${System.currentTimeMillis()}.jpg")
-            put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
-        }
+    val tempFile = File.createTempFile("evidence_capture_", ".jpg", context.cacheDir)
     val outputOptions =
         ImageCapture
             .OutputFileOptions
-            .Builder(
-                context.contentResolver,
-                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-                contentValues,
-            ).build()
+            .Builder(tempFile)
+            .build()
     return try {
         suspendCoroutine { continuation ->
             imageCapture.takePicture(
@@ -173,7 +165,7 @@ private suspend fun captureImage(
                 ContextCompat.getMainExecutor(context),
                 object : ImageCapture.OnImageSavedCallback {
                     override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
-                        continuation.resume(outputFileResults.savedUri)
+                        continuation.resume(Uri.fromFile(tempFile))
                     }
 
                     override fun onError(exception: ImageCaptureException) {
@@ -184,6 +176,7 @@ private suspend fun captureImage(
         }
     } catch (e: ImageCaptureException) {
         Log.w("CameraScreen", "Image capture failed", e)
+        tempFile.delete()
         null
     }
 }

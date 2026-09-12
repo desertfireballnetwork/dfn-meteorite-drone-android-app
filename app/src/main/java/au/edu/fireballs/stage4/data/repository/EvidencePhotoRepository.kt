@@ -15,7 +15,6 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
 import java.io.File
-import java.io.IOException
 import java.time.Instant
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -29,10 +28,12 @@ class EvidencePhotoRepository
         private val pendingPhotoUploadDao: PendingPhotoUploadDao,
         @IoDispatcher private val ioDispatcher: CoroutineDispatcher,
     ) {
+        @Suppress("TooGenericExceptionCaught")
         suspend fun saveLocally(
             uri: Uri,
             surveyId: Long,
             inferenceResultId: Long,
+            deleteSource: Boolean = false,
         ): PendingPhotoUploadEntity =
             withContext(ioDispatcher) {
                 val directory =
@@ -45,11 +46,11 @@ class EvidencePhotoRepository
                 val temp = File(directory, "${target.name}.tmp")
                 try {
                     val bitmap = decodeBounded(uri)
-                    val rotated = applyExifOrientation(uri, bitmap)
+                    val oriented = applyExifOrientation(uri, bitmap)
                     temp.outputStream().use { stream ->
-                        rotated.compress(Bitmap.CompressFormat.JPEG, 85, stream)
+                        oriented.compress(Bitmap.CompressFormat.JPEG, 85, stream)
                     }
-                    if (!rotated.isRecycled) rotated.recycle()
+                    if (!oriented.isRecycled) oriented.recycle()
                     if (!temp.renameTo(target)) {
                         temp.copyTo(target, overwrite = true)
                         temp.delete()
@@ -63,14 +64,12 @@ class EvidencePhotoRepository
                             uploaded = false,
                         )
                     val rowId = pendingPhotoUploadDao.insert(row)
+                    if (deleteSource) deleteSourceFile(uri)
                     row.copy(rowId = rowId)
-                } catch (e: IOException) {
+                } catch (e: Exception) {
                     temp.delete()
                     target.delete()
-                    throw e
-                } catch (e: IllegalStateException) {
-                    temp.delete()
-                    target.delete()
+                    if (deleteSource) deleteSourceFile(uri)
                     throw e
                 }
             }
@@ -85,6 +84,14 @@ class EvidencePhotoRepository
             serverPhotoId: Long,
         ) {
             pendingPhotoUploadDao.markUploaded(rowId, serverPhotoId)
+        }
+
+        private fun deleteSourceFile(uri: Uri) {
+            if (uri.scheme == "file") {
+                File(uri.path ?: return).delete()
+            } else {
+                context.contentResolver.delete(uri, null, null)
+            }
         }
 
         private suspend fun decodeBounded(uri: Uri): Bitmap {
@@ -141,16 +148,14 @@ class EvidencePhotoRepository
                             ExifInterface.ORIENTATION_NORMAL,
                         )
                 } ?: ExifInterface.ORIENTATION_NORMAL
-            val degrees =
-                when (orientation) {
-                    ExifInterface.ORIENTATION_ROTATE_90 -> 90f
-                    ExifInterface.ORIENTATION_ROTATE_180 -> 180f
-                    ExifInterface.ORIENTATION_ROTATE_270 -> 270f
-                    else -> 0f
-                }
-            if (degrees == 0f) return bitmap
-            val matrix = Matrix().apply { postRotate(degrees) }
-            val rotated =
+            val matrix =
+                exifOrientationMatrix(
+                    orientation,
+                    bitmap.width,
+                    bitmap.height,
+                )
+            if (matrix.isIdentity) return bitmap
+            val transformed =
                 Bitmap.createBitmap(
                     bitmap,
                     0,
@@ -160,11 +165,51 @@ class EvidencePhotoRepository
                     matrix,
                     true,
                 )
-            if (rotated != bitmap) bitmap.recycle()
-            return rotated
+            if (transformed != bitmap) bitmap.recycle()
+            return transformed
         }
 
         private companion object {
             const val MAX_EDGE = 2048
         }
     }
+
+internal fun exifOrientationMatrix(
+    orientation: Int,
+    width: Int,
+    height: Int,
+): Matrix {
+    val matrix = Matrix()
+    when (orientation) {
+        ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> {
+            matrix.setScale(-1f, 1f)
+            matrix.postTranslate((width - 1).toFloat(), 0f)
+        }
+        ExifInterface.ORIENTATION_ROTATE_180 -> {
+            matrix.setRotate(180f)
+            matrix.postTranslate((width - 1).toFloat(), (height - 1).toFloat())
+        }
+        ExifInterface.ORIENTATION_FLIP_VERTICAL -> {
+            matrix.setScale(1f, -1f)
+            matrix.postTranslate(0f, (height - 1).toFloat())
+        }
+        ExifInterface.ORIENTATION_TRANSPOSE -> {
+            matrix.setRotate(90f)
+            matrix.postScale(-1f, 1f)
+        }
+        ExifInterface.ORIENTATION_ROTATE_90 -> {
+            matrix.setRotate(90f)
+            matrix.postTranslate((height - 1).toFloat(), 0f)
+        }
+        ExifInterface.ORIENTATION_TRANSVERSE -> {
+            matrix.setRotate(270f)
+            matrix.postScale(-1f, 1f)
+            matrix.postTranslate((height - 1).toFloat(), (width - 1).toFloat())
+        }
+        ExifInterface.ORIENTATION_ROTATE_270 -> {
+            matrix.setRotate(270f)
+            matrix.postTranslate(0f, (width - 1).toFloat())
+        }
+    }
+    return matrix
+}

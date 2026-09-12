@@ -164,20 +164,24 @@ class CandidateViewModel
         }
 
         fun onPhotoCaptured(uri: Uri) {
-            savePhotoLocally(uri)
+            savePhotoLocally(uri, deleteSource = true)
         }
 
         fun onPhotoPicked(uri: Uri) {
             savePhotoLocally(uri)
         }
 
-        private fun savePhotoLocally(uri: Uri) {
+        private fun savePhotoLocally(
+            uri: Uri,
+            deleteSource: Boolean = false,
+        ) {
             val state = _uiState.value ?: return
             viewModelScope.launch {
                 evidencePhotoRepository.saveLocally(
                     uri = uri,
                     surveyId = state.surveyId,
                     inferenceResultId = state.candidate.inferenceResultId,
+                    deleteSource = deleteSource,
                 )
             }
         }
