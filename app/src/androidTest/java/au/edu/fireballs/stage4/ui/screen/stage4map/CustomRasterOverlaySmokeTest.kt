@@ -5,8 +5,6 @@ import android.view.ViewGroup
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
-import au.edu.fireballs.stage4.data.tiles.LocalFileRasterTileProvider
-import au.edu.fireballs.stage4.data.tiles.TileStore
 import au.edu.fireballs.stage4.domain.model.Stage4State
 import au.edu.fireballs.stage4.domain.model.Stage4Survey
 import com.mapbox.maps.MapView
@@ -15,7 +13,6 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
-import java.nio.file.Files
 
 class CustomRasterOverlaySmokeTest {
     @get:Rule
@@ -31,7 +28,7 @@ class CustomRasterOverlaySmokeTest {
                 layerToggleState = LayerToggleState(),
                 onMarkerClick = {},
                 candidateId = 2L,
-                tileStore = null,
+                tileUrlPattern = null,
             )
         }
         composeRule.waitForIdle()
@@ -39,9 +36,7 @@ class CustomRasterOverlaySmokeTest {
     }
 
     @Test
-    fun customRasterOverlay_withTiles_installsSourceAndLayer() {
-        val store = TileStore(Files.createTempDirectory("tiles").toFile())
-        store.write(1L, 2L, 0, 0, 0, LocalFileRasterTileProvider.TRANSPARENT_PNG)
+    fun customRasterOverlay_withUrl_installsSourceAndLayer() {
         composeRule.setContent {
             MapHost(
                 mapViewportState = rememberMapViewportState(),
@@ -50,7 +45,8 @@ class CustomRasterOverlaySmokeTest {
                 layerToggleState = LayerToggleState(),
                 onMarkerClick = {},
                 candidateId = 2L,
-                tileStore = store,
+                tileUrlPattern =
+                    "https://find.gfo.rocks/image_geotiff_candidate_tile/1/2/{z}/{x}/{y}/",
             )
         }
         composeRule.waitForIdle()
@@ -65,7 +61,7 @@ class CustomRasterOverlaySmokeTest {
             var installed = false
             composeRule.runOnUiThread {
                 val hasSource = map?.styleSources?.any { it.type == "raster" } == true
-                val hasLayer = map?.styleLayerExists("custom_raster_layer") == true
+                val hasLayer = map?.styleLayerExists("custom_raster_layer_1_2") == true
                 installed = hasSource && hasLayer
             }
             installed
@@ -77,7 +73,7 @@ class CustomRasterOverlaySmokeTest {
             )
             assertTrue(
                 "custom_raster_layer should be installed",
-                map?.styleLayerExists("custom_raster_layer") == true,
+                map?.styleLayerExists("custom_raster_layer_1_2") == true,
             )
         }
     }

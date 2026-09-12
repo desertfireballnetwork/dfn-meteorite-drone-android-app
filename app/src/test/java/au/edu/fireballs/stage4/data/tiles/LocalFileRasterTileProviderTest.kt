@@ -47,6 +47,15 @@ class LocalFileRasterTileProviderTest {
     }
 
     @Test
+    fun largeTileWithinBoundsIsReturned() {
+        val store = tempStore()
+        val bytes = ByteArray(100 * 1024) { 7 }
+        store.write(1, 2, 3, 4, 5, bytes)
+        val provider = LocalFileRasterTileProvider(store)
+        assertArrayEquals(bytes, provider.tile(1, 2, 3, 4, 5))
+    }
+
+    @Test
     fun oversizedTileFallsBackToTransparent() {
         val store = tempStore()
         val file = java.io.File(store.surveyTilesDirectory(1), "2/3/4/5.png")

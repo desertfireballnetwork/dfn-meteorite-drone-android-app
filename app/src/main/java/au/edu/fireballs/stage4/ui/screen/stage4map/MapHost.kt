@@ -4,7 +4,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
-import au.edu.fireballs.stage4.data.tiles.TileStore
 import au.edu.fireballs.stage4.domain.model.Stage4Candidate
 import au.edu.fireballs.stage4.domain.model.Stage4State
 import au.edu.fireballs.stage4.ui.screen.stage4map.marker.CandidateMarkers
@@ -30,7 +29,7 @@ internal fun MapHost(
     layerToggleState: LayerToggleState,
     onMarkerClick: (Stage4Candidate) -> Unit,
     candidateId: Long? = null,
-    tileStore: TileStore? = null,
+    tileUrlPattern: String? = null,
 ) {
     val styleState =
         rememberStyleState {
@@ -67,7 +66,7 @@ internal fun MapHost(
         CustomRasterOverlay(
             surveyId = state.survey.id,
             candidateId = candidateId,
-            tileStore = tileStore,
+            tileUrlPattern = tileUrlPattern,
         )
     }
 }
