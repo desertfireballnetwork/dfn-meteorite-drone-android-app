@@ -5,9 +5,14 @@ import retrofit2.Response
 import java.net.HttpURLConnection
 
 object LoginRedirectDetector {
-    fun isLoginRedirect(response: Response<*>): Boolean {
-        val requestUrl = response.raw().request.url
-        var current = response.raw()
+    fun isLoginRedirect(response: Response<*>): Boolean = isLoginRedirect(response.raw())
+
+    fun isLoginRedirect(response: okhttp3.Response): Boolean {
+        val requestUrl = response.request.url
+        if (requestUrl.encodedPath.contains("login", ignoreCase = true)) {
+            return true
+        }
+        var current = response
         while (true) {
             if (current.code == HttpURLConnection.HTTP_MOVED_TEMP) {
                 val location = current.header("Location")

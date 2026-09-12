@@ -10,6 +10,7 @@ import au.edu.fireballs.stage4.domain.model.GeoCoordinate
 import au.edu.fireballs.stage4.domain.model.ImageDims
 import au.edu.fireballs.stage4.domain.model.Stage4Candidate
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -45,12 +46,18 @@ class CandidateMapTest {
         assertEquals("candidate_raster_tiles", CandidateMapDefaults.SOURCE_KEY)
         assertEquals("candidate-tiles", CandidateMapDefaults.LAYER_ID)
         assertEquals(128L, CandidateMapDefaults.TILE_SIZE)
-        assertEquals(15L, CandidateMapDefaults.MIN_ZOOM)
-        assertEquals(25L, CandidateMapDefaults.MAX_ZOOM)
+        assertEquals(20L, CandidateMapDefaults.MIN_ZOOM)
+        assertEquals(22L, CandidateMapDefaults.MAX_ZOOM)
         assertEquals(24.0, CandidateMapDefaults.CANDIDATE_ZOOM, 0.001)
         assertEquals(25.0, CandidateMapDefaults.MAX_CAMERA_ZOOM, 0.001)
         assertEquals("candidate-map-root", CandidateMapDefaults.ROOT_TAG)
         assertEquals("candidate-map-marker", CandidateMapDefaults.MARKER_TAG)
+    }
+
+    @Test
+    fun sourceAndLayerKeys_areCandidateSpecific() {
+        assertNotEquals(CandidateMapDefaults.sourceKey(42L), CandidateMapDefaults.sourceKey(43L))
+        assertNotEquals(CandidateMapDefaults.layerId(42L), CandidateMapDefaults.layerId(43L))
     }
 
     @Test

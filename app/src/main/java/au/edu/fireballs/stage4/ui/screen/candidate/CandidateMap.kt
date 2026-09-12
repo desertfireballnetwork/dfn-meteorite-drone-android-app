@@ -92,15 +92,17 @@ fun CandidateMap(
         }
 
         if (tileUrlPattern.isNotEmpty()) {
+            val sourceKey = CandidateMapDefaults.sourceKey(candidate.inferenceResultId)
+            val layerId = CandidateMapDefaults.layerId(candidate.inferenceResultId)
             val sourceState =
-                rememberRasterSourceState(key = CandidateMapDefaults.SOURCE_KEY) {
+                rememberRasterSourceState(key = sourceKey) {
                     tiles = StringListValue(listOf(tileUrlPattern))
                     scheme = SchemeValue.TMS
                     tileSize = LongValue(CandidateMapDefaults.TILE_SIZE)
                     minZoom = LongValue(CandidateMapDefaults.MIN_ZOOM)
                     maxZoom = LongValue(CandidateMapDefaults.MAX_ZOOM)
                 }
-            RasterLayer(sourceState, CandidateMapDefaults.LAYER_ID)
+            RasterLayer(sourceState, layerId)
         }
 
         if (centroid != null) {
