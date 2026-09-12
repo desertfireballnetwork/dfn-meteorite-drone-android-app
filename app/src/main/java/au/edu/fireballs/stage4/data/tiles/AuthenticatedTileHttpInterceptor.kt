@@ -271,9 +271,16 @@ class AuthenticatedTileHttpInterceptor
             }
             val surveyId = normalized[1].toLongOrNull() ?: return null
             val candidateId = normalized[2].toLongOrNull() ?: return null
-            val z = normalized[3].toIntOrNull() ?: return null
-            val x = normalized[4].toIntOrNull() ?: return null
-            val y = normalized[5].toIntOrNull() ?: return null
+            val z =
+                normalized[3].toIntOrNull()?.takeIf { it in MIN_TILE_ZOOM..MAX_TILE_ZOOM }
+                    ?: return null
+            val coordinateLimit = 1 shl z
+            val x =
+                normalized[4].toIntOrNull()?.takeIf { it in 0 until coordinateLimit }
+                    ?: return null
+            val y =
+                normalized[5].toIntOrNull()?.takeIf { it in 0 until coordinateLimit }
+                    ?: return null
             return CandidateTile(surveyId, candidateId, z, x, y)
         }
 
@@ -301,6 +308,8 @@ class AuthenticatedTileHttpInterceptor
 
         companion object {
             private const val CANDIDATE_TILE_PATH = "image_geotiff_candidate_tile"
+            private const val MIN_TILE_ZOOM = 20
+            private const val MAX_TILE_ZOOM = 22
             private const val READ_BUFFER_BYTES = 8 * 1024
             private val PNG_SIGNATURE =
                 byteArrayOf(

@@ -9,6 +9,8 @@ import com.mapbox.maps.extension.compose.style.sources.generated.SchemeValue
 import com.mapbox.maps.extension.compose.style.sources.generated.rememberRasterSourceState
 
 private const val TILE_SIZE = 128L
+private const val MIN_ZOOM = 20L
+private const val MAX_ZOOM = 22L
 
 @Composable
 fun CustomRasterOverlay(
@@ -29,6 +31,8 @@ fun CustomRasterOverlay(
                 tiles = StringListValue(listOf(tileUrlPattern))
                 tileSize = LongValue(TILE_SIZE)
                 scheme = SchemeValue.TMS
+                minZoom = LongValue(MIN_ZOOM)
+                maxZoom = LongValue(MAX_ZOOM)
             }
 
         RasterLayer(sourceState, layerId) {

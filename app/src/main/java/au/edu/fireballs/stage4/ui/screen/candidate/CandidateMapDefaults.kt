@@ -7,8 +7,8 @@ object CandidateMapDefaults {
     const val SOURCE_KEY = "candidate_raster_tiles"
     const val LAYER_ID = "candidate-tiles"
     const val TILE_SIZE = 128L
-    const val MIN_ZOOM = 15L
-    const val MAX_ZOOM = 25L
+    const val MIN_ZOOM = 20L
+    const val MAX_ZOOM = 22L
     const val ROOT_TAG = "candidate-map-root"
     const val MARKER_TAG = "candidate-map-marker"
 

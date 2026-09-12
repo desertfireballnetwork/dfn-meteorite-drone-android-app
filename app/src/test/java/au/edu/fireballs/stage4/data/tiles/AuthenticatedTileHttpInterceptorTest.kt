@@ -68,6 +68,22 @@ class AuthenticatedTileHttpInterceptorTest {
     }
 
     @Test
+    fun outOfRangeZoomIsPassedThroughUnchanged() {
+        val url = server.url("/image_geotiff_candidate_tile/1/2/19/100/50/").toString()
+        val result = onRequest(url)
+        assertTrue(result.isHttpRequest())
+        assertEquals(url, result.getHttpRequest().getUrl())
+    }
+
+    @Test
+    fun outOfRangeCoordinateIsPassedThroughUnchanged() {
+        val url = server.url("/image_geotiff_candidate_tile/1/2/20/2000000/50/").toString()
+        val result = onRequest(url)
+        assertTrue(result.isHttpRequest())
+        assertEquals(url, result.getHttpRequest().getUrl())
+    }
+
+    @Test
     fun matching200PngCarriesSessionCookie() {
         val buffer = okio.Buffer()
         buffer.write(LocalFileRasterTileProvider.TRANSPARENT_PNG)
