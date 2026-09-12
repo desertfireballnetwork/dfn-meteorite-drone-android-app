@@ -404,8 +404,9 @@ class PreDownloadOrchestrator(
         try {
             val response =
                 tileService.getCandidateTile(surveyId, candidateId, tile.z, tile.x, tile.y)
-            if (response.isSuccessful && response.body() != null) {
-                val bytes = response.body()!!.bytes()
+            val body = response.body()
+            if (response.isSuccessful && body != null && body.contentLength() <= MAX_TILE_BYTES) {
+                val bytes = body.bytes()
                 tileStore.write(surveyId, candidateId, tile.z, tile.x, tile.y, bytes)
                 true
             } else {
@@ -461,8 +462,9 @@ class PreDownloadOrchestrator(
     ): Boolean =
         try {
             val response = tileService.getCandidateCrop(candidateId)
-            if (response.isSuccessful && response.body() != null) {
-                val bytes = response.body()!!.bytes()
+            val body = response.body()
+            if (response.isSuccessful && body != null && body.contentLength() <= MAX_CROP_BYTES) {
+                val bytes = body.bytes()
                 val file = File(filesDir, "$CROP_DIR/$surveyId/$candidateId.jpg")
                 file.parentFile?.mkdirs()
                 file.writeBytes(bytes)
@@ -551,6 +553,8 @@ class PreDownloadOrchestrator(
         private const val TILE_MAX_ZOOM = 22
         private const val TILE_CONCURRENCY = 6
         private const val MAX_TILE_ATTEMPTS = 3
+        private const val MAX_TILE_BYTES = 1_048_576
+        private const val MAX_CROP_BYTES = 2_097_152
         private const val EARTH_RADIUS_METERS = 6_371_000.0
         private const val MB_PER_CANDIDATE = 1.1
         private const val MB_PER_SATELLITE_REGION = 50.0
