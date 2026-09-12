@@ -152,6 +152,7 @@ dependencies {
     implementation(libs.play.services.location)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.security.crypto)
+    implementation(libs.androidx.exifinterface)
     implementation(libs.mapbox.maps.android)
     implementation(libs.maps.compose)
 

@@ -1,5 +1,6 @@
 package au.edu.fireballs.stage4.ui.screen.candidate
 
+import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -8,7 +9,11 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Button
@@ -37,10 +42,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.font.FontWeight
@@ -50,11 +57,14 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.zIndex
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import au.edu.fireballs.stage4.data.local.PendingPhotoUploadEntity
 import au.edu.fireballs.stage4.domain.model.DetectionTag
 import au.edu.fireballs.stage4.domain.model.GeoCoordinate
 import au.edu.fireballs.stage4.domain.model.Stage4Candidate
 import au.edu.fireballs.stage4.ui.theme.dfnMarkerNo
 import au.edu.fireballs.stage4.ui.theme.dfnMarkerYes
+import coil.compose.AsyncImage
+import java.io.File
 import java.util.Locale
 import kotlin.math.abs
 
@@ -97,6 +107,7 @@ fun CandidateModal(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val verdict by viewModel.verdict.collectAsStateWithLifecycle()
     val detectionTagId by viewModel.detectionTagId.collectAsStateWithLifecycle()
+    val photoGallery by viewModel.photoGalleryState.collectAsStateWithLifecycle()
 
     CandidateModal(
         candidate = candidate,
@@ -110,6 +121,9 @@ fun CandidateModal(
         detectionTags = detectionTags,
         onVerdict = viewModel::submitVerdict,
         onClearVerdict = viewModel::clearVerdict,
+        photos = photoGallery,
+        onPhotoCaptured = viewModel::onPhotoCaptured,
+        onPhotoPicked = viewModel::onPhotoPicked,
     )
 }
 
@@ -126,6 +140,9 @@ fun CandidateModal(
     detectionTags: List<DetectionTag> = emptyList(),
     onVerdict: (Boolean, Long?) -> Unit = { _, _ -> },
     onClearVerdict: () -> Unit = {},
+    photos: List<PendingPhotoUploadEntity> = emptyList(),
+    onPhotoCaptured: (Uri) -> Unit = {},
+    onPhotoPicked: (Uri) -> Unit = {},
 ) {
     val activeCandidate = uiState?.candidate ?: candidate
     val currentMode = uiState?.viewMode ?: CandidateViewMode.MAP
@@ -200,18 +217,116 @@ fun CandidateModal(
                     )
                 }
 
-                CandidateVerdictBar(
-                    verdict = verdict,
-                    detectionTagId = detectionTagId,
-                    detectionTags = detectionTags,
-                    onVerdict = onVerdict,
-                    onClearVerdict = onClearVerdict,
+                Column(
                     modifier =
                         Modifier
                             .zIndex(2f)
                             .align(Alignment.BottomCenter)
                             .fillMaxWidth(),
+                ) {
+                    PhotoGallery(
+                        photos = photos,
+                        onPhotoCaptured = onPhotoCaptured,
+                        onPhotoPicked = onPhotoPicked,
+                    )
+                    CandidateVerdictBar(
+                        verdict = verdict,
+                        detectionTagId = detectionTagId,
+                        detectionTags = detectionTags,
+                        onVerdict = onVerdict,
+                        onClearVerdict = onClearVerdict,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PhotoGallery(
+    photos: List<PendingPhotoUploadEntity>,
+    onPhotoCaptured: (Uri) -> Unit,
+    onPhotoPicked: (Uri) -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        tonalElevation = 2.dp,
+    ) {
+        var showCamera by remember { mutableStateOf(false) }
+        Column(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                val cameraPermission = rememberCameraPermission()
+                val galleryPicker = rememberGalleryPicker(onImagePicked = onPhotoPicked)
+                PhotoCaptureButton(
+                    onClick = {
+                        if (cameraPermission.granted) {
+                            showCamera = true
+                        } else {
+                            cameraPermission.request()
+                        }
+                    },
                 )
+                OutlinedButton(
+                    onClick = { galleryPicker.launch() },
+                    modifier = Modifier.testTag("gallery-pick-button"),
+                ) {
+                    Text("Pick from gallery")
+                }
+                if (cameraPermission.showDenied) {
+                    Text(
+                        text = "Camera permission needed to take photos",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    TextButton(onClick = { cameraPermission.dismissDenied() }) {
+                        Text("Dismiss")
+                    }
+                }
+            }
+            if (showCamera) {
+                CameraScreen(
+                    onCapture = { uri ->
+                        showCamera = false
+                        onPhotoCaptured(uri)
+                    },
+                    onCancel = { showCamera = false },
+                )
+            }
+            if (photos.isEmpty()) {
+                Text(
+                    text = "No photos yet",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.testTag("photo-gallery-empty"),
+                )
+            } else {
+                LazyRow(
+                    modifier = Modifier.fillMaxWidth().testTag("photo-gallery"),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    items(photos, key = { it.rowId }) { photo ->
+                        AsyncImage(
+                            model = File(photo.localFilePath),
+                            contentDescription = "Evidence photo",
+                            contentScale = ContentScale.Crop,
+                            modifier =
+                                Modifier
+                                    .size(72.dp)
+                                    .clip(RoundedCornerShape(8.dp)),
+                        )
+                    }
+                }
             }
         }
     }
