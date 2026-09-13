@@ -56,6 +56,7 @@ fun CameraScreen(
     val imageCapture = remember { ImageCapture.Builder().build() }
     val scope = rememberCoroutineScope()
     var cameraError by remember { mutableStateOf(false) }
+    var captureCancelled by remember { mutableStateOf(false) }
 
     DisposableEffect(lifecycleOwner) {
         val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
@@ -126,7 +127,10 @@ fun CameraScreen(
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
                     OutlinedButton(
-                        onClick = onCancel,
+                        onClick = {
+                            captureCancelled = true
+                            onCancel()
+                        },
                         modifier = Modifier.weight(1f).testTag("camera-cancel"),
                     ) {
                         Text("Cancel")
@@ -135,7 +139,8 @@ fun CameraScreen(
                         onClick = {
                             scope.launch {
                                 val uri = captureImage(context, imageCapture)
-                                if (uri != null) onCapture(uri)
+                                val result = resolveCaptureResult(uri, captureCancelled)
+                                if (result != null) onCapture(result)
                             }
                         },
                         modifier = Modifier.weight(1f).testTag("camera-capture"),
@@ -179,4 +184,15 @@ private suspend fun captureImage(
         tempFile.delete()
         null
     }
+}
+
+internal fun resolveCaptureResult(
+    uri: Uri?,
+    cancelled: Boolean,
+): Uri? {
+    if (uri == null || cancelled) {
+        if (uri != null) File(uri.path.orEmpty()).delete()
+        return null
+    }
+    return uri
 }

@@ -244,7 +244,7 @@ fun CandidateModal(
 }
 
 @Composable
-private fun PhotoGallery(
+internal fun PhotoGallery(
     photos: List<PendingPhotoUploadEntity>,
     onPhotoCaptured: (Uri) -> Unit,
     onPhotoPicked: (Uri) -> Unit,
@@ -254,6 +254,14 @@ private fun PhotoGallery(
         tonalElevation = 2.dp,
     ) {
         var showCamera by remember { mutableStateOf(false) }
+        var pendingCameraOpen by remember { mutableStateOf(false) }
+        val cameraPermission = rememberCameraPermission()
+        LaunchedEffect(cameraPermission.granted) {
+            if (cameraPermission.granted && pendingCameraOpen) {
+                pendingCameraOpen = false
+                showCamera = true
+            }
+        }
         Column(
             modifier =
                 Modifier
@@ -266,13 +274,13 @@ private fun PhotoGallery(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                val cameraPermission = rememberCameraPermission()
                 val galleryPicker = rememberGalleryPicker(onImagePicked = onPhotoPicked)
                 PhotoCaptureButton(
                     onClick = {
                         if (cameraPermission.granted) {
                             showCamera = true
                         } else {
+                            pendingCameraOpen = true
                             cameraPermission.request()
                         }
                     },

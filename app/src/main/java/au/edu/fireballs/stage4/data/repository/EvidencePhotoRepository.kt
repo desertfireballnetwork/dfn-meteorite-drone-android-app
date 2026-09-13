@@ -88,7 +88,11 @@ class EvidencePhotoRepository
 
         private fun deleteSourceFile(uri: Uri) {
             if (uri.scheme == "file") {
-                File(uri.path ?: return).delete()
+                val file = File(uri.path ?: return)
+                val captureDir = context.cacheDir.canonicalFile
+                if (file.parentFile?.canonicalFile?.startsWith(captureDir) == true) {
+                    file.delete()
+                }
             } else {
                 context.contentResolver.delete(uri, null, null)
             }
