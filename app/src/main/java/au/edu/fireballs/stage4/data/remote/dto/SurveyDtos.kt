@@ -136,10 +136,3 @@ data class ReleaseResponseDto(
 data class ListClaimsResponseDto(
     @Json(name = "claims") val claims: List<ClaimDto>,
 )
-
-@JsonClass(generateAdapter = true)
-data class UploadEvidenceResponseDto(
-    @Json(name = "id") val id: Int,
-    @Json(name = "success") val success: Boolean,
-    @Json(name = "message") val message: String? = null,
-)

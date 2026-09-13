@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.work.WorkManager
 import au.edu.fireballs.stage4.ui.screen.basecamp.PreDownloadWorkManager
 import au.edu.fireballs.stage4.ui.screen.basecamp.WorkManagerPreDownloadWorkManager
+import au.edu.fireballs.stage4.ui.screen.stage4map.SyncWorkManager
+import au.edu.fireballs.stage4.ui.screen.stage4map.WorkManagerSyncWorkManager
 import dagger.Binds
 import dagger.Module
 import dagger.Provides
@@ -20,6 +22,10 @@ abstract class WorkManagerModule {
     abstract fun bindPreDownloadWorkManager(
         impl: WorkManagerPreDownloadWorkManager,
     ): PreDownloadWorkManager
+
+    @Binds
+    @Singleton
+    abstract fun bindSyncWorkManager(impl: WorkManagerSyncWorkManager): SyncWorkManager
 
     companion object {
         @Provides

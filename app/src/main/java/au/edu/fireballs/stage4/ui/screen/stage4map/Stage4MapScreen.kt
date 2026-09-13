@@ -42,6 +42,7 @@ fun Stage4MapScreen(
     viewModel: Stage4MapViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val syncStatus by viewModel.syncStatus.collectAsStateWithLifecycle()
     val mapViewportState = rememberMapViewportState()
     val locationPermission = rememberLocationPermission()
     var positionedSurveyId by rememberSaveable { mutableStateOf<Long?>(null) }
@@ -82,8 +83,10 @@ fun Stage4MapScreen(
                 mapViewportState = mapViewportState,
                 locationPermission = locationPermission,
                 surveyPositioned = positionedSurveyId == state.state.survey.id,
+                syncStatus = syncStatus,
                 onSurveyPositioned = { positionedSurveyId = state.state.survey.id },
                 onToggleLayer = viewModel::toggleLayer,
+                onSync = viewModel::syncNow,
                 onMarkerClick = { selectedCandidateId = it.inferenceResultId },
                 tileUrlPattern =
                     selectedCandidateId?.let {
@@ -148,10 +151,12 @@ private fun LoadedMap(
     mapViewportState: MapViewportState,
     locationPermission: LocationPermissionUiState,
     surveyPositioned: Boolean,
+    syncStatus: SyncStatus,
     tileUrlPattern: String?,
     candidateId: Long?,
     onSurveyPositioned: () -> Unit,
     onToggleLayer: (LayerType, Boolean) -> Unit,
+    onSync: () -> Unit,
     onMarkerClick: (Stage4Candidate) -> Unit,
 ) {
     val context = LocalContext.current
@@ -207,6 +212,8 @@ private fun LoadedMap(
             locating = locating,
             locationMessage = locationMessage,
             locationServicesDisabled = locationServicesDisabled,
+            syncStatus = syncStatus,
+            onSync = onSync,
             onDismissMessage = {
                 locationMessage = null
                 locationServicesDisabled = false

@@ -153,6 +153,7 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.security.crypto)
     implementation(libs.androidx.exifinterface)
+    implementation(libs.androidx.datastore.preferences)
     implementation(libs.mapbox.maps.android)
     implementation(libs.maps.compose)
 

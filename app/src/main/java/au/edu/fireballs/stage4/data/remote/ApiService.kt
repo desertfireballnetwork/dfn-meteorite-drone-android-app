@@ -6,7 +6,6 @@ import au.edu.fireballs.stage4.data.remote.dto.ListClaimsResponseDto
 import au.edu.fireballs.stage4.data.remote.dto.ReleaseRequestDto
 import au.edu.fireballs.stage4.data.remote.dto.ReleaseResponseDto
 import au.edu.fireballs.stage4.data.remote.dto.SurveyListResponseDto
-import au.edu.fireballs.stage4.data.remote.dto.UploadEvidenceResponseDto
 import okhttp3.MultipartBody
 import okhttp3.RequestBody
 import okhttp3.ResponseBody
@@ -55,6 +54,15 @@ interface Stage4Service {
         @Field("latitude") latitude: String,
         @Field("longitude") longitude: String,
     ): Response<ResponseBody>
+
+    @FormUrlEncoded
+    @POST("survey/{survey_id}/stage4/response/")
+    suspend fun postStage4Response(
+        @Path("survey_id") surveyId: String,
+        @Field("inference_result") inferenceResult: String,
+        @Field("is_meteorite") isMeteorite: String,
+        @Field("detection_tag") detectionTagId: String?,
+    ): Response<ResponseBody>
 }
 
 interface EvidenceService {
@@ -64,6 +72,5 @@ interface EvidenceService {
         @Path("survey_id") surveyId: String,
         @Part file: MultipartBody.Part,
         @Part("inference_result_id") irId: RequestBody,
-        @Part("captured_at") capturedAt: RequestBody,
-    ): UploadEvidenceResponseDto
+    ): Response<ResponseBody>
 }
