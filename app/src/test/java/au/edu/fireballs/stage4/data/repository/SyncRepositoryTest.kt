@@ -370,9 +370,10 @@ private class FakePendingPhotoUploadDao : PendingPhotoUploadDao {
 
     override suspend fun insert(pendingPhotoUpload: PendingPhotoUploadEntity): Long = 1L
 
-    override fun getNotUploadedCount(): Flow<Int> = flowOf(0)
+    override fun getNotUploadedCount(surveyId: Long): Flow<Int> = flowOf(0)
 
-    override fun getNotUploadedFailed(): Flow<List<PendingPhotoUploadEntity>> = flowOf(emptyList())
+    override fun getNotUploadedFailed(surveyId: Long): Flow<List<PendingPhotoUploadEntity>> =
+        flowOf(emptyList())
 
     override suspend fun deleteByRowId(rowId: Long) = Unit
 
@@ -405,9 +406,10 @@ private class FakeLocalDecisionDao : LocalDecisionDao {
 
     override suspend fun saveDecision(decision: LocalDecisionEntity) = Unit
 
-    override fun getUnsyncedCount(): Flow<Int> = flowOf(0)
+    override fun getUnsyncedCount(surveyId: Long): Flow<Int> = flowOf(0)
 
-    override fun getUnsyncedFailed(): Flow<List<LocalDecisionEntity>> = flowOf(emptyList())
+    override fun getUnsyncedFailed(surveyId: Long): Flow<List<LocalDecisionEntity>> =
+        flowOf(emptyList())
 
     override suspend fun getUnsynced(): List<LocalDecisionEntity> = emptyList()
 

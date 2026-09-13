@@ -15,6 +15,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -60,9 +61,12 @@ fun SyncScreen(
     when (uiState) {
         SyncUiState.SessionExpired -> SessionExpiredContent(onSignIn, modifier)
         SyncUiState.Idle -> IdleContent(onSyncNow, modifier)
+        SyncUiState.Resuming -> ResumingContent(modifier)
         SyncUiState.Complete -> CompleteContent(onSyncNow, modifier)
-        is SyncUiState.Pending -> PendingContent(uiState.summary, onSyncNow, modifier)
-        is SyncUiState.Running -> RunningContent(uiState, onSyncNow, modifier)
+        is SyncUiState.Pending ->
+            PendingContent(uiState.summary, onSyncNow, onDeleteDecision, onDeletePhoto, modifier)
+        is SyncUiState.Running ->
+            RunningContent(uiState, onSyncNow, onDeleteDecision, onDeletePhoto, modifier)
         is SyncUiState.Failed ->
             FailedContent(uiState.summary, onSyncNow, onDeleteDecision, onDeletePhoto, modifier)
     }
@@ -95,6 +99,8 @@ private fun IdleContent(
 private fun PendingContent(
     summary: SyncSummary,
     onSyncNow: () -> Unit,
+    onDeleteDecision: (Long) -> Unit,
+    onDeletePhoto: (Long) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -109,7 +115,7 @@ private fun PendingContent(
         PendingCounts(summary)
         Spacer(Modifier.height(16.dp))
         SyncNowButton(onSyncNow)
-        FailedRowsSection(summary)
+        FailedRowsWithDelete(summary, onDeleteDecision, onDeletePhoto)
     }
 }
 
@@ -117,6 +123,8 @@ private fun PendingContent(
 private fun RunningContent(
     state: SyncUiState.Running,
     onSyncNow: () -> Unit,
+    onDeleteDecision: (Long) -> Unit,
+    onDeletePhoto: (Long) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -141,7 +149,7 @@ private fun RunningContent(
         )
         Spacer(Modifier.height(16.dp))
         SyncNowButton(onSyncNow)
-        FailedRowsSection(state.summary)
+        FailedRowsWithDelete(state.summary, onDeleteDecision, onDeletePhoto)
     }
 }
 
@@ -153,8 +161,6 @@ private fun FailedContent(
     onDeletePhoto: (Long) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var pendingDelete by remember { mutableStateOf<FailedRow?>(null) }
-
     Column(
         modifier =
             modifier
@@ -167,23 +173,25 @@ private fun FailedContent(
         PendingCounts(summary)
         Spacer(Modifier.height(16.dp))
         SyncNowButton(onSyncNow)
-        FailedRowsSection(
-            summary = summary,
-            onDelete = { pendingDelete = it },
-        )
+        FailedRowsWithDelete(summary, onDeleteDecision, onDeletePhoto)
     }
+}
 
-    pendingDelete?.let { row ->
-        DeleteConfirmationDialog(
-            row = row,
-            onConfirm = {
-                when (row.kind) {
-                    RowKind.Decision -> onDeleteDecision(row.id)
-                    RowKind.Photo -> onDeletePhoto(row.id)
-                }
-                pendingDelete = null
-            },
-            onDismiss = { pendingDelete = null },
+@Composable
+private fun ResumingContent(modifier: Modifier = Modifier) {
+    Column(
+        modifier =
+            modifier
+                .fillMaxSize()
+                .padding(16.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        CircularProgressIndicator()
+        Spacer(Modifier.height(16.dp))
+        Text(
+            text = "Resuming sync…",
+            style = MaterialTheme.typography.titleMedium,
         )
     }
 }
@@ -304,9 +312,37 @@ private fun SyncNowButton(onSyncNow: () -> Unit) {
 }
 
 @Composable
+private fun FailedRowsWithDelete(
+    summary: SyncSummary,
+    onDeleteDecision: (Long) -> Unit,
+    onDeletePhoto: (Long) -> Unit,
+) {
+    var pendingDelete by remember { mutableStateOf<FailedRow?>(null) }
+
+    FailedRowsSection(
+        summary = summary,
+        onDelete = { pendingDelete = it },
+    )
+
+    pendingDelete?.let { row ->
+        DeleteConfirmationDialog(
+            row = row,
+            onConfirm = {
+                when (row.kind) {
+                    RowKind.Decision -> onDeleteDecision(row.id)
+                    RowKind.Photo -> onDeletePhoto(row.id)
+                }
+                pendingDelete = null
+            },
+            onDismiss = { pendingDelete = null },
+        )
+    }
+}
+
+@Composable
 private fun FailedRowsSection(
     summary: SyncSummary,
-    onDelete: (FailedRow) -> Unit = {},
+    onDelete: (FailedRow) -> Unit,
 ) {
     val rows = failedRows(summary)
     if (rows.isEmpty()) {
@@ -429,7 +465,8 @@ private fun failedRows(summary: SyncSummary): List<FailedRow> {
         summary.failedPhotos.map {
             FailedRow(
                 id = it.rowId,
-                title = "Photo ${it.localFilePath.substringAfterLast('/')}",
+                title =
+                    "Photo ${it.inferenceResultId}: ${it.localFilePath.substringAfterLast('/')}",
                 reason = it.uploadFailedReason,
                 kind = RowKind.Photo,
             )

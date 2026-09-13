@@ -358,10 +358,10 @@ class RoomDaoTest {
             localDecisionDao.saveDecision(failedDecision)
             localDecisionDao.saveDecision(pendingDecision)
 
-            val unsyncedCount = localDecisionDao.getUnsyncedCount().first()
+            val unsyncedCount = localDecisionDao.getUnsyncedCount(101L).first()
             assertEquals(2, unsyncedCount)
 
-            val failed = localDecisionDao.getUnsyncedFailed().first()
+            val failed = localDecisionDao.getUnsyncedFailed(101L).first()
             assertEquals(1, failed.size)
             assertEquals(802L, failed[0].inferenceResultId)
         }
@@ -400,19 +400,82 @@ class RoomDaoTest {
             val failedRowId = pendingPhotoUploadDao.insert(failedPhoto)
             pendingPhotoUploadDao.insert(pendingPhoto)
 
-            val notUploadedCount = pendingPhotoUploadDao.getNotUploadedCount().first()
+            val notUploadedCount = pendingPhotoUploadDao.getNotUploadedCount(101L).first()
             assertEquals(2, notUploadedCount)
 
-            val failed = pendingPhotoUploadDao.getNotUploadedFailed().first()
+            val failed = pendingPhotoUploadDao.getNotUploadedFailed(101L).first()
             assertEquals(1, failed.size)
             assertEquals(failedRowId, failed[0].rowId)
 
             pendingPhotoUploadDao.deleteByRowId(failedRowId)
 
-            val notUploadedAfterDelete = pendingPhotoUploadDao.getNotUploadedCount().first()
+            val notUploadedAfterDelete = pendingPhotoUploadDao.getNotUploadedCount(101L).first()
             assertEquals(1, notUploadedAfterDelete)
 
-            val failedAfterDelete = pendingPhotoUploadDao.getNotUploadedFailed().first()
+            val failedAfterDelete = pendingPhotoUploadDao.getNotUploadedFailed(101L).first()
             assertTrue(failedAfterDelete.isEmpty())
+        }
+
+    @Test
+    fun counts_areIsolatedPerSurvey() =
+        runBlocking {
+            localDecisionDao.saveDecision(
+                LocalDecisionEntity(
+                    inferenceResultId = 901L,
+                    surveyId = 101L,
+                    verdict = true,
+                    detectionTagId = null,
+                    capturedAt = "2026-07-24T12:00:00Z",
+                    evidencePhotoRowId = null,
+                    synced = false,
+                    syncFailedReason = "Server returned code: 500",
+                ),
+            )
+            localDecisionDao.saveDecision(
+                LocalDecisionEntity(
+                    inferenceResultId = 902L,
+                    surveyId = 202L,
+                    verdict = true,
+                    detectionTagId = null,
+                    capturedAt = "2026-07-24T12:00:00Z",
+                    evidencePhotoRowId = null,
+                    synced = false,
+                    syncFailedReason = "Server returned code: 500",
+                ),
+            )
+            pendingPhotoUploadDao.insert(
+                PendingPhotoUploadEntity(
+                    surveyId = 101L,
+                    inferenceResultId = 6001L,
+                    localFilePath = "/data/evidence/101/6001/1.jpg",
+                    capturedAt = "2026-07-24T12:00:00Z",
+                    uploaded = false,
+                    uploadFailedReason = "file_missing",
+                ),
+            )
+            pendingPhotoUploadDao.insert(
+                PendingPhotoUploadEntity(
+                    surveyId = 202L,
+                    inferenceResultId = 6002L,
+                    localFilePath = "/data/evidence/202/6002/1.jpg",
+                    capturedAt = "2026-07-24T12:00:00Z",
+                    uploaded = false,
+                    uploadFailedReason = "file_missing",
+                ),
+            )
+
+            assertEquals(1, localDecisionDao.getUnsyncedCount(101L).first())
+            assertEquals(1, localDecisionDao.getUnsyncedCount(202L).first())
+            assertEquals(0, localDecisionDao.getUnsyncedCount(303L).first())
+            assertEquals(1, localDecisionDao.getUnsyncedFailed(101L).first().size)
+            assertEquals(1, localDecisionDao.getUnsyncedFailed(202L).first().size)
+            assertEquals(0, localDecisionDao.getUnsyncedFailed(303L).first().size)
+
+            assertEquals(1, pendingPhotoUploadDao.getNotUploadedCount(101L).first())
+            assertEquals(1, pendingPhotoUploadDao.getNotUploadedCount(202L).first())
+            assertEquals(0, pendingPhotoUploadDao.getNotUploadedCount(303L).first())
+            assertEquals(1, pendingPhotoUploadDao.getNotUploadedFailed(101L).first().size)
+            assertEquals(1, pendingPhotoUploadDao.getNotUploadedFailed(202L).first().size)
+            assertEquals(0, pendingPhotoUploadDao.getNotUploadedFailed(303L).first().size)
         }
 }

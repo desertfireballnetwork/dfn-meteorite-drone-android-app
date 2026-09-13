@@ -468,10 +468,15 @@ class SyncOrchestratorTest {
         override suspend fun insert(pendingPhotoUpload: PendingPhotoUploadEntity): Long =
             pendingPhotoUpload.rowId
 
-        override fun getNotUploadedCount(): Flow<Int> = flowOf(unuploaded.count { !it.uploaded })
+        override fun getNotUploadedCount(surveyId: Long): Flow<Int> =
+            flowOf(unuploaded.count { !it.uploaded && it.surveyId == surveyId })
 
-        override fun getNotUploadedFailed(): Flow<List<PendingPhotoUploadEntity>> =
-            flowOf(unuploaded.filter { !it.uploaded && it.uploadFailedReason != null })
+        override fun getNotUploadedFailed(surveyId: Long): Flow<List<PendingPhotoUploadEntity>> =
+            flowOf(
+                unuploaded.filter {
+                    !it.uploaded && it.uploadFailedReason != null && it.surveyId == surveyId
+                },
+            )
 
         override suspend fun deleteByRowId(rowId: Long) {
             unuploaded = unuploaded.filterNot { it.rowId == rowId }
@@ -526,10 +531,15 @@ class SyncOrchestratorTest {
             unsynced = unsynced + decision
         }
 
-        override fun getUnsyncedCount(): Flow<Int> = flowOf(unsynced.count { !it.synced })
+        override fun getUnsyncedCount(surveyId: Long): Flow<Int> =
+            flowOf(unsynced.count { !it.synced && it.surveyId == surveyId })
 
-        override fun getUnsyncedFailed(): Flow<List<LocalDecisionEntity>> =
-            flowOf(unsynced.filter { !it.synced && it.syncFailedReason != null })
+        override fun getUnsyncedFailed(surveyId: Long): Flow<List<LocalDecisionEntity>> =
+            flowOf(
+                unsynced.filter {
+                    !it.synced && it.syncFailedReason != null && it.surveyId == surveyId
+                },
+            )
 
         override suspend fun getUnsynced(): List<LocalDecisionEntity> = unsynced
 

@@ -11,13 +11,15 @@ interface LocalDecisionDao {
     @Upsert
     suspend fun saveDecision(decision: LocalDecisionEntity)
 
-    @Query("SELECT COUNT(*) FROM local_decision WHERE synced = 0")
-    fun getUnsyncedCount(): Flow<Int>
+    @Query(
+        "SELECT COUNT(*) FROM local_decision WHERE synced = 0 AND surveyId = :surveyId",
+    )
+    fun getUnsyncedCount(surveyId: Long): Flow<Int>
 
     @Query(
-        "SELECT * FROM local_decision WHERE synced = 0 AND syncFailedReason IS NOT NULL",
+        "SELECT * FROM local_decision WHERE synced = 0 AND syncFailedReason IS NOT NULL AND surveyId = :surveyId",
     )
-    fun getUnsyncedFailed(): Flow<List<LocalDecisionEntity>>
+    fun getUnsyncedFailed(surveyId: Long): Flow<List<LocalDecisionEntity>>
 
     @Query("SELECT * FROM local_decision WHERE synced = 0")
     suspend fun getUnsynced(): List<LocalDecisionEntity>

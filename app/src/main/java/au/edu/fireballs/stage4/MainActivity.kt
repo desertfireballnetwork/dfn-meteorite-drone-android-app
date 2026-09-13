@@ -203,6 +203,7 @@ private fun MainScaffold(
                 LoginScreen(
                     viewModel = loginViewModel,
                     onLoginSuccess = {
+                        viewModel.resumeSyncIfNeeded()
                         navController.navigate("map") {
                             popUpTo(0) { inclusive = true }
                         }

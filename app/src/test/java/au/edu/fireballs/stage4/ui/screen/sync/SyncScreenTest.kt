@@ -174,10 +174,79 @@ class SyncScreenTest {
             onDeletePhoto = { deletedRowId = it },
         )
 
-        composeRule.onNodeWithText("Photo photo_001.jpg").assertIsDisplayed()
+        composeRule.onNodeWithText("Photo 2: photo_001.jpg").assertIsDisplayed()
         composeRule.onNodeWithText("Delete").performClick()
         composeRule.onNodeWithTag("delete-confirm").performClick()
         assertEquals(7L, deletedRowId)
+    }
+
+    @Test
+    fun resumingState_showsResuming() {
+        setContent(SyncUiState.Resuming)
+        composeRule.onNodeWithText("Resuming sync…").assertIsDisplayed()
+    }
+
+    @Test
+    fun pendingState_deleteDecisionRequiresConfirmation() {
+        var deletedId: Long? = null
+        val summary =
+            emptySummary().copy(
+                pendingDecisions = 1,
+                failedDecisions = listOf(decision(id = 42L, reason = "claim_required")),
+            )
+        setContent(
+            uiState = SyncUiState.Pending(summary),
+            onDeleteDecision = { deletedId = it },
+        )
+
+        composeRule.onNodeWithText("Decision 42").assertIsDisplayed()
+        composeRule.onNodeWithText("Delete").performClick()
+        composeRule.onNodeWithTag("delete-confirm").performClick()
+        assertEquals(42L, deletedId)
+    }
+
+    @Test
+    fun pendingState_deletePhotoCallsPhotoCallback() {
+        var deletedRowId: Long? = null
+        val summary =
+            emptySummary().copy(
+                pendingPhotos = 1,
+                failedPhotos = listOf(photo(rowId = 7L, reason = "file_missing")),
+            )
+        setContent(
+            uiState = SyncUiState.Pending(summary),
+            onDeletePhoto = { deletedRowId = it },
+        )
+
+        composeRule.onNodeWithText("Photo 2: photo_001.jpg").assertIsDisplayed()
+        composeRule.onNodeWithText("Delete").performClick()
+        composeRule.onNodeWithTag("delete-confirm").performClick()
+        assertEquals(7L, deletedRowId)
+    }
+
+    @Test
+    fun runningState_deleteDecisionRequiresConfirmation() {
+        var deletedId: Long? = null
+        val summary =
+            emptySummary().copy(
+                pendingDecisions = 1,
+                failedDecisions = listOf(decision(id = 42L, reason = "claim_required")),
+            )
+        setContent(
+            uiState =
+                SyncUiState.Running(
+                    summary = summary,
+                    done = 1,
+                    total = 2,
+                    phase = null,
+                ),
+            onDeleteDecision = { deletedId = it },
+        )
+
+        composeRule.onNodeWithText("Decision 42").assertIsDisplayed()
+        composeRule.onNodeWithText("Delete").performClick()
+        composeRule.onNodeWithTag("delete-confirm").performClick()
+        assertEquals(42L, deletedId)
     }
 
     @Test

@@ -12,13 +12,16 @@ interface PendingPhotoUploadDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(pendingPhotoUpload: PendingPhotoUploadEntity): Long
 
-    @Query("SELECT COUNT(*) FROM pending_photo_upload WHERE uploaded = 0")
-    fun getNotUploadedCount(): Flow<Int>
+    @Query(
+        "SELECT COUNT(*) FROM pending_photo_upload WHERE uploaded = 0 AND surveyId = :surveyId",
+    )
+    fun getNotUploadedCount(surveyId: Long): Flow<Int>
 
     @Query(
-        "SELECT * FROM pending_photo_upload WHERE uploaded = 0 AND uploadFailedReason IS NOT NULL",
+        "SELECT * FROM pending_photo_upload WHERE uploaded = 0 " +
+            "AND uploadFailedReason IS NOT NULL AND surveyId = :surveyId",
     )
-    fun getNotUploadedFailed(): Flow<List<PendingPhotoUploadEntity>>
+    fun getNotUploadedFailed(surveyId: Long): Flow<List<PendingPhotoUploadEntity>>
 
     @Query("DELETE FROM pending_photo_upload WHERE rowId = :rowId")
     suspend fun deleteByRowId(rowId: Long)
