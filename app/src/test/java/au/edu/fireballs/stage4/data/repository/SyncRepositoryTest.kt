@@ -109,7 +109,7 @@ class SyncRepositoryTest {
                     .setBody("""{"id": 123}"""),
             )
 
-            val result = repository.uploadPhoto(pendingPhoto(file))
+            val result = repository.uploadPhoto(pendingPhoto(file), 7L)
 
             assertEquals(PhotoUploadResult.Success, result)
             assertEquals(listOf(1L to 123L), photoDao.markedUploaded)
@@ -123,7 +123,7 @@ class SyncRepositoryTest {
             val file = tempPhotoFile()
             mockWebServer.enqueue(MockResponse().setResponseCode(403))
 
-            val result = repository.uploadPhoto(pendingPhoto(file))
+            val result = repository.uploadPhoto(pendingPhoto(file), 7L)
 
             assertEquals(PhotoUploadResult.CrossCampaign, result)
             assertEquals(listOf(1L to "cross_campaign"), photoDao.markedFailed)
@@ -136,7 +136,7 @@ class SyncRepositoryTest {
         runTest(testDispatcher) {
             mockWebServer.enqueue(MockResponse().setResponseCode(200).setBody("OK"))
 
-            val result = repository.postVerdict(localDecision())
+            val result = repository.postVerdict(localDecision(), 7L)
 
             assertEquals(VerdictPostResult.Success, result)
             assertEquals(listOf(101L), decisionDao.markedSynced.map { it.first })
@@ -146,9 +146,13 @@ class SyncRepositoryTest {
     @Test
     fun `403 verdict marks decision failed claim required`() =
         runTest(testDispatcher) {
-            mockWebServer.enqueue(MockResponse().setResponseCode(403))
+            mockWebServer.enqueue(
+                MockResponse()
+                    .setResponseCode(403)
+                    .setBody("claim-required"),
+            )
 
-            val result = repository.postVerdict(localDecision())
+            val result = repository.postVerdict(localDecision(), 7L)
 
             assertEquals(VerdictPostResult.ClaimRequired, result)
             assertEquals(listOf(101L to "claim_required"), decisionDao.markedFailed)
@@ -164,11 +168,61 @@ class SyncRepositoryTest {
                     .setBody("""{"status": "already_completed"}"""),
             )
 
-            val result = repository.postVerdict(localDecision())
+            val result = repository.postVerdict(localDecision(), 7L)
 
             assertEquals(VerdictPostResult.AlreadyCompleted, result)
             assertEquals(listOf(101L), decisionDao.markedSynced.map { it.first })
             assertTrue(decisionDao.markedFailed.isEmpty())
+        }
+
+    @Test
+    fun `403 with non claim required body returns error and marks failed`() =
+        runTest(testDispatcher) {
+            mockWebServer.enqueue(
+                MockResponse()
+                    .setResponseCode(403)
+                    .setBody("Forbidden"),
+            )
+
+            val result = repository.postVerdict(localDecision(), 7L)
+
+            assertEquals(VerdictPostResult.Error("Forbidden: Forbidden"), result)
+            assertEquals(listOf(101L to "Forbidden: Forbidden"), decisionDao.markedFailed)
+            assertTrue(decisionDao.markedSynced.isEmpty())
+        }
+
+    @Test
+    fun `409 with malformed body returns error and marks failed`() =
+        runTest(testDispatcher) {
+            mockWebServer.enqueue(
+                MockResponse()
+                    .setResponseCode(409)
+                    .setBody("""{"foo": "bar"}"""),
+            )
+
+            val result = repository.postVerdict(localDecision(), 7L)
+
+            assertEquals(VerdictPostResult.Error("Conflict: {\"foo\": \"bar\"}"), result)
+            assertEquals(listOf(101L to "Conflict: {\"foo\": \"bar\"}"), decisionDao.markedFailed)
+            assertTrue(decisionDao.markedSynced.isEmpty())
+        }
+
+    @Test
+    fun `upload uses passed survey id for request route`() =
+        runTest(testDispatcher) {
+            val file = tempPhotoFile()
+            mockWebServer.enqueue(
+                MockResponse()
+                    .setResponseCode(201)
+                    .setBody("""{"id": 123}"""),
+            )
+
+            val result = repository.uploadPhoto(pendingPhoto(file), 99L)
+
+            assertEquals(PhotoUploadResult.Success, result)
+            val request = mockWebServer.takeRequest()
+            assertTrue(request.path!!.contains("/99/"))
+            file.delete()
         }
 
     @Test
@@ -177,7 +231,7 @@ class SyncRepositoryTest {
             val file = tempPhotoFile()
             mockWebServer.enqueue(MockResponse().setResponseCode(401))
 
-            val result = repository.uploadPhoto(pendingPhoto(file))
+            val result = repository.uploadPhoto(pendingPhoto(file), 7L)
 
             assertEquals(PhotoUploadResult.AuthExpired, result)
             assertTrue(photoDao.markedUploaded.isEmpty())
@@ -201,7 +255,7 @@ class SyncRepositoryTest {
                     .setBody("<html><body>Login Page</body></html>"),
             )
 
-            val result = repository.uploadPhoto(pendingPhoto(file))
+            val result = repository.uploadPhoto(pendingPhoto(file), 7L)
 
             assertEquals(PhotoUploadResult.AuthExpired, result)
             assertTrue(photoDao.markedUploaded.isEmpty())
@@ -214,7 +268,7 @@ class SyncRepositoryTest {
         runTest(testDispatcher) {
             val missing = File("/nonexistent/evidence.jpg")
 
-            val result = repository.uploadPhoto(pendingPhoto(missing))
+            val result = repository.uploadPhoto(pendingPhoto(missing), 7L)
 
             assertEquals(PhotoUploadResult.Error("file_missing"), result)
             assertTrue(photoDao.markedUploaded.isEmpty())
@@ -226,7 +280,7 @@ class SyncRepositoryTest {
         runTest(testDispatcher) {
             mockWebServer.enqueue(MockResponse().setResponseCode(401))
 
-            val result = repository.postVerdict(localDecision())
+            val result = repository.postVerdict(localDecision(), 7L)
 
             assertEquals(VerdictPostResult.AuthExpired, result)
             assertTrue(decisionDao.markedSynced.isEmpty())
@@ -241,7 +295,7 @@ class SyncRepositoryTest {
                 MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AT_START),
             )
 
-            val result = repository.uploadPhoto(pendingPhoto(file))
+            val result = repository.uploadPhoto(pendingPhoto(file), 7L)
 
             assertEquals(PhotoUploadResult.NetworkError, result)
             assertTrue(photoDao.markedUploaded.isEmpty())
@@ -256,7 +310,7 @@ class SyncRepositoryTest {
                 MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AT_START),
             )
 
-            val result = repository.postVerdict(localDecision())
+            val result = repository.postVerdict(localDecision(), 7L)
 
             assertEquals(VerdictPostResult.NetworkError, result)
             assertTrue(decisionDao.markedSynced.isEmpty())

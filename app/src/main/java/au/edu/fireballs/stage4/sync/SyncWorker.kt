@@ -28,6 +28,7 @@ class SyncWorker
             return when (outcome) {
                 is SyncOutcome.Success -> Result.success()
                 is SyncOutcome.AuthExpired -> Result.success(workDataOf(KEY_AUTH_EXPIRED to true))
+                is SyncOutcome.RetryableFailure -> Result.retry()
                 is SyncOutcome.Failure -> Result.failure()
             }
         }

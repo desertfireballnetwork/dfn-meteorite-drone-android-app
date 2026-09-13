@@ -10,6 +10,7 @@ import au.edu.fireballs.stage4.data.remote.Stage4Service
 import au.edu.fireballs.stage4.di.IoDispatcher
 import com.squareup.moshi.JsonAdapter
 import com.squareup.moshi.Moshi
+import com.squareup.moshi.Types
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -67,9 +68,20 @@ class SyncRepository
         @param:IoDispatcher private val ioDispatcher: CoroutineDispatcher,
     ) {
         private val uploadIdAdapter: JsonAdapter<UploadId> = moshi.adapter(UploadId::class.java)
+        private val conflictAdapter: JsonAdapter<Map<String, String>> =
+            moshi.adapter(
+                Types.newParameterizedType(
+                    Map::class.java,
+                    String::class.java,
+                    String::class.java,
+                ),
+            )
 
         @Suppress("TooGenericExceptionCaught", "SwallowedException")
-        suspend fun uploadPhoto(pendingPhoto: PendingPhotoUploadEntity): PhotoUploadResult =
+        suspend fun uploadPhoto(
+            pendingPhoto: PendingPhotoUploadEntity,
+            surveyId: Long,
+        ): PhotoUploadResult =
             withContext(ioDispatcher) {
                 try {
                     val file = File(pendingPhoto.localFilePath)
@@ -92,7 +104,7 @@ class SyncRepository
                             .toRequestBody("text/plain".toMediaType())
                     val response =
                         evidenceService.uploadEvidence(
-                            surveyId = pendingPhoto.surveyId.toString(),
+                            surveyId = surveyId.toString(),
                             file = filePart,
                             irId = inferenceResultId,
                         )
@@ -154,12 +166,23 @@ class SyncRepository
             }
 
         @Suppress("TooGenericExceptionCaught", "SwallowedException")
-        suspend fun postVerdict(decision: LocalDecisionEntity): VerdictPostResult =
+        private fun parseConflictStatus(body: String): String? =
+            try {
+                conflictAdapter.fromJson(body)?.get("status")
+            } catch (e: Exception) {
+                null
+            }
+
+        @Suppress("TooGenericExceptionCaught", "SwallowedException")
+        suspend fun postVerdict(
+            decision: LocalDecisionEntity,
+            surveyId: Long,
+        ): VerdictPostResult =
             withContext(ioDispatcher) {
                 try {
                     val response =
                         stage4Service.postStage4Response(
-                            surveyId = decision.surveyId.toString(),
+                            surveyId = surveyId.toString(),
                             inferenceResult = decision.inferenceResultId.toString(),
                             isMeteorite = if (decision.verdict) "true" else "false",
                             detectionTagId = decision.detectionTagId?.toString(),
@@ -175,15 +198,25 @@ class SyncRepository
                             VerdictPostResult.Success
                         }
                         response.code() == HttpURLConnection.HTTP_FORBIDDEN -> {
-                            localDecisionDao.markFailed(
-                                decision.inferenceResultId,
-                                REASON_CLAIM_REQUIRED,
-                            )
-                            VerdictPostResult.ClaimRequired
+                            val body = response.errorBody()?.string().orEmpty()
+                            if (body.trim() == CLAIM_REQUIRED_BODY) {
+                                localDecisionDao.markFailed(
+                                    decision.inferenceResultId,
+                                    REASON_CLAIM_REQUIRED,
+                                )
+                                VerdictPostResult.ClaimRequired
+                            } else {
+                                localDecisionDao.markFailed(
+                                    decision.inferenceResultId,
+                                    "Forbidden: $body",
+                                )
+                                VerdictPostResult.Error("Forbidden: $body")
+                            }
                         }
                         response.code() == HttpURLConnection.HTTP_CONFLICT -> {
                             val body = response.errorBody()?.string().orEmpty()
-                            if (body.contains("already_completed")) {
+                            val status = parseConflictStatus(body)
+                            if (status == STATUS_ALREADY_COMPLETED) {
                                 localDecisionDao.markSynced(
                                     decision.inferenceResultId,
                                     Instant.now().toString(),
@@ -233,7 +266,9 @@ class SyncRepository
         private companion object {
             const val REASON_CROSS_CAMPAIGN = "cross_campaign"
             const val REASON_CLAIM_REQUIRED = "claim_required"
+            const val CLAIM_REQUIRED_BODY = "claim-required"
             const val REASON_FILE_MISSING = "file_missing"
+            const val STATUS_ALREADY_COMPLETED = "already_completed"
         }
     }
 

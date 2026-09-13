@@ -21,6 +21,8 @@ sealed interface SyncOutcome {
 
     data object AuthExpired : SyncOutcome
 
+    data object RetryableFailure : SyncOutcome
+
     data class Failure(
         val message: String,
     ) : SyncOutcome
@@ -83,11 +85,12 @@ class SyncOrchestrator
             val pending =
                 pendingPhotoUploadDao
                     .getUnuploaded()
-                    .filter { it.surveyId == surveyId && it.inferenceResultId in eligible }
+                    .filter { it.inferenceResultId in eligible }
             var done = 0
-            var failed = false
+            var retryable = false
+            var terminal = false
             for (photo in pending) {
-                val result = syncRepository.uploadPhoto(photo)
+                val result = syncRepository.uploadPhoto(photo, surveyId)
                 done++
                 progress(
                     workDataOf(
@@ -99,10 +102,15 @@ class SyncOrchestrator
                 when (result) {
                     is PhotoUploadResult.AuthExpired -> return SyncOutcome.AuthExpired
                     is PhotoUploadResult.Success -> Unit
-                    else -> failed = true
+                    is PhotoUploadResult.NetworkError -> retryable = true
+                    else -> terminal = true
                 }
             }
-            return if (failed) SyncOutcome.Failure("Photo upload failed") else null
+            return when {
+                retryable -> SyncOutcome.RetryableFailure
+                terminal -> SyncOutcome.Failure("Photo upload failed")
+                else -> null
+            }
         }
 
         private suspend fun postPendingVerdicts(
@@ -113,11 +121,12 @@ class SyncOrchestrator
             val decisions =
                 localDecisionDao
                     .getUnsynced()
-                    .filter { it.surveyId == surveyId && it.inferenceResultId in eligible }
+                    .filter { it.inferenceResultId in eligible }
             var done = 0
-            var failed = false
+            var retryable = false
+            var terminal = false
             for (decision in decisions) {
-                val result = syncRepository.postVerdict(decision)
+                val result = syncRepository.postVerdict(decision, surveyId)
                 done++
                 progress(
                     workDataOf(
@@ -130,11 +139,17 @@ class SyncOrchestrator
                     is VerdictPostResult.AuthExpired -> return SyncOutcome.AuthExpired
                     is VerdictPostResult.Success,
                     is VerdictPostResult.AlreadyCompleted,
+                    is VerdictPostResult.ClaimRequired,
                     -> Unit
-                    else -> failed = true
+                    is VerdictPostResult.NetworkError -> retryable = true
+                    else -> terminal = true
                 }
             }
-            return if (failed) SyncOutcome.Failure("Verdict post failed") else null
+            return when {
+                retryable -> SyncOutcome.RetryableFailure
+                terminal -> SyncOutcome.Failure("Verdict post failed")
+                else -> null
+            }
         }
 
         companion object {

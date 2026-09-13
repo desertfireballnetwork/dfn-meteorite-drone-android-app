@@ -116,8 +116,8 @@ class SyncOrchestratorTest {
             val accountManager = mock(AccountManager::class.java)
             `when`(accountManager.isSignedIn()).thenReturn(true)
             val syncRepository = mock(SyncRepository::class.java)
-            `when`(syncRepository.uploadPhoto(any())).thenReturn(PhotoUploadResult.Success)
-            `when`(syncRepository.postVerdict(any())).thenReturn(VerdictPostResult.Success)
+            `when`(syncRepository.uploadPhoto(any(), any())).thenReturn(PhotoUploadResult.Success)
+            `when`(syncRepository.postVerdict(any(), any())).thenReturn(VerdictPostResult.Success)
 
             val candidateDao = FakeCandidateDao(listOf(candidate(1L), candidate(2L)))
             val claimDao = FakeClaimDao(listOf(claim(1L)))
@@ -137,10 +137,10 @@ class SyncOrchestratorTest {
             val outcome = orchestrator.run(SURVEY_ID) {}
 
             assertEquals(SyncOutcome.Success, outcome)
-            verify(syncRepository).uploadPhoto(pendingPhoto(1L))
-            verify(syncRepository, never()).uploadPhoto(pendingPhoto(2L))
-            verify(syncRepository).postVerdict(decision(1L))
-            verify(syncRepository, never()).postVerdict(decision(2L))
+            verify(syncRepository).uploadPhoto(pendingPhoto(1L), SURVEY_ID)
+            verify(syncRepository, never()).uploadPhoto(pendingPhoto(2L), SURVEY_ID)
+            verify(syncRepository).postVerdict(decision(1L), SURVEY_ID)
+            verify(syncRepository, never()).postVerdict(decision(2L), SURVEY_ID)
         }
 
     @Test
@@ -179,8 +179,8 @@ class SyncOrchestratorTest {
             val accountManager = mock(AccountManager::class.java)
             `when`(accountManager.isSignedIn()).thenReturn(true)
             val syncRepository = mock(SyncRepository::class.java)
-            `when`(syncRepository.uploadPhoto(any())).thenReturn(PhotoUploadResult.Success)
-            `when`(syncRepository.postVerdict(any())).thenReturn(VerdictPostResult.Success)
+            `when`(syncRepository.uploadPhoto(any(), any())).thenReturn(PhotoUploadResult.Success)
+            `when`(syncRepository.postVerdict(any(), any())).thenReturn(VerdictPostResult.Success)
 
             val candidateDao =
                 FakeCandidateDao(
@@ -216,12 +216,12 @@ class SyncOrchestratorTest {
             val outcome = orchestrator.run(SURVEY_ID) {}
 
             assertEquals(SyncOutcome.Success, outcome)
-            verify(syncRepository).uploadPhoto(pendingPhoto(1L))
-            verify(syncRepository, never()).uploadPhoto(pendingPhoto(2L))
-            verify(syncRepository, never()).uploadPhoto(pendingPhoto(3L))
-            verify(syncRepository).postVerdict(decision(1L))
-            verify(syncRepository, never()).postVerdict(decision(2L))
-            verify(syncRepository, never()).postVerdict(decision(3L))
+            verify(syncRepository).uploadPhoto(pendingPhoto(1L), SURVEY_ID)
+            verify(syncRepository, never()).uploadPhoto(pendingPhoto(2L), SURVEY_ID)
+            verify(syncRepository, never()).uploadPhoto(pendingPhoto(3L), SURVEY_ID)
+            verify(syncRepository).postVerdict(decision(1L), SURVEY_ID)
+            verify(syncRepository, never()).postVerdict(decision(2L), SURVEY_ID)
+            verify(syncRepository, never()).postVerdict(decision(3L), SURVEY_ID)
         }
 
     @Test
@@ -230,8 +230,8 @@ class SyncOrchestratorTest {
             val accountManager = mock(AccountManager::class.java)
             `when`(accountManager.isSignedIn()).thenReturn(true)
             val syncRepository = mock(SyncRepository::class.java)
-            `when`(syncRepository.uploadPhoto(any())).thenReturn(PhotoUploadResult.Success)
-            `when`(syncRepository.postVerdict(any())).thenReturn(VerdictPostResult.Success)
+            `when`(syncRepository.uploadPhoto(any(), any())).thenReturn(PhotoUploadResult.Success)
+            `when`(syncRepository.postVerdict(any(), any())).thenReturn(VerdictPostResult.Success)
 
             val candidateDao = FakeCandidateDao(listOf(candidate(1L)))
             val claimDao = FakeClaimDao(listOf(claim(1L)))
@@ -257,13 +257,86 @@ class SyncOrchestratorTest {
             val outcome = orchestrator.run(SURVEY_ID) {}
 
             assertEquals(SyncOutcome.Success, outcome)
-            verify(syncRepository).uploadPhoto(pendingPhoto(1L))
+            verify(syncRepository).uploadPhoto(pendingPhoto(1L), SURVEY_ID)
             verify(
                 syncRepository,
                 never(),
-            ).uploadPhoto(pendingPhoto(2L, surveyId = OTHER_SURVEY_ID))
-            verify(syncRepository).postVerdict(decision(1L))
-            verify(syncRepository, never()).postVerdict(decision(2L, surveyId = OTHER_SURVEY_ID))
+            ).uploadPhoto(pendingPhoto(2L, surveyId = OTHER_SURVEY_ID), SURVEY_ID)
+            verify(syncRepository).postVerdict(decision(1L), SURVEY_ID)
+            verify(syncRepository, never())
+                .postVerdict(decision(2L, surveyId = OTHER_SURVEY_ID), SURVEY_ID)
+        }
+
+    @Test
+    fun `pending row with different survey but eligible candidate is synced`() =
+        runTest(testDispatcher) {
+            val accountManager = mock(AccountManager::class.java)
+            `when`(accountManager.isSignedIn()).thenReturn(true)
+            val syncRepository = mock(SyncRepository::class.java)
+            `when`(syncRepository.uploadPhoto(any(), any())).thenReturn(PhotoUploadResult.Success)
+            `when`(syncRepository.postVerdict(any(), any())).thenReturn(VerdictPostResult.Success)
+
+            val candidateDao = FakeCandidateDao(listOf(candidate(1L)))
+            val claimDao = FakeClaimDao(listOf(claim(1L)))
+            val photoDao =
+                FakePendingPhotoUploadDao(
+                    listOf(pendingPhoto(1L, surveyId = OTHER_SURVEY_ID)),
+                )
+            val decisionDao =
+                FakeLocalDecisionDao(
+                    listOf(decision(1L, surveyId = OTHER_SURVEY_ID)),
+                )
+
+            val orchestrator =
+                orchestrator(
+                    accountManager,
+                    syncRepository,
+                    candidateDao,
+                    claimDao,
+                    photoDao,
+                    decisionDao,
+                )
+
+            val outcome = orchestrator.run(SURVEY_ID) {}
+
+            assertEquals(SyncOutcome.Success, outcome)
+            verify(syncRepository).uploadPhoto(
+                pendingPhoto(1L, surveyId = OTHER_SURVEY_ID),
+                SURVEY_ID,
+            )
+            verify(syncRepository).postVerdict(
+                decision(1L, surveyId = OTHER_SURVEY_ID),
+                SURVEY_ID,
+            )
+        }
+
+    @Test
+    fun `network error during photo pass returns retryable failure`() =
+        runTest(testDispatcher) {
+            val accountManager = mock(AccountManager::class.java)
+            `when`(accountManager.isSignedIn()).thenReturn(true)
+            val syncRepository = mock(SyncRepository::class.java)
+            `when`(syncRepository.uploadPhoto(any(), any()))
+                .thenReturn(PhotoUploadResult.NetworkError)
+
+            val candidateDao = FakeCandidateDao(listOf(candidate(1L)))
+            val claimDao = FakeClaimDao(listOf(claim(1L)))
+            val photoDao = FakePendingPhotoUploadDao(listOf(pendingPhoto(1L)))
+            val decisionDao = FakeLocalDecisionDao(listOf(decision(1L)))
+
+            val orchestrator =
+                orchestrator(
+                    accountManager,
+                    syncRepository,
+                    candidateDao,
+                    claimDao,
+                    photoDao,
+                    decisionDao,
+                )
+
+            val outcome = orchestrator.run(SURVEY_ID) {}
+
+            assertEquals(SyncOutcome.RetryableFailure, outcome)
         }
 
     @Test
@@ -272,9 +345,9 @@ class SyncOrchestratorTest {
             val accountManager = mock(AccountManager::class.java)
             `when`(accountManager.isSignedIn()).thenReturn(true)
             val syncRepository = mock(SyncRepository::class.java)
-            `when`(syncRepository.uploadPhoto(pendingPhoto(1L)))
+            `when`(syncRepository.uploadPhoto(pendingPhoto(1L), SURVEY_ID))
                 .thenReturn(PhotoUploadResult.Success)
-            `when`(syncRepository.uploadPhoto(pendingPhoto(2L)))
+            `when`(syncRepository.uploadPhoto(pendingPhoto(2L), SURVEY_ID))
                 .thenReturn(PhotoUploadResult.AuthExpired)
 
             val candidateDao = FakeCandidateDao(listOf(candidate(1L), candidate(2L)))
@@ -298,10 +371,10 @@ class SyncOrchestratorTest {
             val outcome = orchestrator.run(SURVEY_ID) {}
 
             assertEquals(SyncOutcome.AuthExpired, outcome)
-            verify(syncRepository).uploadPhoto(pendingPhoto(1L))
-            verify(syncRepository).uploadPhoto(pendingPhoto(2L))
-            verify(syncRepository, never()).uploadPhoto(pendingPhoto(3L))
-            verify(syncRepository, never()).postVerdict(any())
+            verify(syncRepository).uploadPhoto(pendingPhoto(1L), SURVEY_ID)
+            verify(syncRepository).uploadPhoto(pendingPhoto(2L), SURVEY_ID)
+            verify(syncRepository, never()).uploadPhoto(pendingPhoto(3L), SURVEY_ID)
+            verify(syncRepository, never()).postVerdict(any(), any())
         }
 
     private class FakeCandidateDao(

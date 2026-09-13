@@ -96,6 +96,26 @@ class SyncWorkerTest {
         }
 
     @Test
+    fun `retryable failure outcome returns retry`() =
+        runTest {
+            val selectedSurveyRepository = mock(SelectedSurveyRepository::class.java)
+            `when`(selectedSurveyRepository.selectedSurveyId).thenReturn(flowOf(SURVEY_ID))
+            val orchestrator = mock(SyncOrchestrator::class.java)
+            `when`(orchestrator.run(eq(SURVEY_ID), any()))
+                .thenReturn(SyncOutcome.RetryableFailure)
+
+            val worker =
+                SyncWorker(
+                    context,
+                    workerParams(),
+                    selectedSurveyRepository,
+                    orchestrator,
+                )
+
+            assertEquals(Result.retry(), worker.doWork())
+        }
+
+    @Test
     fun `failure outcome returns failure`() =
         runTest {
             val selectedSurveyRepository = mock(SelectedSurveyRepository::class.java)
