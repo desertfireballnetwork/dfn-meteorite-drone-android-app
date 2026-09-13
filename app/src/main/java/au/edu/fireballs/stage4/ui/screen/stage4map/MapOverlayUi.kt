@@ -1,5 +1,6 @@
 package au.edu.fireballs.stage4.ui.screen.stage4map
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -9,8 +10,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -33,6 +38,8 @@ internal fun MapTopOverlay(
     locating: Boolean,
     locationMessage: String?,
     locationServicesDisabled: Boolean,
+    syncStatus: SyncStatus,
+    onSync: () -> Unit,
     onDismissMessage: () -> Unit,
     onOpenLocationSettings: () -> Unit,
 ) {
@@ -45,7 +52,13 @@ internal fun MapTopOverlay(
                 .padding(OVERLAY_PADDING_DP.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        SurveyInfoChip(loaded = loaded)
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            SurveyInfoChip(loaded = loaded)
+            SyncButton(status = syncStatus, onSync = onSync)
+        }
         if (locating) {
             Spacer(modifier = Modifier.height(8.dp))
             LocatingChip()
@@ -95,6 +108,42 @@ private fun SurveyInfoChip(loaded: Stage4MapUiState.Loaded) {
                 style = MaterialTheme.typography.bodySmall,
             )
         }
+    }
+}
+
+@Composable
+private fun SyncButton(
+    status: SyncStatus,
+    onSync: () -> Unit,
+) {
+    when (status) {
+        SyncStatus.Idle ->
+            FilledTonalIconButton(onClick = onSync) {
+                Icon(imageVector = Icons.Default.Sync, contentDescription = "Sync pending")
+            }
+
+        SyncStatus.Syncing ->
+            FilledTonalIconButton(onClick = onSync) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(18.dp),
+                    strokeWidth = 2.dp,
+                )
+            }
+
+        SyncStatus.Complete ->
+            FilledTonalIconButton(onClick = onSync) {
+                Icon(imageVector = Icons.Default.Check, contentDescription = "Sync complete")
+            }
+
+        SyncStatus.Failed ->
+            FilledTonalIconButton(onClick = onSync) {
+                Icon(imageVector = Icons.Default.Error, contentDescription = "Sync failed")
+            }
+
+        SyncStatus.AuthExpired ->
+            FilledTonalIconButton(onClick = onSync) {
+                Icon(imageVector = Icons.Default.Error, contentDescription = "Session expired")
+            }
     }
 }
 

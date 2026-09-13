@@ -12,7 +12,10 @@ interface PendingPhotoUploadDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(pendingPhotoUpload: PendingPhotoUploadEntity): Long
 
-    @Query("SELECT * FROM pending_photo_upload WHERE uploaded = 0")
+    @Query(
+        "SELECT * FROM pending_photo_upload WHERE uploaded = 0 " +
+            "AND (uploadFailedReason IS NULL OR uploadFailedReason != 'cross_campaign')",
+    )
     suspend fun getUnuploaded(): List<PendingPhotoUploadEntity>
 
     @Query(

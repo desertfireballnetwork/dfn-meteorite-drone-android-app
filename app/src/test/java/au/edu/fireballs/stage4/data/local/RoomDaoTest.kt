@@ -298,4 +298,24 @@ class RoomDaoTest {
             assertTrue(photos.first().uploaded)
             assertEquals(77L, photos.first().serverPhotoId)
         }
+
+    @Test
+    fun pendingPhotoUpload_crossCampaignRowIsNotReSelected() =
+        runBlocking {
+            val photo =
+                PendingPhotoUploadEntity(
+                    surveyId = 101L,
+                    inferenceResultId = 5001L,
+                    localFilePath = "/data/evidence/101/5001/1.jpg",
+                    capturedAt = "2026-07-24T12:00:00Z",
+                    uploaded = false,
+                )
+
+            val rowId = pendingPhotoUploadDao.insert(photo)
+
+            pendingPhotoUploadDao.markFailed(rowId, "cross_campaign")
+
+            val unuploaded = pendingPhotoUploadDao.getUnuploaded()
+            assertTrue(unuploaded.isEmpty())
+        }
 }

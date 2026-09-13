@@ -2,6 +2,7 @@ package au.edu.fireballs.stage4.ui.screen.basecamp
 
 import au.edu.fireballs.stage4.data.repository.ClaimRepository
 import au.edu.fireballs.stage4.data.repository.ClaimResult
+import au.edu.fireballs.stage4.data.repository.SelectedSurveyRepository
 import au.edu.fireballs.stage4.data.repository.SetCarLocationResult
 import au.edu.fireballs.stage4.data.repository.Stage4FetchResult
 import au.edu.fireballs.stage4.data.repository.Stage4Repository
@@ -42,6 +43,7 @@ class BasecampViewModelTest {
     private val stage4Repository: Stage4Repository = mock()
     private val claimRepository: ClaimRepository = mock()
     private val surveyRepository: SurveyRepository = mock()
+    private val selectedSurveyRepository: SelectedSurveyRepository = mock()
     private lateinit var viewModel: BasecampViewModel
 
     @Before
@@ -117,7 +119,13 @@ class BasecampViewModelTest {
                     ),
                 )
 
-            viewModel = BasecampViewModel(stage4Repository, claimRepository, surveyRepository)
+            viewModel =
+                BasecampViewModel(
+                    stage4Repository,
+                    claimRepository,
+                    surveyRepository,
+                    selectedSurveyRepository,
+                )
             val collectJob = backgroundScope.launch(testDispatcher) { viewModel.uiState.collect {} }
 
             viewModel.openSurvey(7L)
@@ -130,13 +138,39 @@ class BasecampViewModelTest {
         }
 
     @Test
+    fun `openSurvey persists the selected survey id`() =
+        runTest(testDispatcher) {
+            val fixture = state(candidate(1L))
+            whenever(stage4Repository.getCandidatesState(7L))
+                .thenReturn(Stage4FetchResult.Success(fixture))
+
+            viewModel =
+                BasecampViewModel(
+                    stage4Repository,
+                    claimRepository,
+                    surveyRepository,
+                    selectedSurveyRepository,
+                )
+            viewModel.openSurvey(7L)
+            advanceUntilIdle()
+
+            verify(selectedSurveyRepository).set(7L)
+        }
+
+    @Test
     fun `onCandidateTap claims a neutral candidate`() =
         runTest(testDispatcher) {
             val fixture = state(candidate(1L, GeoCoordinate(0.0, 0.0)))
             whenever(stage4Repository.getCandidatesState(7L))
                 .thenReturn(Stage4FetchResult.Success(fixture))
 
-            viewModel = BasecampViewModel(stage4Repository, claimRepository, surveyRepository)
+            viewModel =
+                BasecampViewModel(
+                    stage4Repository,
+                    claimRepository,
+                    surveyRepository,
+                    selectedSurveyRepository,
+                )
             val collectJob = backgroundScope.launch(testDispatcher) { viewModel.uiState.collect {} }
             viewModel.openSurvey(7L)
             advanceUntilIdle()
@@ -155,7 +189,13 @@ class BasecampViewModelTest {
             whenever(stage4Repository.getCandidatesState(7L))
                 .thenReturn(Stage4FetchResult.Success(fixture))
 
-            viewModel = BasecampViewModel(stage4Repository, claimRepository, surveyRepository)
+            viewModel =
+                BasecampViewModel(
+                    stage4Repository,
+                    claimRepository,
+                    surveyRepository,
+                    selectedSurveyRepository,
+                )
             val collectJob = backgroundScope.launch(testDispatcher) { viewModel.uiState.collect {} }
             viewModel.openSurvey(7L)
             advanceUntilIdle()
@@ -174,7 +214,13 @@ class BasecampViewModelTest {
             whenever(stage4Repository.getCandidatesState(7L))
                 .thenReturn(Stage4FetchResult.Success(fixture))
 
-            viewModel = BasecampViewModel(stage4Repository, claimRepository, surveyRepository)
+            viewModel =
+                BasecampViewModel(
+                    stage4Repository,
+                    claimRepository,
+                    surveyRepository,
+                    selectedSurveyRepository,
+                )
             val collectJob = backgroundScope.launch(testDispatcher) { viewModel.uiState.collect {} }
             viewModel.openSurvey(7L)
             advanceUntilIdle()
@@ -201,7 +247,13 @@ class BasecampViewModelTest {
             whenever(stage4Repository.getCandidatesState(7L))
                 .thenReturn(Stage4FetchResult.Success(fixture))
 
-            viewModel = BasecampViewModel(stage4Repository, claimRepository, surveyRepository)
+            viewModel =
+                BasecampViewModel(
+                    stage4Repository,
+                    claimRepository,
+                    surveyRepository,
+                    selectedSurveyRepository,
+                )
             val collectJob = backgroundScope.launch(testDispatcher) { viewModel.uiState.collect {} }
             viewModel.openSurvey(7L)
             advanceUntilIdle()
@@ -229,7 +281,13 @@ class BasecampViewModelTest {
             whenever(stage4Repository.getCandidatesState(7L))
                 .thenReturn(Stage4FetchResult.Success(fixture))
 
-            viewModel = BasecampViewModel(stage4Repository, claimRepository, surveyRepository)
+            viewModel =
+                BasecampViewModel(
+                    stage4Repository,
+                    claimRepository,
+                    surveyRepository,
+                    selectedSurveyRepository,
+                )
             val collectJob = backgroundScope.launch(testDispatcher) { viewModel.uiState.collect {} }
             viewModel.openSurvey(7L)
             advanceUntilIdle()
@@ -253,7 +311,13 @@ class BasecampViewModelTest {
             whenever(stage4Repository.getCandidatesState(7L))
                 .thenReturn(Stage4FetchResult.Success(fixture))
 
-            viewModel = BasecampViewModel(stage4Repository, claimRepository, surveyRepository)
+            viewModel =
+                BasecampViewModel(
+                    stage4Repository,
+                    claimRepository,
+                    surveyRepository,
+                    selectedSurveyRepository,
+                )
             val collectJob = backgroundScope.launch(testDispatcher) { viewModel.uiState.collect {} }
             viewModel.openSurvey(7L)
             advanceUntilIdle()
@@ -286,7 +350,13 @@ class BasecampViewModelTest {
                     ),
                 )
 
-            viewModel = BasecampViewModel(stage4Repository, claimRepository, surveyRepository)
+            viewModel =
+                BasecampViewModel(
+                    stage4Repository,
+                    claimRepository,
+                    surveyRepository,
+                    selectedSurveyRepository,
+                )
             val collectJob = backgroundScope.launch(testDispatcher) { viewModel.uiState.collect {} }
             viewModel.openSurvey(7L)
             advanceUntilIdle()
@@ -313,7 +383,13 @@ class BasecampViewModelTest {
                     ),
                 )
 
-            viewModel = BasecampViewModel(stage4Repository, claimRepository, surveyRepository)
+            viewModel =
+                BasecampViewModel(
+                    stage4Repository,
+                    claimRepository,
+                    surveyRepository,
+                    selectedSurveyRepository,
+                )
             val collectJob = backgroundScope.launch(testDispatcher) { viewModel.uiState.collect {} }
             viewModel.openSurvey(7L)
             advanceUntilIdle()
@@ -341,7 +417,13 @@ class BasecampViewModelTest {
             wheneverBlocking { claimRepository.release(listOf(1L)) }
                 .thenReturn(ClaimResult.Released(released = listOf(1L)))
 
-            viewModel = BasecampViewModel(stage4Repository, claimRepository, surveyRepository)
+            viewModel =
+                BasecampViewModel(
+                    stage4Repository,
+                    claimRepository,
+                    surveyRepository,
+                    selectedSurveyRepository,
+                )
             val collectJob = backgroundScope.launch(testDispatcher) { viewModel.uiState.collect {} }
             viewModel.openSurvey(7L)
             advanceUntilIdle()
@@ -366,7 +448,13 @@ class BasecampViewModelTest {
                     ),
                 )
 
-            viewModel = BasecampViewModel(stage4Repository, claimRepository, surveyRepository)
+            viewModel =
+                BasecampViewModel(
+                    stage4Repository,
+                    claimRepository,
+                    surveyRepository,
+                    selectedSurveyRepository,
+                )
             val collectJob = backgroundScope.launch(testDispatcher) { viewModel.uiState.collect {} }
             viewModel.openSurvey(7L)
             advanceUntilIdle()
@@ -391,7 +479,13 @@ class BasecampViewModelTest {
             wheneverBlocking { claimRepository.release(listOf(1L)) }
                 .thenReturn(ClaimResult.Released(released = listOf(1L)))
 
-            viewModel = BasecampViewModel(stage4Repository, claimRepository, surveyRepository)
+            viewModel =
+                BasecampViewModel(
+                    stage4Repository,
+                    claimRepository,
+                    surveyRepository,
+                    selectedSurveyRepository,
+                )
             val collectJob = backgroundScope.launch(testDispatcher) { viewModel.uiState.collect {} }
             viewModel.openSurvey(7L)
             advanceUntilIdle()
@@ -420,7 +514,13 @@ class BasecampViewModelTest {
             wheneverBlocking { surveyRepository.setCarLocation(7L, -25.0, 134.0) }
                 .thenReturn(SetCarLocationResult.Success)
 
-            viewModel = BasecampViewModel(stage4Repository, claimRepository, surveyRepository)
+            viewModel =
+                BasecampViewModel(
+                    stage4Repository,
+                    claimRepository,
+                    surveyRepository,
+                    selectedSurveyRepository,
+                )
             val collectJob = backgroundScope.launch(testDispatcher) { viewModel.uiState.collect {} }
             val events = mutableListOf<BasecampEvent>()
             val eventJob =
@@ -451,7 +551,13 @@ class BasecampViewModelTest {
             wheneverBlocking { surveyRepository.setCarLocation(7L, -25.0, 134.0) }
                 .thenReturn(SetCarLocationResult.Error("Invalid coordinates"))
 
-            viewModel = BasecampViewModel(stage4Repository, claimRepository, surveyRepository)
+            viewModel =
+                BasecampViewModel(
+                    stage4Repository,
+                    claimRepository,
+                    surveyRepository,
+                    selectedSurveyRepository,
+                )
             val collectJob = backgroundScope.launch(testDispatcher) { viewModel.uiState.collect {} }
             val events = mutableListOf<BasecampEvent>()
             val eventJob =
@@ -487,7 +593,13 @@ class BasecampViewModelTest {
             wheneverBlocking { surveyRepository.setCarLocation(7L, -25.0, 134.0) }
                 .thenReturn(SetCarLocationResult.NetworkError)
 
-            viewModel = BasecampViewModel(stage4Repository, claimRepository, surveyRepository)
+            viewModel =
+                BasecampViewModel(
+                    stage4Repository,
+                    claimRepository,
+                    surveyRepository,
+                    selectedSurveyRepository,
+                )
             val collectJob = backgroundScope.launch(testDispatcher) { viewModel.uiState.collect {} }
             val events = mutableListOf<BasecampEvent>()
             val eventJob =
@@ -522,7 +634,13 @@ class BasecampViewModelTest {
             wheneverBlocking { surveyRepository.setCarLocation(7L, -25.0, 134.0) }
                 .thenReturn(SetCarLocationResult.AuthExpired)
 
-            viewModel = BasecampViewModel(stage4Repository, claimRepository, surveyRepository)
+            viewModel =
+                BasecampViewModel(
+                    stage4Repository,
+                    claimRepository,
+                    surveyRepository,
+                    selectedSurveyRepository,
+                )
             val collectJob = backgroundScope.launch(testDispatcher) { viewModel.uiState.collect {} }
             viewModel.openSurvey(7L)
             advanceUntilIdle()
@@ -543,7 +661,13 @@ class BasecampViewModelTest {
             wheneverBlocking { surveyRepository.setCarLocation(7L, -25.0, 134.0) }
                 .thenReturn(SetCarLocationResult.Success)
 
-            viewModel = BasecampViewModel(stage4Repository, claimRepository, surveyRepository)
+            viewModel =
+                BasecampViewModel(
+                    stage4Repository,
+                    claimRepository,
+                    surveyRepository,
+                    selectedSurveyRepository,
+                )
             val collectJob = backgroundScope.launch(testDispatcher) { viewModel.uiState.collect {} }
             viewModel.openSurvey(7L)
             advanceUntilIdle()

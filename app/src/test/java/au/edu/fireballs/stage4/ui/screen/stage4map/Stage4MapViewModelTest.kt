@@ -1,5 +1,9 @@
 package au.edu.fireballs.stage4.ui.screen.stage4map
 
+import androidx.work.Data
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkInfo
+import androidx.work.workDataOf
 import au.edu.fireballs.stage4.data.local.LocalDecisionEntity
 import au.edu.fireballs.stage4.data.local.dao.LocalDecisionDao
 import au.edu.fireballs.stage4.data.repository.CandidateImageRepository
@@ -14,8 +18,10 @@ import au.edu.fireballs.stage4.domain.model.MapCameraTarget
 import au.edu.fireballs.stage4.domain.model.Stage4Candidate
 import au.edu.fireballs.stage4.domain.model.Stage4State
 import au.edu.fireballs.stage4.domain.model.Stage4Survey
+import au.edu.fireballs.stage4.sync.SyncWorker
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -47,6 +53,7 @@ class Stage4MapViewModelTest {
     private val pendingDecisionsFlow = MutableStateFlow<List<LocalDecisionEntity>>(emptyList())
     private val tileStore = TileStore(File.createTempFile("vm-tiles", "").parentFile)
     private val tileHttpInterceptor: AuthenticatedTileHttpInterceptor = mock()
+    private val syncWorkManager: SyncWorkManager = mock()
     private lateinit var viewModel: Stage4MapViewModel
 
     @Before
@@ -89,6 +96,7 @@ class Stage4MapViewModelTest {
                     candidateImageRepository,
                     tileStore,
                     tileHttpInterceptor,
+                    syncWorkManager,
                 )
 
             assertEquals(Stage4MapUiState.Loading, viewModel.uiState.value)
@@ -108,6 +116,7 @@ class Stage4MapViewModelTest {
                     candidateImageRepository,
                     tileStore,
                     tileHttpInterceptor,
+                    syncWorkManager,
                 )
             val collectJob =
                 backgroundScope.launch(testDispatcher) {
@@ -140,6 +149,7 @@ class Stage4MapViewModelTest {
                     candidateImageRepository,
                     tileStore,
                     tileHttpInterceptor,
+                    syncWorkManager,
                 )
             val collectJob =
                 backgroundScope.launch(testDispatcher) {
@@ -175,6 +185,7 @@ class Stage4MapViewModelTest {
                     candidateImageRepository,
                     tileStore,
                     tileHttpInterceptor,
+                    syncWorkManager,
                 )
             val collectJob =
                 backgroundScope.launch(testDispatcher) {
@@ -204,6 +215,7 @@ class Stage4MapViewModelTest {
                     candidateImageRepository,
                     tileStore,
                     tileHttpInterceptor,
+                    syncWorkManager,
                 )
             val collectJob =
                 backgroundScope.launch(testDispatcher) {
@@ -236,6 +248,7 @@ class Stage4MapViewModelTest {
                     candidateImageRepository,
                     tileStore,
                     tileHttpInterceptor,
+                    syncWorkManager,
                 )
             val collectJob =
                 backgroundScope.launch(testDispatcher) {
@@ -268,6 +281,7 @@ class Stage4MapViewModelTest {
                     candidateImageRepository,
                     tileStore,
                     tileHttpInterceptor,
+                    syncWorkManager,
                 )
             val collectJob =
                 backgroundScope.launch(testDispatcher) {
@@ -296,6 +310,7 @@ class Stage4MapViewModelTest {
                     candidateImageRepository,
                     tileStore,
                     tileHttpInterceptor,
+                    syncWorkManager,
                 )
             val onAuthLostCaptor = argumentCaptor<() -> Unit>()
             verify(tileHttpInterceptor).onAuthLost = onAuthLostCaptor.capture()
@@ -330,6 +345,7 @@ class Stage4MapViewModelTest {
                     candidateImageRepository,
                     tileStore,
                     tileHttpInterceptor,
+                    syncWorkManager,
                 )
             val collectJob =
                 backgroundScope.launch(testDispatcher) {
@@ -365,6 +381,7 @@ class Stage4MapViewModelTest {
                     candidateImageRepository,
                     tileStore,
                     tileHttpInterceptor,
+                    syncWorkManager,
                 )
             val collectJob =
                 backgroundScope.launch(testDispatcher) {
@@ -403,6 +420,7 @@ class Stage4MapViewModelTest {
                     candidateImageRepository,
                     tileStore,
                     tileHttpInterceptor,
+                    syncWorkManager,
                 )
 
             val states = mutableListOf<Stage4MapUiState>()
@@ -440,6 +458,7 @@ class Stage4MapViewModelTest {
                     candidateImageRepository,
                     tileStore,
                     tileHttpInterceptor,
+                    syncWorkManager,
                 )
 
             val states = mutableListOf<Stage4MapUiState>()
@@ -484,6 +503,7 @@ class Stage4MapViewModelTest {
                     candidateImageRepository,
                     tileStore,
                     tileHttpInterceptor,
+                    syncWorkManager,
                 )
             val collectJob =
                 backgroundScope.launch(testDispatcher) {
@@ -527,6 +547,7 @@ class Stage4MapViewModelTest {
                     candidateImageRepository,
                     tileStore,
                     tileHttpInterceptor,
+                    syncWorkManager,
                 )
 
             val states = mutableListOf<Stage4MapUiState>()
@@ -564,6 +585,7 @@ class Stage4MapViewModelTest {
                     candidateImageRepository,
                     tileStore,
                     tileHttpInterceptor,
+                    syncWorkManager,
                 )
             val collectJob =
                 backgroundScope.launch(testDispatcher) {
@@ -630,6 +652,7 @@ class Stage4MapViewModelTest {
                     candidateImageRepository,
                     tileStore,
                     tileHttpInterceptor,
+                    syncWorkManager,
                 )
             val collectJob =
                 backgroundScope.launch(testDispatcher) {
@@ -649,5 +672,116 @@ class Stage4MapViewModelTest {
             assertTrue(movedToYes)
 
             collectJob.cancel()
+        }
+
+    @Test
+    fun `syncNow enqueues sync and tracks work status`() =
+        runTest(testDispatcher) {
+            val request = OneTimeWorkRequestBuilder<SyncWorker>().build()
+            val workInfoFlow = MutableSharedFlow<WorkInfo>(extraBufferCapacity = 4)
+            whenever(syncWorkManager.enqueueSync()).thenReturn(request)
+            whenever(syncWorkManager.getWorkInfoByIdFlow(request.id)).thenReturn(workInfoFlow)
+
+            viewModel =
+                Stage4MapViewModel(
+                    repository,
+                    localDecisionDao,
+                    candidateImageRepository,
+                    tileStore,
+                    tileHttpInterceptor,
+                    syncWorkManager,
+                )
+
+            viewModel.syncNow()
+            advanceUntilIdle()
+            verify(syncWorkManager).enqueueSync()
+
+            workInfoFlow.tryEmit(
+                WorkInfo(request.id, WorkInfo.State.RUNNING, emptySet(), Data.EMPTY, Data.EMPTY),
+            )
+            advanceUntilIdle()
+            assertEquals(SyncStatus.Syncing, viewModel.syncStatus.value)
+
+            workInfoFlow.tryEmit(
+                WorkInfo(request.id, WorkInfo.State.SUCCEEDED, emptySet(), Data.EMPTY, Data.EMPTY),
+            )
+            advanceUntilIdle()
+            assertEquals(SyncStatus.Complete, viewModel.syncStatus.value)
+        }
+
+    @Test
+    fun `syncNow surfaces auth expired when worker reports auth expiry`() =
+        runTest(testDispatcher) {
+            val request = OneTimeWorkRequestBuilder<SyncWorker>().build()
+            val workInfoFlow = MutableSharedFlow<WorkInfo>(extraBufferCapacity = 4)
+            whenever(syncWorkManager.enqueueSync()).thenReturn(request)
+            whenever(syncWorkManager.getWorkInfoByIdFlow(request.id)).thenReturn(workInfoFlow)
+
+            viewModel =
+                Stage4MapViewModel(
+                    repository,
+                    localDecisionDao,
+                    candidateImageRepository,
+                    tileStore,
+                    tileHttpInterceptor,
+                    syncWorkManager,
+                )
+            val collectJob =
+                backgroundScope.launch(testDispatcher) {
+                    viewModel.uiState.collect {}
+                }
+
+            viewModel.syncNow()
+            advanceUntilIdle()
+
+            workInfoFlow.tryEmit(
+                WorkInfo(
+                    request.id,
+                    WorkInfo.State.SUCCEEDED,
+                    emptySet(),
+                    workDataOf(SyncWorker.KEY_AUTH_EXPIRED to true),
+                    Data.EMPTY,
+                ),
+            )
+            advanceUntilIdle()
+
+            assertEquals(SyncStatus.AuthExpired, viewModel.syncStatus.value)
+            assertTrue(viewModel.uiState.value is Stage4MapUiState.AuthExpired)
+            collectJob.cancel()
+        }
+
+    @Test
+    fun `syncNow while sync already running keeps status Syncing`() =
+        runTest(testDispatcher) {
+            val request = OneTimeWorkRequestBuilder<SyncWorker>().build()
+            val workInfoFlow = MutableSharedFlow<WorkInfo>(extraBufferCapacity = 4)
+            whenever(syncWorkManager.enqueueSync()).thenReturn(request)
+            whenever(syncWorkManager.getWorkInfoByIdFlow(request.id)).thenReturn(workInfoFlow)
+
+            viewModel =
+                Stage4MapViewModel(
+                    repository,
+                    localDecisionDao,
+                    candidateImageRepository,
+                    tileStore,
+                    tileHttpInterceptor,
+                    syncWorkManager,
+                )
+
+            viewModel.syncNow()
+            advanceUntilIdle()
+            verify(syncWorkManager).enqueueSync()
+
+            workInfoFlow.tryEmit(
+                WorkInfo(request.id, WorkInfo.State.RUNNING, emptySet(), Data.EMPTY, Data.EMPTY),
+            )
+            advanceUntilIdle()
+            assertEquals(SyncStatus.Syncing, viewModel.syncStatus.value)
+
+            viewModel.syncNow()
+            advanceUntilIdle()
+
+            assertEquals(SyncStatus.Syncing, viewModel.syncStatus.value)
+            verify(syncWorkManager, times(2)).enqueueSync()
         }
 }

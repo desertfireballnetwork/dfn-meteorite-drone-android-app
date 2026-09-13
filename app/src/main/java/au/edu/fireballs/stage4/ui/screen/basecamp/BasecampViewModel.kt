@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import au.edu.fireballs.stage4.data.repository.ClaimRepository
 import au.edu.fireballs.stage4.data.repository.ClaimResult
+import au.edu.fireballs.stage4.data.repository.SelectedSurveyRepository
 import au.edu.fireballs.stage4.data.repository.SetCarLocationResult
 import au.edu.fireballs.stage4.data.repository.Stage4FetchResult
 import au.edu.fireballs.stage4.data.repository.Stage4Repository
@@ -68,6 +69,7 @@ class BasecampViewModel
         private val stage4Repository: Stage4Repository,
         private val claimRepository: ClaimRepository,
         private val surveyRepository: SurveyRepository,
+        private val selectedSurveyRepository: SelectedSurveyRepository,
     ) : ViewModel() {
         private val sourceStateFlow = MutableStateFlow<Stage4State?>(null)
         private val claimsFlow = MutableStateFlow<List<Claim>>(emptyList())
@@ -140,6 +142,7 @@ class BasecampViewModel
         fun openSurvey(surveyId: Long) {
             surveyIdFlow.value = surveyId
             claimRepository.setSurveyId(surveyId)
+            viewModelScope.launch { selectedSurveyRepository.set(surveyId) }
             loadInitial()
         }
 
