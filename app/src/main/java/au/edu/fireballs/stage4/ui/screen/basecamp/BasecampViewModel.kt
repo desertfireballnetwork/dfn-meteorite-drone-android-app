@@ -4,8 +4,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import au.edu.fireballs.stage4.data.repository.ClaimRepository
 import au.edu.fireballs.stage4.data.repository.ClaimResult
+import au.edu.fireballs.stage4.data.repository.SetCarLocationResult
 import au.edu.fireballs.stage4.data.repository.Stage4FetchResult
 import au.edu.fireballs.stage4.data.repository.Stage4Repository
+import au.edu.fireballs.stage4.data.repository.SurveyRepository
 import au.edu.fireballs.stage4.domain.model.Claim
 import au.edu.fireballs.stage4.domain.model.GeoCoordinate
 import au.edu.fireballs.stage4.domain.model.Stage4Candidate
@@ -45,6 +47,8 @@ sealed interface BasecampEvent {
     data class ShowMessage(
         val message: String,
     ) : BasecampEvent
+
+    data object CarLocationSet : BasecampEvent
 }
 
 private const val MAX_BATCH_IDS = 1000
@@ -63,6 +67,7 @@ class BasecampViewModel
     constructor(
         private val stage4Repository: Stage4Repository,
         private val claimRepository: ClaimRepository,
+        private val surveyRepository: SurveyRepository,
     ) : ViewModel() {
         private val sourceStateFlow = MutableStateFlow<Stage4State?>(null)
         private val claimsFlow = MutableStateFlow<List<Claim>>(emptyList())
@@ -76,6 +81,9 @@ class BasecampViewModel
 
         private val _events = MutableSharedFlow<BasecampEvent>(extraBufferCapacity = 8)
         val events: SharedFlow<BasecampEvent> = _events.asSharedFlow()
+
+        private val isSettingCarLocationFlow = MutableStateFlow(false)
+        val isSettingCarLocation: StateFlow<Boolean> = isSettingCarLocationFlow
 
         val uiState: StateFlow<BasecampUiState> =
             combine(
@@ -216,6 +224,38 @@ class BasecampViewModel
                 }
                 loadClaims()
                 isRefreshingFlow.value = false
+            }
+        }
+
+        fun setCarLocation(
+            latitude: Double,
+            longitude: Double,
+        ) {
+            val surveyId = surveyIdFlow.value ?: return
+            if (isSettingCarLocationFlow.value) return
+            isSettingCarLocationFlow.value = true
+            viewModelScope.launch {
+                try {
+                    when (
+                        val result =
+                            surveyRepository.setCarLocation(surveyId, latitude, longitude)
+                    ) {
+                        is SetCarLocationResult.Success -> {
+                            sourceStateFlow.value =
+                                sourceStateFlow.value?.copy(
+                                    base = GeoCoordinate(latitude, longitude),
+                                )
+                            _events.tryEmit(BasecampEvent.CarLocationSet)
+                        }
+
+                        is SetCarLocationResult.Error -> emitMessage(result.message)
+                        is SetCarLocationResult.AuthExpired -> authExpiredFlow.value = true
+                        is SetCarLocationResult.NetworkError ->
+                            emitMessage("Network error setting car location")
+                    }
+                } finally {
+                    isSettingCarLocationFlow.value = false
+                }
             }
         }
 

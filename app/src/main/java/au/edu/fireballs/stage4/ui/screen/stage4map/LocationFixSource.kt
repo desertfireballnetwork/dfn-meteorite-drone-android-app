@@ -48,7 +48,7 @@ internal fun anyLocationProviderEnabled(
     networkEnabled: Boolean,
 ): Boolean = gpsEnabled || networkEnabled
 
-internal fun locationServicesEnabled(context: Context): Boolean {
+fun locationServicesEnabled(context: Context): Boolean {
     val locationManager =
         context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return false
     return anyLocationProviderEnabled(

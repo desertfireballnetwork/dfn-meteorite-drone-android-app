@@ -55,6 +55,7 @@ import au.edu.fireballs.stage4.domain.model.GeoCoordinate
 import au.edu.fireballs.stage4.domain.model.Stage4Candidate
 import au.edu.fireballs.stage4.domain.model.Stage4State
 import au.edu.fireballs.stage4.domain.model.resolveInitialCamera
+import au.edu.fireballs.stage4.ui.screen.stage4map.BaseMarker
 import au.edu.fireballs.stage4.ui.screen.stage4map.LayerToggleState
 import au.edu.fireballs.stage4.ui.screen.stage4map.marker.CandidateMarkers
 import com.mapbox.bindgen.Value
@@ -78,6 +79,7 @@ import com.mapbox.maps.extension.compose.style.sources.generated.rememberGeoJson
 import com.mapbox.maps.plugin.gestures.OnMapClickListener
 import com.mapbox.maps.plugin.gestures.addOnMapClickListener
 import com.mapbox.maps.plugin.gestures.removeOnMapClickListener
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.Locale
 
@@ -92,6 +94,7 @@ private const val POLYGON_STROKE_WIDTH = 4.0
 private const val VERTEX_RADIUS = 8.0
 private const val VERTEX_STROKE_WIDTH = 3.0
 private const val CLAIM_LIST_HEIGHT = 240
+private const val CAR_LOCATION_SUCCESS_MS = 2_000L
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -104,9 +107,11 @@ fun BasecampScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val preDownloadState by preDownloadViewModel.uiState.collectAsStateWithLifecycle()
+    val isSettingCarLocation by viewModel.isSettingCarLocation.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     var showDownloadDialog by rememberSaveable { mutableStateOf(false) }
+    var carLocationSet by remember { mutableStateOf(false) }
 
     LifecycleResumeEffect(Unit) {
         viewModel.openSurvey(surveyId)
@@ -123,7 +128,18 @@ fun BasecampScreen(
         viewModel.events.collect { event ->
             when (event) {
                 is BasecampEvent.ShowMessage -> snackbarHostState.showSnackbar(event.message)
+                BasecampEvent.CarLocationSet -> {
+                    carLocationSet = true
+                    snackbarHostState.showSnackbar("Car location set")
+                }
             }
+        }
+    }
+
+    LaunchedEffect(carLocationSet) {
+        if (carLocationSet) {
+            delay(CAR_LOCATION_SUCCESS_MS)
+            carLocationSet = false
         }
     }
 
@@ -144,6 +160,8 @@ fun BasecampScreen(
                                 drawing = state.polygonVertices != null,
                                 mineOnly = state.mineOnly,
                                 isRefreshing = state.isRefreshing,
+                                showSuccess = carLocationSet,
+                                submitting = isSettingCarLocation,
                                 onTogglePolygon = {
                                     if (state.polygonVertices != null) {
                                         viewModel.cancelPolygon()
@@ -155,6 +173,10 @@ fun BasecampScreen(
                                 onRefresh = viewModel::refresh,
                                 onDownload = { showDownloadDialog = true },
                                 onSettings = onNavigateToSettings,
+                                onSetLocation = viewModel::setCarLocation,
+                                onMessage = { message ->
+                                    scope.launch { snackbarHostState.showSnackbar(message) }
+                                },
                             )
                         }
 
@@ -216,11 +238,15 @@ private fun BasecampToolbarActions(
     drawing: Boolean,
     mineOnly: Boolean,
     isRefreshing: Boolean,
+    showSuccess: Boolean,
+    submitting: Boolean,
     onTogglePolygon: () -> Unit,
     onToggleMine: () -> Unit,
     onRefresh: () -> Unit,
     onDownload: () -> Unit,
     onSettings: () -> Unit,
+    onSetLocation: (Double, Double) -> Unit,
+    onMessage: (String) -> Unit,
 ) {
     FilterChip(
         selected = drawing,
@@ -258,6 +284,12 @@ private fun BasecampToolbarActions(
             contentDescription = "Settings",
         )
     }
+    SetCarLocationButton(
+        showSuccess = showSuccess,
+        submitting = submitting,
+        onSetLocation = onSetLocation,
+        onMessage = onMessage,
+    )
 }
 
 @Composable
@@ -483,6 +515,7 @@ private fun BasecampMap(
                 toggleState = LayerToggleState(),
                 onMarkerClick = onMarkerClick,
             )
+            BaseMarker(base = state.base)
             polygonVertices?.let { vertices ->
                 PolygonOverlay(vertices = vertices)
             }
