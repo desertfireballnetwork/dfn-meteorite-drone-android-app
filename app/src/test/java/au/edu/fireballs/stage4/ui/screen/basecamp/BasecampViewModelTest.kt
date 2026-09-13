@@ -410,7 +410,7 @@ class BasecampViewModelTest {
         }
 
     @Test
-    fun `setCarLocation updates base and emits message on success`() =
+    fun `setCarLocation updates base and emits CarLocationSet on success`() =
         runTest(testDispatcher) {
             val fixture = state(candidate(1L))
             whenever(stage4Repository.getCandidatesState(7L))
@@ -435,11 +435,7 @@ class BasecampViewModelTest {
 
             val loaded = viewModel.uiState.value as BasecampUiState.Loaded
             assertEquals(GeoCoordinate(-25.0, 134.0), loaded.state.base)
-            assertTrue(
-                events.any {
-                    it is BasecampEvent.ShowMessage && it.message == "Car location set"
-                },
-            )
+            assertTrue(events.any { it is BasecampEvent.CarLocationSet })
             collectJob.cancel()
             eventJob.cancel()
         }
@@ -475,6 +471,42 @@ class BasecampViewModelTest {
                     it is BasecampEvent.ShowMessage && it.message == "Invalid coordinates"
                 },
             )
+            assertTrue(events.none { it is BasecampEvent.CarLocationSet })
+            collectJob.cancel()
+            eventJob.cancel()
+        }
+
+    @Test
+    fun `setCarLocation emits network error and no CarLocationSet`() =
+        runTest(testDispatcher) {
+            val fixture = state(candidate(1L))
+            whenever(stage4Repository.getCandidatesState(7L))
+                .thenReturn(Stage4FetchResult.Success(fixture))
+            wheneverBlocking { surveyRepository.setCarLocation(7L, -25.0, 134.0) }
+                .thenReturn(SetCarLocationResult.NetworkError)
+
+            viewModel = BasecampViewModel(stage4Repository, claimRepository, surveyRepository)
+            val collectJob = backgroundScope.launch(testDispatcher) { viewModel.uiState.collect {} }
+            val events = mutableListOf<BasecampEvent>()
+            val eventJob =
+                backgroundScope.launch(testDispatcher) {
+                    viewModel.events.collect { events.add(it) }
+                }
+            viewModel.openSurvey(7L)
+            advanceUntilIdle()
+
+            viewModel.setCarLocation(-25.0, 134.0)
+            advanceUntilIdle()
+            runCurrent()
+            advanceUntilIdle()
+
+            assertTrue(
+                events.any {
+                    it is BasecampEvent.ShowMessage &&
+                        it.message == "Network error setting car location"
+                },
+            )
+            assertTrue(events.none { it is BasecampEvent.CarLocationSet })
             collectJob.cancel()
             eventJob.cancel()
         }

@@ -79,6 +79,7 @@ import com.mapbox.maps.extension.compose.style.sources.generated.rememberGeoJson
 import com.mapbox.maps.plugin.gestures.OnMapClickListener
 import com.mapbox.maps.plugin.gestures.addOnMapClickListener
 import com.mapbox.maps.plugin.gestures.removeOnMapClickListener
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.Locale
 
@@ -93,6 +94,7 @@ private const val POLYGON_STROKE_WIDTH = 4.0
 private const val VERTEX_RADIUS = 8.0
 private const val VERTEX_STROKE_WIDTH = 3.0
 private const val CLAIM_LIST_HEIGHT = 240
+private const val CAR_LOCATION_SUCCESS_MS = 2_000L
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -108,6 +110,7 @@ fun BasecampScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     var showDownloadDialog by rememberSaveable { mutableStateOf(false) }
+    var carLocationSet by remember { mutableStateOf(false) }
 
     LifecycleResumeEffect(Unit) {
         viewModel.openSurvey(surveyId)
@@ -124,7 +127,18 @@ fun BasecampScreen(
         viewModel.events.collect { event ->
             when (event) {
                 is BasecampEvent.ShowMessage -> snackbarHostState.showSnackbar(event.message)
+                BasecampEvent.CarLocationSet -> {
+                    carLocationSet = true
+                    snackbarHostState.showSnackbar("Car location set")
+                }
             }
+        }
+    }
+
+    LaunchedEffect(carLocationSet) {
+        if (carLocationSet) {
+            delay(CAR_LOCATION_SUCCESS_MS)
+            carLocationSet = false
         }
     }
 
@@ -145,6 +159,7 @@ fun BasecampScreen(
                                 drawing = state.polygonVertices != null,
                                 mineOnly = state.mineOnly,
                                 isRefreshing = state.isRefreshing,
+                                showSuccess = carLocationSet,
                                 onTogglePolygon = {
                                     if (state.polygonVertices != null) {
                                         viewModel.cancelPolygon()
@@ -221,6 +236,7 @@ private fun BasecampToolbarActions(
     drawing: Boolean,
     mineOnly: Boolean,
     isRefreshing: Boolean,
+    showSuccess: Boolean,
     onTogglePolygon: () -> Unit,
     onToggleMine: () -> Unit,
     onRefresh: () -> Unit,
@@ -266,6 +282,7 @@ private fun BasecampToolbarActions(
         )
     }
     SetCarLocationButton(
+        showSuccess = showSuccess,
         onSetLocation = onSetLocation,
         onMessage = onMessage,
     )

@@ -4,15 +4,18 @@ import android.Manifest
 import android.content.Context
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -26,11 +29,9 @@ import com.google.android.gms.location.CurrentLocationRequest
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.google.android.gms.tasks.CancellationTokenSource
-import kotlinx.coroutines.delay
 
 private const val LOCATION_FIX_TIMEOUT_MS = 15_000L
-private const val SUCCESS_DURATION_MS = 2_000L
-private const val SPINNER_SIZE_DP = 20
+private const val SPINNER_SIZE_DP = 18
 
 private val LOCATION_PERMISSIONS =
     arrayOf(
@@ -40,12 +41,17 @@ private val LOCATION_PERMISSIONS =
 
 @Composable
 fun SetCarLocationButton(
+    showSuccess: Boolean,
     onSetLocation: (Double, Double) -> Unit,
     onMessage: (String) -> Unit,
 ) {
     val context = LocalContext.current
     var acquiring by remember { mutableStateOf(false) }
-    var showSuccess by remember { mutableStateOf(false) }
+    val tokenSource = remember { CancellationTokenSource() }
+
+    DisposableEffect(Unit) {
+        onDispose { tokenSource.cancel() }
+    }
 
     val permissionLauncher =
         rememberLauncherForActivityResult(
@@ -56,32 +62,25 @@ fun SetCarLocationButton(
             } else {
                 acquireLocation(
                     context = context,
+                    tokenSource = tokenSource,
                     onSetLocation = onSetLocation,
                     onMessage = onMessage,
                     onAcquiring = { acquiring = it },
-                    onSuccess = { showSuccess = true },
                 )
             }
         }
 
-    LaunchedEffect(showSuccess) {
-        if (showSuccess) {
-            delay(SUCCESS_DURATION_MS)
-            showSuccess = false
-        }
-    }
-
-    IconButton(
+    FilledTonalButton(
         onClick = {
             if (!isLocationPermissionGranted(context)) {
                 permissionLauncher.launch(LOCATION_PERMISSIONS)
             } else {
                 acquireLocation(
                     context = context,
+                    tokenSource = tokenSource,
                     onSetLocation = onSetLocation,
                     onMessage = onMessage,
                     onAcquiring = { acquiring = it },
-                    onSuccess = { showSuccess = true },
                 )
             }
         },
@@ -91,27 +90,33 @@ fun SetCarLocationButton(
             acquiring ->
                 CircularProgressIndicator(modifier = Modifier.size(SPINNER_SIZE_DP.dp))
 
-            showSuccess ->
+            showSuccess -> {
                 Icon(
                     imageVector = Icons.Default.Check,
-                    contentDescription = "Car location set",
+                    contentDescription = null,
                 )
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(text = "Car location set")
+            }
 
-            else ->
+            else -> {
                 Icon(
                     imageVector = Icons.Default.LocationOn,
-                    contentDescription = "Set my location as car location",
+                    contentDescription = null,
                 )
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(text = "Set my location as car location")
+            }
         }
     }
 }
 
 private fun acquireLocation(
     context: Context,
+    tokenSource: CancellationTokenSource,
     onSetLocation: (Double, Double) -> Unit,
     onMessage: (String) -> Unit,
     onAcquiring: (Boolean) -> Unit,
-    onSuccess: () -> Unit,
 ) {
     if (!locationServicesEnabled(context)) {
         onMessage("Location services are turned off")
@@ -127,18 +132,19 @@ private fun acquireLocation(
                     .setPriority(Priority.PRIORITY_HIGH_ACCURACY)
                     .setDurationMillis(LOCATION_FIX_TIMEOUT_MS)
                     .build(),
-                CancellationTokenSource().token,
+                tokenSource.token,
             ).addOnSuccessListener { location ->
                 onAcquiring(false)
                 if (location != null) {
                     onSetLocation(location.latitude, location.longitude)
-                    onSuccess()
                 } else {
                     onMessage("Couldn't get GPS location")
                 }
             }.addOnFailureListener {
-                onAcquiring(false)
-                onMessage("Couldn't get GPS location")
+                if (!tokenSource.token.isCancellationRequested) {
+                    onAcquiring(false)
+                    onMessage("Couldn't get GPS location")
+                }
             }
     } catch (_: SecurityException) {
         onAcquiring(false)

@@ -47,6 +47,8 @@ sealed interface BasecampEvent {
     data class ShowMessage(
         val message: String,
     ) : BasecampEvent
+
+    data object CarLocationSet : BasecampEvent
 }
 
 private const val MAX_BATCH_IDS = 1000
@@ -236,7 +238,7 @@ class BasecampViewModel
                             sourceStateFlow.value?.copy(
                                 base = GeoCoordinate(latitude, longitude),
                             )
-                        emitMessage("Car location set")
+                        _events.tryEmit(BasecampEvent.CarLocationSet)
                     }
 
                     is SetCarLocationResult.Error -> emitMessage(result.message)
