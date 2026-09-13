@@ -118,15 +118,61 @@ class SyncRepositoryTest {
         }
 
     @Test
-    fun `403 upload marks row failed cross campaign`() =
+    fun `200 upload marks row uploaded`() =
         runTest(testDispatcher) {
             val file = tempPhotoFile()
-            mockWebServer.enqueue(MockResponse().setResponseCode(403))
+            mockWebServer.enqueue(
+                MockResponse()
+                    .setResponseCode(200)
+                    .setBody("""{"id": 123}"""),
+            )
+
+            val result = repository.uploadPhoto(pendingPhoto(file), 7L)
+
+            assertEquals(PhotoUploadResult.Success, result)
+            assertEquals(listOf(1L to 123L), photoDao.markedUploaded)
+            assertTrue(photoDao.markedFailed.isEmpty())
+            file.delete()
+        }
+
+    @Test
+    fun `403 upload with cross campaign body marks row failed cross campaign`() =
+        runTest(testDispatcher) {
+            val file = tempPhotoFile()
+            mockWebServer.enqueue(
+                MockResponse()
+                    .setResponseCode(403)
+                    .setBody("""{"error": "inference_result_does_not_belong_to_survey"}"""),
+            )
 
             val result = repository.uploadPhoto(pendingPhoto(file), 7L)
 
             assertEquals(PhotoUploadResult.CrossCampaign, result)
             assertEquals(listOf(1L to "cross_campaign"), photoDao.markedFailed)
+            assertTrue(photoDao.markedUploaded.isEmpty())
+            file.delete()
+        }
+
+    @Test
+    fun `403 upload with generic body returns error and preserves row`() =
+        runTest(testDispatcher) {
+            val file = tempPhotoFile()
+            mockWebServer.enqueue(
+                MockResponse()
+                    .setResponseCode(403)
+                    .setBody("""{"error": "survey_access_denied"}"""),
+            )
+
+            val result = repository.uploadPhoto(pendingPhoto(file), 7L)
+
+            assertEquals(
+                PhotoUploadResult.Error("Forbidden: {\"error\": \"survey_access_denied\"}"),
+                result,
+            )
+            assertEquals(
+                listOf(1L to "Forbidden: {\"error\": \"survey_access_denied\"}"),
+                photoDao.markedFailed,
+            )
             assertTrue(photoDao.markedUploaded.isEmpty())
             file.delete()
         }

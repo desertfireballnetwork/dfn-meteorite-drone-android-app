@@ -111,7 +111,7 @@ class SyncRepository
                     when {
                         LoginRedirectDetector.isLoginRedirect(response) ->
                             PhotoUploadResult.AuthExpired
-                        response.code() == HttpURLConnection.HTTP_CREATED -> {
+                        response.isSuccessful -> {
                             val serverPhotoId = response.body()?.let { parseUploadId(it) }
                             if (serverPhotoId != null) {
                                 pendingPhotoUploadDao.markUploaded(
@@ -128,11 +128,20 @@ class SyncRepository
                             }
                         }
                         response.code() == HttpURLConnection.HTTP_FORBIDDEN -> {
-                            pendingPhotoUploadDao.markFailed(
-                                pendingPhoto.rowId,
-                                REASON_CROSS_CAMPAIGN,
-                            )
-                            PhotoUploadResult.CrossCampaign
+                            val body = response.errorBody()?.string().orEmpty()
+                            if (parseErrorIdentity(body) == ERROR_CROSS_CAMPAIGN) {
+                                pendingPhotoUploadDao.markFailed(
+                                    pendingPhoto.rowId,
+                                    REASON_CROSS_CAMPAIGN,
+                                )
+                                PhotoUploadResult.CrossCampaign
+                            } else {
+                                pendingPhotoUploadDao.markFailed(
+                                    pendingPhoto.rowId,
+                                    "Forbidden: $body",
+                                )
+                                PhotoUploadResult.Error("Forbidden: $body")
+                            }
                         }
                         response.code() == HttpURLConnection.HTTP_UNAUTHORIZED ->
                             PhotoUploadResult.AuthExpired
@@ -169,6 +178,14 @@ class SyncRepository
         private fun parseConflictStatus(body: String): String? =
             try {
                 conflictAdapter.fromJson(body)?.get("status")
+            } catch (e: Exception) {
+                null
+            }
+
+        @Suppress("TooGenericExceptionCaught", "SwallowedException")
+        private fun parseErrorIdentity(body: String): String? =
+            try {
+                conflictAdapter.fromJson(body)?.get("error")
             } catch (e: Exception) {
                 null
             }
@@ -269,6 +286,7 @@ class SyncRepository
             const val CLAIM_REQUIRED_BODY = "claim-required"
             const val REASON_FILE_MISSING = "file_missing"
             const val STATUS_ALREADY_COMPLETED = "already_completed"
+            const val ERROR_CROSS_CAMPAIGN = "inference_result_does_not_belong_to_survey"
         }
     }
 
