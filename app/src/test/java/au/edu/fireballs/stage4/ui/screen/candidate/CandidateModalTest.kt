@@ -1,5 +1,6 @@
 package au.edu.fireballs.stage4.ui.screen.candidate
 
+import android.Manifest
 import android.app.Application
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
@@ -11,8 +12,10 @@ import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.test.core.app.ApplicationProvider
 import au.edu.fireballs.stage4.data.repository.CandidateImageRepository
 import au.edu.fireballs.stage4.data.repository.DecisionRepository
+import au.edu.fireballs.stage4.data.repository.EvidencePhotoRepository
 import au.edu.fireballs.stage4.domain.model.BoundingBox
 import au.edu.fireballs.stage4.domain.model.DetectionTag
 import au.edu.fireballs.stage4.domain.model.GeoCoordinate
@@ -28,6 +31,7 @@ import org.mockito.kotlin.any
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.whenever
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
@@ -162,8 +166,16 @@ class CandidateModalTest {
             .thenReturn("https://example.com/tiles/10/42/{z}/{x}/{y}/")
         val decisionRepository: DecisionRepository = mock()
         whenever(decisionRepository.getVerdict(any())).thenReturn(flowOf(null))
+        val evidencePhotoRepository: EvidencePhotoRepository = mock()
+        whenever(evidencePhotoRepository.getLocalPhotosForCandidate(any()))
+            .thenReturn(flowOf(emptyList()))
 
-        val viewModel = CandidateViewModel(imageRepository, decisionRepository)
+        val viewModel =
+            CandidateViewModel(
+                imageRepository,
+                decisionRepository,
+                evidencePhotoRepository,
+            )
 
         composeRule.setContent {
             CompositionLocalProvider(LocalInspectionMode provides true) {
@@ -286,5 +298,50 @@ class CandidateModalTest {
         }
 
         composeRule.onNodeWithText("Tag (optional)").assertExists()
+    }
+
+    @Test
+    fun candidateModal_galleryShowsEmptyState() {
+        val candidate = createCandidate()
+
+        composeRule.setContent {
+            CompositionLocalProvider(LocalInspectionMode provides true) {
+                CandidateModal(
+                    candidate = candidate,
+                    uiState = CandidateUiState(candidate = candidate, surveyId = 1L),
+                    onClose = {},
+                    onSelectMode = {},
+                    photos = emptyList(),
+                )
+            }
+        }
+
+        composeRule.onNodeWithText("No photos yet").assertExists()
+        composeRule.onNodeWithTag("photo-capture-button").assertExists()
+        composeRule.onNodeWithTag("gallery-pick-button").assertExists()
+    }
+
+    @Test
+    fun candidateModal_captureFlowOpensCameraWhenPermissionGranted() {
+        shadowOf(ApplicationProvider.getApplicationContext() as Application)
+            .grantPermissions(Manifest.permission.CAMERA)
+        val candidate = createCandidate()
+
+        composeRule.setContent {
+            CompositionLocalProvider(LocalInspectionMode provides true) {
+                CandidateModal(
+                    candidate = candidate,
+                    uiState = CandidateUiState(candidate = candidate, surveyId = 1L),
+                    onClose = {},
+                    onSelectMode = {},
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag("photo-capture-button").performClick()
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithText("Capture").assertExists()
+        composeRule.onNodeWithText("Cancel").assertExists()
     }
 }

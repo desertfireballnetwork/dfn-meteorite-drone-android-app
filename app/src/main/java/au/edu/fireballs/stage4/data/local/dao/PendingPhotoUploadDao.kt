@@ -5,6 +5,7 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import au.edu.fireballs.stage4.data.local.PendingPhotoUploadEntity
+import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface PendingPhotoUploadDao {
@@ -13,6 +14,11 @@ interface PendingPhotoUploadDao {
 
     @Query("SELECT * FROM pending_photo_upload WHERE uploaded = 0")
     suspend fun getUnuploaded(): List<PendingPhotoUploadEntity>
+
+    @Query(
+        "SELECT * FROM pending_photo_upload WHERE inferenceResultId = :inferenceResultId ORDER BY capturedAt DESC",
+    )
+    fun getLocalPhotosForCandidate(inferenceResultId: Long): Flow<List<PendingPhotoUploadEntity>>
 
     @Query(
         """

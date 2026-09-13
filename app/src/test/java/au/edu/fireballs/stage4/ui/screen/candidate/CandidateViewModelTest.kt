@@ -1,11 +1,15 @@
 package au.edu.fireballs.stage4.ui.screen.candidate
 
+import android.content.Context
+import android.graphics.Bitmap
+import android.net.Uri
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import app.cash.turbine.test
 import au.edu.fireballs.stage4.data.local.Stage4Database
 import au.edu.fireballs.stage4.data.repository.CandidateImageRepository
 import au.edu.fireballs.stage4.data.repository.DecisionRepository
+import au.edu.fireballs.stage4.data.repository.EvidencePhotoRepository
 import au.edu.fireballs.stage4.domain.model.BoundingBox
 import au.edu.fireballs.stage4.domain.model.ImageDims
 import au.edu.fireballs.stage4.domain.model.Stage4Candidate
@@ -30,6 +34,7 @@ import org.junit.runner.RunWith
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.whenever
 import org.robolectric.RobolectricTestRunner
+import java.io.File
 
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
@@ -37,6 +42,7 @@ class CandidateViewModelTest {
     private val testDispatcher = StandardTestDispatcher()
     private lateinit var db: Stage4Database
     private lateinit var decisionRepository: DecisionRepository
+    private lateinit var evidencePhotoRepository: EvidencePhotoRepository
     private val imageRepository: CandidateImageRepository = mock()
     private lateinit var viewModel: CandidateViewModel
 
@@ -51,7 +57,18 @@ class CandidateViewModelTest {
                 ).allowMainThreadQueries()
                 .build()
         decisionRepository = DecisionRepository(db.localDecisionDao(), UnconfinedTestDispatcher())
-        viewModel = CandidateViewModel(imageRepository, decisionRepository)
+        evidencePhotoRepository =
+            EvidencePhotoRepository(
+                ApplicationProvider.getApplicationContext(),
+                db.pendingPhotoUploadDao(),
+                UnconfinedTestDispatcher(),
+            )
+        viewModel =
+            CandidateViewModel(
+                imageRepository,
+                decisionRepository,
+                evidencePhotoRepository,
+            )
     }
 
     @After
@@ -89,6 +106,15 @@ class CandidateViewModelTest {
     private fun TestScope.awaitVerdict(expected: Boolean?) {
         var waited = 0
         while (viewModel.verdict.value != expected && waited < 500) {
+            Thread.sleep(10)
+            advanceUntilIdle()
+            waited++
+        }
+    }
+
+    private fun TestScope.awaitGallerySize(expected: Int) {
+        var waited = 0
+        while (viewModel.photoGalleryState.value.size != expected && waited < 500) {
             Thread.sleep(10)
             advanceUntilIdle()
             waited++
@@ -325,5 +351,31 @@ class CandidateViewModelTest {
             assertNull(row)
             assertNull(viewModel.verdict.value)
             assertNull(viewModel.detectionTagId.value)
+        }
+
+    @Test
+    fun `onPhotoCaptured persists photo and updates gallery`() =
+        runTest(testDispatcher) {
+            val candidate = createCandidate(id = 42L)
+            stubImageRepository()
+            viewModel.initialize(candidate, 10L)
+            advanceUntilIdle()
+
+            val bitmap = Bitmap.createBitmap(200, 200, Bitmap.Config.ARGB_8888)
+            val context = ApplicationProvider.getApplicationContext<Context>()
+            val file = File(context.cacheDir, "vm_photo.jpg")
+            file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.JPEG, 90, it) }
+            bitmap.recycle()
+
+            viewModel.onPhotoCaptured(Uri.fromFile(file))
+            awaitGallerySize(1)
+
+            assertEquals(1, viewModel.photoGalleryState.value.size)
+            assertEquals(
+                42L,
+                viewModel.photoGalleryState.value
+                    .first()
+                    .inferenceResultId,
+            )
         }
 }

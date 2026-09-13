@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -251,5 +252,50 @@ class RoomDaoTest {
             val storedTiles = tileManifestDao.getTilesForSurvey(101L)
             assertEquals(1, storedTiles.size)
             assertEquals(15, storedTiles[0].zoom)
+        }
+
+    @Test
+    fun pendingPhotoUpload_insertAndQueryByCandidate() =
+        runBlocking {
+            val photo =
+                PendingPhotoUploadEntity(
+                    surveyId = 101L,
+                    inferenceResultId = 5001L,
+                    localFilePath = "/data/evidence/101/5001/1.jpg",
+                    capturedAt = "2026-07-24T12:00:00Z",
+                    uploaded = false,
+                )
+
+            val rowId = pendingPhotoUploadDao.insert(photo)
+            assertTrue(rowId > 0)
+
+            val photos = pendingPhotoUploadDao.getLocalPhotosForCandidate(5001L).first()
+            assertEquals(1, photos.size)
+            assertEquals(rowId, photos.first().rowId)
+            assertFalse(photos.first().uploaded)
+
+            val otherCandidate = pendingPhotoUploadDao.getLocalPhotosForCandidate(9999L).first()
+            assertTrue(otherCandidate.isEmpty())
+        }
+
+    @Test
+    fun pendingPhotoUpload_markUploadedUpdatesRow() =
+        runBlocking {
+            val photo =
+                PendingPhotoUploadEntity(
+                    surveyId = 101L,
+                    inferenceResultId = 5001L,
+                    localFilePath = "/data/evidence/101/5001/1.jpg",
+                    capturedAt = "2026-07-24T12:00:00Z",
+                    uploaded = false,
+                )
+
+            val rowId = pendingPhotoUploadDao.insert(photo)
+
+            pendingPhotoUploadDao.markUploaded(rowId, serverPhotoId = 77L)
+
+            val photos = pendingPhotoUploadDao.getLocalPhotosForCandidate(5001L).first()
+            assertTrue(photos.first().uploaded)
+            assertEquals(77L, photos.first().serverPhotoId)
         }
 }

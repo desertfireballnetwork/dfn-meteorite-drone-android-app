@@ -1,9 +1,12 @@
 package au.edu.fireballs.stage4.ui.screen.candidate
 
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import au.edu.fireballs.stage4.data.local.PendingPhotoUploadEntity
 import au.edu.fireballs.stage4.data.repository.CandidateImageRepository
 import au.edu.fireballs.stage4.data.repository.DecisionRepository
+import au.edu.fireballs.stage4.data.repository.EvidencePhotoRepository
 import au.edu.fireballs.stage4.domain.model.Stage4Candidate
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
@@ -34,6 +37,7 @@ class CandidateViewModel
     constructor(
         private val imageRepository: CandidateImageRepository,
         private val decisionRepository: DecisionRepository,
+        private val evidencePhotoRepository: EvidencePhotoRepository,
     ) : ViewModel() {
         private val _uiState = MutableStateFlow<CandidateUiState?>(null)
         val uiState: StateFlow<CandidateUiState?> = _uiState.asStateFlow()
@@ -44,8 +48,14 @@ class CandidateViewModel
         private val _detectionTagId = MutableStateFlow<Long?>(null)
         val detectionTagId: StateFlow<Long?> = _detectionTagId.asStateFlow()
 
+        private val _photoGalleryState =
+            MutableStateFlow<List<PendingPhotoUploadEntity>>(emptyList())
+        val photoGalleryState: StateFlow<List<PendingPhotoUploadEntity>> =
+            _photoGalleryState.asStateFlow()
+
         private var retryCount = 0
         private var verdictJob: Job? = null
+        private var galleryJob: Job? = null
 
         fun initialize(
             candidate: Stage4Candidate,
@@ -91,6 +101,14 @@ class CandidateViewModel
                                 _detectionTagId.value = decision.detectionTagId
                             }
                         }
+                }
+
+            galleryJob?.cancel()
+            galleryJob =
+                viewModelScope.launch {
+                    evidencePhotoRepository
+                        .getLocalPhotosForCandidate(candidate.inferenceResultId)
+                        .collect { photos -> _photoGalleryState.value = photos }
                 }
         }
 
@@ -142,6 +160,29 @@ class CandidateViewModel
                 decisionRepository
                     .clearVerdict(state.candidate.inferenceResultId)
                     .first()
+            }
+        }
+
+        fun onPhotoCaptured(uri: Uri) {
+            savePhotoLocally(uri, deleteSource = true)
+        }
+
+        fun onPhotoPicked(uri: Uri) {
+            savePhotoLocally(uri)
+        }
+
+        private fun savePhotoLocally(
+            uri: Uri,
+            deleteSource: Boolean = false,
+        ) {
+            val state = _uiState.value ?: return
+            viewModelScope.launch {
+                evidencePhotoRepository.saveLocally(
+                    uri = uri,
+                    surveyId = state.surveyId,
+                    inferenceResultId = state.candidate.inferenceResultId,
+                    deleteSource = deleteSource,
+                )
             }
         }
     }
