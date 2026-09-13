@@ -318,4 +318,101 @@ class RoomDaoTest {
             val unuploaded = pendingPhotoUploadDao.getUnuploaded()
             assertTrue(unuploaded.isEmpty())
         }
+
+    @Test
+    fun localDecisionDao_getUnsyncedCountAndFailed() =
+        runBlocking {
+            val syncedDecision =
+                LocalDecisionEntity(
+                    inferenceResultId = 801L,
+                    surveyId = 101L,
+                    verdict = true,
+                    detectionTagId = 5L,
+                    capturedAt = "2026-07-24T12:00:00Z",
+                    evidencePhotoRowId = 12L,
+                    synced = true,
+                )
+            val failedDecision =
+                LocalDecisionEntity(
+                    inferenceResultId = 802L,
+                    surveyId = 101L,
+                    verdict = false,
+                    detectionTagId = 5L,
+                    capturedAt = "2026-07-24T12:00:00Z",
+                    evidencePhotoRowId = 12L,
+                    synced = false,
+                    syncFailedReason = "Server returned code: 500",
+                )
+            val pendingDecision =
+                LocalDecisionEntity(
+                    inferenceResultId = 803L,
+                    surveyId = 101L,
+                    verdict = true,
+                    detectionTagId = 5L,
+                    capturedAt = "2026-07-24T12:00:00Z",
+                    evidencePhotoRowId = 12L,
+                    synced = false,
+                )
+
+            localDecisionDao.saveDecision(syncedDecision)
+            localDecisionDao.saveDecision(failedDecision)
+            localDecisionDao.saveDecision(pendingDecision)
+
+            val unsyncedCount = localDecisionDao.getUnsyncedCount().first()
+            assertEquals(2, unsyncedCount)
+
+            val failed = localDecisionDao.getUnsyncedFailed().first()
+            assertEquals(1, failed.size)
+            assertEquals(802L, failed[0].inferenceResultId)
+        }
+
+    @Test
+    fun pendingPhotoUploadDao_getNotUploadedCountAndFailed() =
+        runBlocking {
+            val uploadedPhoto =
+                PendingPhotoUploadEntity(
+                    surveyId = 101L,
+                    inferenceResultId = 5001L,
+                    localFilePath = "/data/evidence/101/5001/1.jpg",
+                    capturedAt = "2026-07-24T12:00:00Z",
+                    uploaded = true,
+                    serverPhotoId = 1L,
+                )
+            val failedPhoto =
+                PendingPhotoUploadEntity(
+                    surveyId = 101L,
+                    inferenceResultId = 5002L,
+                    localFilePath = "/data/evidence/101/5002/1.jpg",
+                    capturedAt = "2026-07-24T12:00:00Z",
+                    uploaded = false,
+                    uploadFailedReason = "file_missing",
+                )
+            val pendingPhoto =
+                PendingPhotoUploadEntity(
+                    surveyId = 101L,
+                    inferenceResultId = 5003L,
+                    localFilePath = "/data/evidence/101/5003/1.jpg",
+                    capturedAt = "2026-07-24T12:00:00Z",
+                    uploaded = false,
+                )
+
+            pendingPhotoUploadDao.insert(uploadedPhoto)
+            val failedRowId = pendingPhotoUploadDao.insert(failedPhoto)
+            pendingPhotoUploadDao.insert(pendingPhoto)
+
+            val notUploadedCount = pendingPhotoUploadDao.getNotUploadedCount().first()
+            assertEquals(2, notUploadedCount)
+
+            val failed = pendingPhotoUploadDao.getNotUploadedFailed().first()
+            assertEquals(1, failed.size)
+            assertEquals(failedRowId, failed[0].rowId)
+
+            pendingPhotoUploadDao.deleteByRowId(failedRowId)
+
+            val notUploadedAfterDelete = pendingPhotoUploadDao.getNotUploadedCount().first()
+            assertEquals(1, notUploadedAfterDelete)
+
+            val failedAfterDelete = pendingPhotoUploadDao.getNotUploadedFailed().first()
+            assertTrue(failedAfterDelete.isEmpty())
+        }
 }

@@ -18,6 +18,8 @@ interface SyncWorkManager {
 
     fun getWorkInfoByIdFlow(id: UUID): Flow<WorkInfo?>
 
+    fun getWorkInfosForUniqueWorkFlow(uniqueWorkName: String): Flow<List<WorkInfo>>
+
     fun cancelUniqueWork(uniqueWorkName: String): Operation
 }
 
@@ -41,6 +43,9 @@ class WorkManagerSyncWorkManager
 
         override fun getWorkInfoByIdFlow(id: UUID): Flow<WorkInfo?> =
             workManager.getWorkInfoByIdFlow(id)
+
+        override fun getWorkInfosForUniqueWorkFlow(uniqueWorkName: String): Flow<List<WorkInfo>> =
+            workManager.getWorkInfosForUniqueWorkFlow(uniqueWorkName)
 
         override fun cancelUniqueWork(uniqueWorkName: String): Operation =
             workManager.cancelUniqueWork(uniqueWorkName)

@@ -468,6 +468,15 @@ class SyncOrchestratorTest {
         override suspend fun insert(pendingPhotoUpload: PendingPhotoUploadEntity): Long =
             pendingPhotoUpload.rowId
 
+        override fun getNotUploadedCount(): Flow<Int> = flowOf(unuploaded.count { !it.uploaded })
+
+        override fun getNotUploadedFailed(): Flow<List<PendingPhotoUploadEntity>> =
+            flowOf(unuploaded.filter { !it.uploaded && it.uploadFailedReason != null })
+
+        override suspend fun deleteByRowId(rowId: Long) {
+            unuploaded = unuploaded.filterNot { it.rowId == rowId }
+        }
+
         override suspend fun getUnuploaded(): List<PendingPhotoUploadEntity> = unuploaded
 
         override fun getLocalPhotosForCandidate(
@@ -516,6 +525,11 @@ class SyncOrchestratorTest {
         override suspend fun saveDecision(decision: LocalDecisionEntity) {
             unsynced = unsynced + decision
         }
+
+        override fun getUnsyncedCount(): Flow<Int> = flowOf(unsynced.count { !it.synced })
+
+        override fun getUnsyncedFailed(): Flow<List<LocalDecisionEntity>> =
+            flowOf(unsynced.filter { !it.synced && it.syncFailedReason != null })
 
         override suspend fun getUnsynced(): List<LocalDecisionEntity> = unsynced
 
