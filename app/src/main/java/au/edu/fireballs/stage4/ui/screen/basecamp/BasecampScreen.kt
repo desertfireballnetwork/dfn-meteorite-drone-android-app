@@ -107,6 +107,7 @@ fun BasecampScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val preDownloadState by preDownloadViewModel.uiState.collectAsStateWithLifecycle()
+    val isSettingCarLocation by viewModel.isSettingCarLocation.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     var showDownloadDialog by rememberSaveable { mutableStateOf(false) }
@@ -160,6 +161,7 @@ fun BasecampScreen(
                                 mineOnly = state.mineOnly,
                                 isRefreshing = state.isRefreshing,
                                 showSuccess = carLocationSet,
+                                submitting = isSettingCarLocation,
                                 onTogglePolygon = {
                                     if (state.polygonVertices != null) {
                                         viewModel.cancelPolygon()
@@ -237,6 +239,7 @@ private fun BasecampToolbarActions(
     mineOnly: Boolean,
     isRefreshing: Boolean,
     showSuccess: Boolean,
+    submitting: Boolean,
     onTogglePolygon: () -> Unit,
     onToggleMine: () -> Unit,
     onRefresh: () -> Unit,
@@ -283,6 +286,7 @@ private fun BasecampToolbarActions(
     }
     SetCarLocationButton(
         showSuccess = showSuccess,
+        submitting = submitting,
         onSetLocation = onSetLocation,
         onMessage = onMessage,
     )

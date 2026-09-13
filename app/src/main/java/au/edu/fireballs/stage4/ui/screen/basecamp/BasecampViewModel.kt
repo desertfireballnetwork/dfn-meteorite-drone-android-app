@@ -82,6 +82,9 @@ class BasecampViewModel
         private val _events = MutableSharedFlow<BasecampEvent>(extraBufferCapacity = 8)
         val events: SharedFlow<BasecampEvent> = _events.asSharedFlow()
 
+        private val isSettingCarLocationFlow = MutableStateFlow(false)
+        val isSettingCarLocation: StateFlow<Boolean> = isSettingCarLocationFlow
+
         val uiState: StateFlow<BasecampUiState> =
             combine(
                 combine(sourceStateFlow, claimsFlow) { source, claims -> source to claims },
@@ -229,22 +232,29 @@ class BasecampViewModel
             longitude: Double,
         ) {
             val surveyId = surveyIdFlow.value ?: return
+            if (isSettingCarLocationFlow.value) return
+            isSettingCarLocationFlow.value = true
             viewModelScope.launch {
-                when (
-                    val result = surveyRepository.setCarLocation(surveyId, latitude, longitude)
-                ) {
-                    is SetCarLocationResult.Success -> {
-                        sourceStateFlow.value =
-                            sourceStateFlow.value?.copy(
-                                base = GeoCoordinate(latitude, longitude),
-                            )
-                        _events.tryEmit(BasecampEvent.CarLocationSet)
-                    }
+                try {
+                    when (
+                        val result =
+                            surveyRepository.setCarLocation(surveyId, latitude, longitude)
+                    ) {
+                        is SetCarLocationResult.Success -> {
+                            sourceStateFlow.value =
+                                sourceStateFlow.value?.copy(
+                                    base = GeoCoordinate(latitude, longitude),
+                                )
+                            _events.tryEmit(BasecampEvent.CarLocationSet)
+                        }
 
-                    is SetCarLocationResult.Error -> emitMessage(result.message)
-                    is SetCarLocationResult.AuthExpired -> authExpiredFlow.value = true
-                    is SetCarLocationResult.NetworkError ->
-                        emitMessage("Network error setting car location")
+                        is SetCarLocationResult.Error -> emitMessage(result.message)
+                        is SetCarLocationResult.AuthExpired -> authExpiredFlow.value = true
+                        is SetCarLocationResult.NetworkError ->
+                            emitMessage("Network error setting car location")
+                    }
+                } finally {
+                    isSettingCarLocationFlow.value = false
                 }
             }
         }

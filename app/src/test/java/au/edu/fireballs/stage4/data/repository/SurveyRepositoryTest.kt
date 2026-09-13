@@ -1,5 +1,6 @@
 package au.edu.fireballs.stage4.data.repository
 
+import au.edu.fireballs.stage4.data.remote.AuthInterceptor
 import au.edu.fireballs.stage4.data.remote.Stage4Service
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
@@ -7,6 +8,10 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
+import okhttp3.Cookie
+import okhttp3.CookieJar
+import okhttp3.HttpUrl
+import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
@@ -202,4 +207,71 @@ class SurveyRepositoryTest {
 
             assertEquals(SetCarLocationResult.AuthExpired, result)
         }
+
+    @Test
+    fun `setCarLocation sends X-CSRFToken through the authenticated client`() =
+        runTest(testDispatcher) {
+            val cookieJar = FakeCookieJar()
+            val authInterceptor = AuthInterceptor(cookieJar, "https://find.gfo.rocks")
+            val client =
+                OkHttpClient
+                    .Builder()
+                    .cookieJar(cookieJar)
+                    .addInterceptor(authInterceptor)
+                    .build()
+            val moshi =
+                Moshi
+                    .Builder()
+                    .addLast(KotlinJsonAdapterFactory())
+                    .build()
+            val retrofit =
+                Retrofit
+                    .Builder()
+                    .baseUrl(mockWebServer.url("/"))
+                    .client(client)
+                    .addConverterFactory(MoshiConverterFactory.create(moshi))
+                    .build()
+            val authenticatedRepository =
+                SurveyRepository(
+                    stage4Service = retrofit.create(Stage4Service::class.java),
+                    ioDispatcher = testDispatcher,
+                )
+
+            cookieJar.saveFromResponse(
+                mockWebServer.url("/"),
+                listOf(
+                    Cookie
+                        .Builder()
+                        .name("csrftoken")
+                        .value("test-csrf-secret")
+                        .domain(mockWebServer.url("/").host)
+                        .build(),
+                ),
+            )
+
+            mockWebServer.enqueue(MockResponse().setResponseCode(200).setBody("OK"))
+
+            val result = authenticatedRepository.setCarLocation(7L, -25.0, 134.0)
+
+            assertEquals(SetCarLocationResult.Success, result)
+
+            val request = mockWebServer.takeRequest()
+            assertEquals("test-csrf-secret", request.getHeader("X-CSRFToken"))
+            val body = request.body.readUtf8()
+            assertTrue(body.contains("latitude"))
+            assertTrue(body.contains("longitude"))
+        }
+
+    private class FakeCookieJar : CookieJar {
+        private val storage = mutableListOf<Cookie>()
+
+        override fun saveFromResponse(
+            url: HttpUrl,
+            cookies: List<Cookie>,
+        ) {
+            storage.addAll(cookies)
+        }
+
+        override fun loadForRequest(url: HttpUrl): List<Cookie> = storage.filter { it.matches(url) }
+    }
 }

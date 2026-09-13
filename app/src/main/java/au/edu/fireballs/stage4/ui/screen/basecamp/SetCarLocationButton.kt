@@ -39,9 +39,13 @@ private val LOCATION_PERMISSIONS =
         Manifest.permission.ACCESS_COARSE_LOCATION,
     )
 
+internal fun fineLocationGranted(granted: Map<String, Boolean>): Boolean =
+    granted[Manifest.permission.ACCESS_FINE_LOCATION] == true
+
 @Composable
 fun SetCarLocationButton(
     showSuccess: Boolean,
+    submitting: Boolean,
     onSetLocation: (Double, Double) -> Unit,
     onMessage: (String) -> Unit,
 ) {
@@ -57,7 +61,7 @@ fun SetCarLocationButton(
         rememberLauncherForActivityResult(
             ActivityResultContracts.RequestMultiplePermissions(),
         ) { granted ->
-            if (granted.values.none { it }) {
+            if (!fineLocationGranted(granted)) {
                 onMessage("Location permission required to set car location")
             } else {
                 acquireLocation(
@@ -69,6 +73,8 @@ fun SetCarLocationButton(
                 )
             }
         }
+
+    val busy = acquiring || submitting
 
     FilledTonalButton(
         onClick = {
@@ -84,10 +90,10 @@ fun SetCarLocationButton(
                 )
             }
         },
-        enabled = !acquiring,
+        enabled = !busy,
     ) {
         when {
-            acquiring ->
+            busy ->
                 CircularProgressIndicator(modifier = Modifier.size(SPINNER_SIZE_DP.dp))
 
             showSuccess -> {

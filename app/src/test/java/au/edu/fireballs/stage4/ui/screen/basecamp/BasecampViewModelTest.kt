@@ -24,12 +24,14 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.mockito.kotlin.any
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.never
+import org.mockito.kotlin.times
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 import org.mockito.kotlin.wheneverBlocking
@@ -529,6 +531,33 @@ class BasecampViewModelTest {
             advanceUntilIdle()
 
             assertEquals(BasecampUiState.AuthExpired, viewModel.uiState.value)
+            collectJob.cancel()
+        }
+
+    @Test
+    fun `setCarLocation ignores a second submission while one is in flight`() =
+        runTest(testDispatcher) {
+            val fixture = state(candidate(1L))
+            whenever(stage4Repository.getCandidatesState(7L))
+                .thenReturn(Stage4FetchResult.Success(fixture))
+            wheneverBlocking { surveyRepository.setCarLocation(7L, -25.0, 134.0) }
+                .thenReturn(SetCarLocationResult.Success)
+
+            viewModel = BasecampViewModel(stage4Repository, claimRepository, surveyRepository)
+            val collectJob = backgroundScope.launch(testDispatcher) { viewModel.uiState.collect {} }
+            viewModel.openSurvey(7L)
+            advanceUntilIdle()
+
+            viewModel.setCarLocation(-25.0, 134.0)
+            assertTrue(viewModel.isSettingCarLocation.value)
+
+            viewModel.setCarLocation(-25.0, 134.0)
+            runCurrent()
+
+            verify(surveyRepository, times(1)).setCarLocation(7L, -25.0, 134.0)
+
+            advanceUntilIdle()
+            assertFalse(viewModel.isSettingCarLocation.value)
             collectJob.cancel()
         }
 }
