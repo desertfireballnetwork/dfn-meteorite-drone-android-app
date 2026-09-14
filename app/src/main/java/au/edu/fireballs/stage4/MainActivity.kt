@@ -224,6 +224,16 @@ private fun MainScaffold(
                                 popUpTo(0) { inclusive = true }
                             }
                         },
+                        onOpenDownloads = {
+                            navController.navigate("basecamp") {
+                                popUpTo(navController.graph.findStartDestination().id) {
+                                    saveState = true
+                                }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                        },
+                        pendingCount = pendingDecisions + pendingPhotos,
                     )
                 } else {
                     SurveyListScreen(

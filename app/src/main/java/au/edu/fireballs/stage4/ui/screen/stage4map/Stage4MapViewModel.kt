@@ -5,7 +5,10 @@ import androidx.lifecycle.viewModelScope
 import androidx.work.WorkInfo
 import au.edu.fireballs.stage4.data.local.LocalDecisionEntity
 import au.edu.fireballs.stage4.data.local.dao.LocalDecisionDao
+import au.edu.fireballs.stage4.data.local.dao.OfflineBundleDao
 import au.edu.fireballs.stage4.data.repository.CandidateImageRepository
+import au.edu.fireballs.stage4.data.repository.NetworkState
+import au.edu.fireballs.stage4.data.repository.NetworkStateRepository
 import au.edu.fireballs.stage4.data.repository.Stage4FetchResult
 import au.edu.fireballs.stage4.data.repository.Stage4Repository
 import au.edu.fireballs.stage4.data.tiles.AuthenticatedTileHttpInterceptor
@@ -15,6 +18,7 @@ import au.edu.fireballs.stage4.domain.model.Stage4Candidate
 import au.edu.fireballs.stage4.domain.model.Stage4State
 import au.edu.fireballs.stage4.domain.model.resolveInitialCamera
 import au.edu.fireballs.stage4.sync.SyncWorker
+import au.edu.fireballs.stage4.ui.screen.basecamp.PreDownloadWorkManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
@@ -24,6 +28,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -72,16 +78,27 @@ sealed interface SyncStatus {
     data object AuthExpired : SyncStatus
 }
 
+sealed interface ConnectionBannerState {
+    data object Online : ConnectionBannerState
+
+    data object Offline : ConnectionBannerState
+
+    data object Downloading : ConnectionBannerState
+}
+
 @HiltViewModel
 class Stage4MapViewModel
     @Inject
     constructor(
         private val stage4Repository: Stage4Repository,
         private val localDecisionDao: LocalDecisionDao,
+        private val offlineBundleDao: OfflineBundleDao,
         private val candidateImageRepository: CandidateImageRepository,
         val tileStore: TileStore,
         private val tileHttpInterceptor: AuthenticatedTileHttpInterceptor,
         private val syncWorkManager: SyncWorkManager,
+        private val networkStateRepository: NetworkStateRepository,
+        private val preDownloadWorkManager: PreDownloadWorkManager,
     ) : ViewModel() {
         init {
             tileHttpInterceptor.onAuthLost = { authExpiredFlow.value = true }
@@ -154,6 +171,61 @@ class Stage4MapViewModel
                 )
 
         private var fetchJob: Job? = null
+
+        @OptIn(ExperimentalCoroutinesApi::class)
+        val connectionBannerState: StateFlow<ConnectionBannerState> =
+            surveyIdFlow
+                .flatMapLatest { surveyId ->
+                    if (surveyId == null) {
+                        flowOf(ConnectionBannerState.Online)
+                    } else {
+                        combine(
+                            networkStateRepository.networkState,
+                            preDownloadWorkManager.getWorkInfosForUniqueWorkFlow(
+                                PreDownloadWorkManager.UNIQUE_WORK_PREFIX + surveyId,
+                            ),
+                        ) { network, workInfos ->
+                            val downloading =
+                                workInfos.any {
+                                    it.state == WorkInfo.State.ENQUEUED ||
+                                        it.state == WorkInfo.State.RUNNING
+                                }
+                            when {
+                                downloading -> ConnectionBannerState.Downloading
+                                network is NetworkState.Online -> ConnectionBannerState.Online
+                                else -> ConnectionBannerState.Offline
+                            }
+                        }
+                    }
+                }.stateIn(
+                    scope = viewModelScope,
+                    started = SharingStarted.WhileSubscribed(5000),
+                    initialValue = ConnectionBannerState.Online,
+                )
+
+        val networkState: StateFlow<NetworkState> =
+            networkStateRepository.networkState.stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5000),
+                initialValue = NetworkState.Offline,
+            )
+
+        @OptIn(ExperimentalCoroutinesApi::class)
+        val hasOfflineBundle: StateFlow<Boolean> =
+            surveyIdFlow
+                .flatMapLatest { surveyId ->
+                    if (surveyId == null) {
+                        flowOf(false)
+                    } else {
+                        offlineBundleDao
+                            .observeLatestBundleForSurvey(surveyId)
+                            .map { it != null }
+                    }
+                }.stateIn(
+                    scope = viewModelScope,
+                    started = SharingStarted.WhileSubscribed(5000),
+                    initialValue = false,
+                )
 
         fun toggleLayer(
             type: LayerType,

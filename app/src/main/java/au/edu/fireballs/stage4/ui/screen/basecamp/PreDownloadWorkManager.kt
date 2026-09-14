@@ -10,6 +10,10 @@ import java.util.UUID
 import javax.inject.Inject
 
 interface PreDownloadWorkManager {
+    companion object {
+        const val UNIQUE_WORK_PREFIX = "pre_download_"
+    }
+
     fun enqueueUniqueWork(
         uniqueWorkName: String,
         existingWorkPolicy: ExistingWorkPolicy,
@@ -17,6 +21,8 @@ interface PreDownloadWorkManager {
     ): Operation
 
     fun getWorkInfoByIdFlow(id: UUID): Flow<WorkInfo?>
+
+    fun getWorkInfosForUniqueWorkFlow(uniqueWorkName: String): Flow<List<WorkInfo>>
 
     fun cancelUniqueWork(uniqueWorkName: String): Operation
 }
@@ -34,6 +40,9 @@ class WorkManagerPreDownloadWorkManager
 
         override fun getWorkInfoByIdFlow(id: UUID): Flow<WorkInfo?> =
             workManager.getWorkInfoByIdFlow(id)
+
+        override fun getWorkInfosForUniqueWorkFlow(uniqueWorkName: String): Flow<List<WorkInfo>> =
+            workManager.getWorkInfosForUniqueWorkFlow(uniqueWorkName)
 
         override fun cancelUniqueWork(uniqueWorkName: String): Operation =
             workManager.cancelUniqueWork(uniqueWorkName)

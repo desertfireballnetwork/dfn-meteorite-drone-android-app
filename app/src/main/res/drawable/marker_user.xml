@@ -1,0 +1,23 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="50dp"
+    android:height="50dp"
+    android:viewportWidth="32"
+    android:viewportHeight="48">
+    <!-- Pin body -->
+    <path
+        android:fillColor="#1E88E5"
+        android:pathData="M16 0 C16 0, 32 0, 32 12 C32 24, 16 48, 16 48 C16 48, 0 24, 0 12 C0 0, 16 0, 16 0 Z" />
+    <!-- Pin border -->
+    <path
+        android:strokeColor="#1565C0"
+        android:strokeWidth="1"
+        android:pathData="M16 0 C16 0, 32 0, 32 12 C32 24, 16 48, 16 48 C16 48, 0 24, 0 12 C0 0, 16 0, 16 0 Z" />
+    <!-- Head -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M16 10 C18.76 10, 21 12.24, 21 15 C21 17.76, 18.76 20, 16 20 C13.24 20, 11 17.76, 11 15 C11 12.24, 13.24 10, 16 10 Z" />
+    <!-- Body -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M16 22 C20.42 22, 24 24.24, 24 27 L24 30 L8 30 L8 27 C8 24.24, 11.58 22, 16 22 Z" />
+</vector>
