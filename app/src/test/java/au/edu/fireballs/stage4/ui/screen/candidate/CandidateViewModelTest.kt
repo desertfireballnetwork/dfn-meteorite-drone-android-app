@@ -8,6 +8,7 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import app.cash.turbine.test
 import au.edu.fireballs.stage4.data.local.Stage4Database
+import au.edu.fireballs.stage4.data.remote.EvidenceService
 import au.edu.fireballs.stage4.data.repository.CandidateImageRepository
 import au.edu.fireballs.stage4.data.repository.DecisionRepository
 import au.edu.fireballs.stage4.data.repository.EvidencePhotoRepository
@@ -46,6 +47,7 @@ class CandidateViewModelTest {
     private lateinit var decisionRepository: DecisionRepository
     private lateinit var evidencePhotoRepository: EvidencePhotoRepository
     private val imageRepository: CandidateImageRepository = mock()
+    private val evidenceService: EvidenceService = mock()
     private lateinit var viewModel: CandidateViewModel
 
     @Before
@@ -63,6 +65,7 @@ class CandidateViewModelTest {
             EvidencePhotoRepository(
                 ApplicationProvider.getApplicationContext(),
                 db.pendingPhotoUploadDao(),
+                evidenceService,
                 UnconfinedTestDispatcher(),
             )
         viewModel =

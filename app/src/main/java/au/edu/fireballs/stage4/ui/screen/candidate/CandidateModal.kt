@@ -1,6 +1,7 @@
 package au.edu.fireballs.stage4.ui.screen.candidate
 
 import android.net.Uri
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,6 +19,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuAnchorType
@@ -48,6 +50,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.font.FontWeight
@@ -58,14 +61,21 @@ import androidx.compose.ui.zIndex
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import au.edu.fireballs.stage4.data.local.PendingPhotoUploadEntity
+import au.edu.fireballs.stage4.data.remote.dto.EvidencePhotoDto
 import au.edu.fireballs.stage4.domain.model.DetectionTag
 import au.edu.fireballs.stage4.domain.model.GeoCoordinate
 import au.edu.fireballs.stage4.domain.model.Stage4Candidate
 import au.edu.fireballs.stage4.ui.theme.dfnMarkerNo
 import au.edu.fireballs.stage4.ui.theme.dfnMarkerYes
 import coil.compose.AsyncImage
+import coil.compose.SubcomposeAsyncImage
+import dagger.hilt.EntryPoint
+import dagger.hilt.InstallIn
+import dagger.hilt.android.EntryPointAccessors
+import dagger.hilt.components.SingletonComponent
 import java.io.File
 import java.util.Locale
+import javax.inject.Named
 import kotlin.math.abs
 
 internal fun formatCoordinates(coordinate: GeoCoordinate?): String {
@@ -91,6 +101,13 @@ private fun Modifier.pointerHitTestEnabled(enabled: Boolean): Modifier =
         }
     }
 
+@EntryPoint
+@InstallIn(SingletonComponent::class)
+interface ServerUrlEntryPoint {
+    @Named("serverUrl")
+    fun serverUrl(): String
+}
+
 @Composable
 fun CandidateModal(
     candidate: Stage4Candidate,
@@ -108,6 +125,17 @@ fun CandidateModal(
     val verdict by viewModel.verdict.collectAsStateWithLifecycle()
     val detectionTagId by viewModel.detectionTagId.collectAsStateWithLifecycle()
     val photoGallery by viewModel.photoGalleryState.collectAsStateWithLifecycle()
+    val serverGalleryState by viewModel.serverGalleryState.collectAsStateWithLifecycle()
+
+    val context = LocalContext.current
+    val serverUrl =
+        remember {
+            runCatching {
+                EntryPointAccessors
+                    .fromApplication(context.applicationContext, ServerUrlEntryPoint::class.java)
+                    .serverUrl()
+            }.getOrDefault("")
+        }
 
     CandidateModal(
         candidate = candidate,
@@ -124,6 +152,9 @@ fun CandidateModal(
         photos = photoGallery,
         onPhotoCaptured = viewModel::onPhotoCaptured,
         onPhotoPicked = viewModel::onPhotoPicked,
+        serverGalleryState = serverGalleryState,
+        onRetryServerGallery = viewModel::retryServerGallery,
+        serverUrl = serverUrl,
     )
 }
 
@@ -143,6 +174,9 @@ fun CandidateModal(
     photos: List<PendingPhotoUploadEntity> = emptyList(),
     onPhotoCaptured: (Uri) -> Unit = {},
     onPhotoPicked: (Uri) -> Unit = {},
+    serverGalleryState: EvidenceGalleryUiState = EvidenceGalleryUiState.Loading,
+    onRetryServerGallery: () -> Unit = {},
+    serverUrl: String = "",
 ) {
     val activeCandidate = uiState?.candidate ?: candidate
     val currentMode = uiState?.viewMode ?: CandidateViewMode.MAP
@@ -228,6 +262,10 @@ fun CandidateModal(
                         photos = photos,
                         onPhotoCaptured = onPhotoCaptured,
                         onPhotoPicked = onPhotoPicked,
+                        serverGalleryState = serverGalleryState,
+                        onRetryServerGallery = onRetryServerGallery,
+                        serverUrl = serverUrl,
+                        onAuthExpired = onAuthExpired,
                     )
                     CandidateVerdictBar(
                         verdict = verdict,
@@ -248,7 +286,12 @@ internal fun PhotoGallery(
     photos: List<PendingPhotoUploadEntity>,
     onPhotoCaptured: (Uri) -> Unit,
     onPhotoPicked: (Uri) -> Unit,
+    serverGalleryState: EvidenceGalleryUiState = EvidenceGalleryUiState.Loading,
+    onRetryServerGallery: () -> Unit = {},
+    serverUrl: String = "",
+    onAuthExpired: () -> Unit = {},
 ) {
+    val localPhotos = remember(photos) { photos.filter { it.serverPhotoId == null } }
     Surface(
         modifier = Modifier.fillMaxWidth(),
         tonalElevation = 2.dp,
@@ -311,7 +354,7 @@ internal fun PhotoGallery(
                     onCancel = { showCamera = false },
                 )
             }
-            if (photos.isEmpty()) {
+            if (localPhotos.isEmpty()) {
                 Text(
                     text = "No photos yet",
                     style = MaterialTheme.typography.bodySmall,
@@ -323,7 +366,7 @@ internal fun PhotoGallery(
                     modifier = Modifier.fillMaxWidth().testTag("photo-gallery"),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    items(photos, key = { it.rowId }) { photo ->
+                    items(localPhotos, key = { it.rowId }) { photo ->
                         AsyncImage(
                             model = File(photo.localFilePath),
                             contentDescription = "Evidence photo",
@@ -336,6 +379,215 @@ internal fun PhotoGallery(
                     }
                 }
             }
+            ServerEvidenceSection(
+                state = serverGalleryState,
+                onRetry = onRetryServerGallery,
+                serverUrl = serverUrl,
+                onAuthExpired = onAuthExpired,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ServerEvidenceSection(
+    state: EvidenceGalleryUiState,
+    onRetry: () -> Unit,
+    serverUrl: String,
+    onAuthExpired: () -> Unit,
+) {
+    var selectedPhoto by remember { mutableStateOf<EvidencePhotoDto?>(null) }
+    LaunchedEffect(state) {
+        if (state is EvidenceGalleryUiState.AuthExpired) {
+            onAuthExpired()
+        }
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            text = "Server evidence",
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.testTag("server-evidence-label"),
+        )
+        when (state) {
+            EvidenceGalleryUiState.Loading -> {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    CircularProgressIndicator(
+                        modifier =
+                            Modifier
+                                .size(16.dp)
+                                .testTag("server-evidence-loading"),
+                    )
+                    Text(
+                        text = "Loading server evidence",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            }
+            is EvidenceGalleryUiState.Content -> {
+                LazyRow(
+                    modifier = Modifier.fillMaxWidth().testTag("server-evidence-gallery"),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    items(state.photos, key = { it.id }) { photo ->
+                        ServerEvidenceItem(
+                            photo = photo,
+                            serverUrl = serverUrl,
+                            onClick = { selectedPhoto = photo },
+                        )
+                    }
+                }
+            }
+            EvidenceGalleryUiState.Empty -> {
+                Text(
+                    text = "No server evidence",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.testTag("server-evidence-empty"),
+                )
+            }
+            is EvidenceGalleryUiState.Error -> {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text(
+                        text = state.message ?: "Couldn't load server evidence",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier =
+                            Modifier
+                                .weight(1f)
+                                .testTag("server-evidence-error"),
+                    )
+                    TextButton(
+                        onClick = onRetry,
+                        modifier = Modifier.testTag("server-evidence-retry"),
+                    ) {
+                        Text("Retry")
+                    }
+                }
+            }
+            EvidenceGalleryUiState.Offline -> {
+                Text(
+                    text = "Offline - showing local photos only",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.testTag("server-evidence-offline"),
+                )
+            }
+            EvidenceGalleryUiState.AuthExpired -> {
+                Text(
+                    text = "Session expired",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.testTag("server-evidence-auth-expired"),
+                )
+            }
+        }
+    }
+    selectedPhoto?.let { photo ->
+        ServerPhotoDialog(
+            photo = photo,
+            serverUrl = serverUrl,
+            onDismiss = { selectedPhoto = null },
+        )
+    }
+}
+
+private fun serverEvidenceUrl(
+    serverUrl: String,
+    photoId: Long,
+): String = serverUrl.trimEnd('/') + "/api/stage4/evidence/" + photoId + "/"
+
+@Composable
+private fun ServerEvidenceItem(
+    photo: EvidencePhotoDto,
+    serverUrl: String,
+    onClick: () -> Unit,
+) {
+    val url = serverEvidenceUrl(serverUrl, photo.id)
+    Column(
+        modifier = Modifier.width(96.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        SubcomposeAsyncImage(
+            model = url,
+            contentDescription = "Evidence photo by ${photo.username}",
+            contentScale = ContentScale.Crop,
+            modifier =
+                Modifier
+                    .size(72.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable(onClick = onClick)
+                    .testTag("server-evidence-photo-${photo.id}"),
+            error = {
+                Box(
+                    modifier =
+                        Modifier
+                            .size(72.dp)
+                            .clip(RoundedCornerShape(8.dp)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = "Failed to load",
+                        style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier.testTag("server-evidence-photo-error-${photo.id}"),
+                    )
+                }
+            },
+        )
+        Text(
+            text = photo.username,
+            style = MaterialTheme.typography.labelSmall,
+            maxLines = 1,
+            modifier = Modifier.testTag("server-evidence-owner-${photo.id}"),
+        )
+        Text(
+            text = photo.capturedAt ?: "unknown time",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            modifier = Modifier.testTag("server-evidence-time-${photo.id}"),
+        )
+    }
+}
+
+@Composable
+private fun ServerPhotoDialog(
+    photo: EvidencePhotoDto,
+    serverUrl: String,
+    onDismiss: () -> Unit,
+) {
+    val url = serverEvidenceUrl(serverUrl, photo.id)
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Box(
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .clickable(onClick = onDismiss),
+            contentAlignment = Alignment.Center,
+        ) {
+            SubcomposeAsyncImage(
+                model = url,
+                contentDescription = "Full evidence photo by ${photo.username}",
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.fillMaxSize().testTag("server-evidence-full-image"),
+                error = {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text("Couldn't load full image")
+                    }
+                },
+            )
         }
     }
 }
