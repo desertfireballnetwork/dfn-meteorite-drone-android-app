@@ -1,8 +1,8 @@
 package au.edu.fireballs.stage4.ui.session
 
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.SharedFlow
-import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.receiveAsFlow
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -10,11 +10,11 @@ import javax.inject.Singleton
 class SessionExpiredBus
     @Inject
     constructor() {
-        private val _events = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+        private val _events = Channel<Unit>(capacity = Channel.CONFLATED)
 
-        val events: SharedFlow<Unit> = _events.asSharedFlow()
+        val events: Flow<Unit> = _events.receiveAsFlow()
 
         suspend fun emit() {
-            _events.emit(Unit)
+            _events.send(Unit)
         }
     }

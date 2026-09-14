@@ -94,34 +94,28 @@ class MainViewModelTest {
         }
 
     @Test
-    fun `pendingDecisions are scoped to selected survey`() =
+    fun `pendingDecisions reflect global unsynced count`() =
         runTest(testDispatcher) {
-            whenever(localDecisionDao.getUnsyncedCount(7L)).thenReturn(MutableStateFlow(3))
-            whenever(localDecisionDao.getUnsyncedCount(99L)).thenReturn(MutableStateFlow(0))
+            whenever(localDecisionDao.getAllUnsyncedCount()).thenReturn(MutableStateFlow(3))
             viewModel = createViewModel()
-            selectedSurveyId.value = 7L
             var value = -1
             val job = launch { viewModel.pendingDecisions.collect { value = it } }
             testDispatcher.scheduler.advanceUntilIdle()
             assertEquals(3, value)
-            verify(localDecisionDao).getUnsyncedCount(7L)
-            verify(localDecisionDao, never()).getUnsyncedCount(99L)
+            verify(localDecisionDao).getAllUnsyncedCount()
             job.cancel()
         }
 
     @Test
-    fun `pendingPhotos are scoped to selected survey`() =
+    fun `pendingPhotos reflect global not uploaded count`() =
         runTest(testDispatcher) {
-            whenever(pendingPhotoUploadDao.getNotUploadedCount(7L)).thenReturn(MutableStateFlow(4))
-            whenever(pendingPhotoUploadDao.getNotUploadedCount(99L)).thenReturn(MutableStateFlow(0))
+            whenever(pendingPhotoUploadDao.getAllNotUploadedCount()).thenReturn(MutableStateFlow(4))
             viewModel = createViewModel()
-            selectedSurveyId.value = 7L
             var value = -1
             val job = launch { viewModel.pendingPhotos.collect { value = it } }
             testDispatcher.scheduler.advanceUntilIdle()
             assertEquals(4, value)
-            verify(pendingPhotoUploadDao).getNotUploadedCount(7L)
-            verify(pendingPhotoUploadDao, never()).getNotUploadedCount(99L)
+            verify(pendingPhotoUploadDao).getAllNotUploadedCount()
             job.cancel()
         }
 }

@@ -17,8 +17,6 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.flatMapLatest
-import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -49,32 +47,18 @@ class MainViewModel
         val selectedSurveyId: Flow<Long?> = selectedSurveyRepository.selectedSurveyId
 
         val pendingDecisions: StateFlow<Int> =
-            selectedSurveyRepository.selectedSurveyId
-                .flatMapLatest { surveyId ->
-                    if (surveyId == null) {
-                        flowOf(0)
-                    } else {
-                        localDecisionDao.getUnsyncedCount(surveyId)
-                    }
-                }.stateIn(
-                    viewModelScope,
-                    SharingStarted.WhileSubscribed(5000),
-                    0,
-                )
+            localDecisionDao.getAllUnsyncedCount().stateIn(
+                viewModelScope,
+                SharingStarted.WhileSubscribed(5000),
+                0,
+            )
 
         val pendingPhotos: StateFlow<Int> =
-            selectedSurveyRepository.selectedSurveyId
-                .flatMapLatest { surveyId ->
-                    if (surveyId == null) {
-                        flowOf(0)
-                    } else {
-                        pendingPhotoUploadDao.getNotUploadedCount(surveyId)
-                    }
-                }.stateIn(
-                    viewModelScope,
-                    SharingStarted.WhileSubscribed(5000),
-                    0,
-                )
+            pendingPhotoUploadDao.getAllNotUploadedCount().stateIn(
+                viewModelScope,
+                SharingStarted.WhileSubscribed(5000),
+                0,
+            )
 
         fun setSelectedSurvey(surveyId: Long) {
             viewModelScope.launch {

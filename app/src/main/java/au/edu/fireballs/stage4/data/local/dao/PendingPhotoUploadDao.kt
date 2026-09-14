@@ -17,6 +17,9 @@ interface PendingPhotoUploadDao {
     )
     fun getNotUploadedCount(surveyId: Long): Flow<Int>
 
+    @Query("SELECT COUNT(*) FROM pending_photo_upload WHERE uploaded = 0")
+    fun getAllNotUploadedCount(): Flow<Int>
+
     @Query(
         "SELECT * FROM pending_photo_upload WHERE uploaded = 0 " +
             "AND uploadFailedReason IS NOT NULL AND surveyId = :surveyId",

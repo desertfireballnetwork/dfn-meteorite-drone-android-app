@@ -478,4 +478,73 @@ class RoomDaoTest {
             assertEquals(1, pendingPhotoUploadDao.getNotUploadedFailed(202L).first().size)
             assertEquals(0, pendingPhotoUploadDao.getNotUploadedFailed(303L).first().size)
         }
+
+    @Test
+    fun globalCounts_includePendingRowsAcrossAllSurveys() =
+        runBlocking {
+            localDecisionDao.saveDecision(
+                LocalDecisionEntity(
+                    inferenceResultId = 1001L,
+                    surveyId = 101L,
+                    verdict = true,
+                    detectionTagId = null,
+                    capturedAt = "2026-07-24T12:00:00Z",
+                    evidencePhotoRowId = null,
+                    synced = false,
+                ),
+            )
+            localDecisionDao.saveDecision(
+                LocalDecisionEntity(
+                    inferenceResultId = 1002L,
+                    surveyId = 202L,
+                    verdict = true,
+                    detectionTagId = null,
+                    capturedAt = "2026-07-24T12:00:00Z",
+                    evidencePhotoRowId = null,
+                    synced = false,
+                ),
+            )
+            localDecisionDao.saveDecision(
+                LocalDecisionEntity(
+                    inferenceResultId = 1003L,
+                    surveyId = 303L,
+                    verdict = true,
+                    detectionTagId = null,
+                    capturedAt = "2026-07-24T12:00:00Z",
+                    evidencePhotoRowId = null,
+                    synced = true,
+                ),
+            )
+            pendingPhotoUploadDao.insert(
+                PendingPhotoUploadEntity(
+                    surveyId = 101L,
+                    inferenceResultId = 7001L,
+                    localFilePath = "/data/evidence/101/7001/1.jpg",
+                    capturedAt = "2026-07-24T12:00:00Z",
+                    uploaded = false,
+                ),
+            )
+            pendingPhotoUploadDao.insert(
+                PendingPhotoUploadEntity(
+                    surveyId = 202L,
+                    inferenceResultId = 7002L,
+                    localFilePath = "/data/evidence/202/7002/1.jpg",
+                    capturedAt = "2026-07-24T12:00:00Z",
+                    uploaded = false,
+                ),
+            )
+            pendingPhotoUploadDao.insert(
+                PendingPhotoUploadEntity(
+                    surveyId = 303L,
+                    inferenceResultId = 7003L,
+                    localFilePath = "/data/evidence/303/7003/1.jpg",
+                    capturedAt = "2026-07-24T12:00:00Z",
+                    uploaded = true,
+                    serverPhotoId = 1L,
+                ),
+            )
+
+            assertEquals(2, localDecisionDao.getAllUnsyncedCount().first())
+            assertEquals(2, pendingPhotoUploadDao.getAllNotUploadedCount().first())
+        }
 }

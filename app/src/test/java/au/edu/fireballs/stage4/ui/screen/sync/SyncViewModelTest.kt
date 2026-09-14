@@ -1,5 +1,6 @@
 package au.edu.fireballs.stage4.ui.screen.sync
 
+import androidx.lifecycle.viewModelScope
 import androidx.work.Data
 import androidx.work.WorkInfo
 import androidx.work.workDataOf
@@ -14,6 +15,7 @@ import au.edu.fireballs.stage4.ui.screen.stage4map.SyncWorkManager
 import au.edu.fireballs.stage4.ui.screen.stage4map.WorkManagerSyncWorkManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.resetMain
@@ -65,6 +67,9 @@ class SyncViewModelTest {
 
     @After
     fun tearDown() {
+        if (::viewModel.isInitialized) {
+            viewModel.viewModelScope.cancel()
+        }
         Dispatchers.resetMain()
     }
 
@@ -280,6 +285,46 @@ class SyncViewModelTest {
                 )
             testDispatcher.scheduler.advanceUntilIdle()
             assertTrue(viewModel.uiState.value is SyncUiState.Running)
+        }
+
+    @Test
+    fun `running preferred over stale completed work`() =
+        runTest(testDispatcher) {
+            selectedSurveyId.value = 7L
+            viewModel = createViewModel()
+            testDispatcher.scheduler.advanceUntilIdle()
+            workInfos.value =
+                listOf(
+                    workInfo(WorkInfo.State.SUCCEEDED),
+                    workInfo(
+                        WorkInfo.State.RUNNING,
+                        progress =
+                            workDataOf(
+                                SyncOrchestrator.KEY_DONE to 1,
+                                SyncOrchestrator.KEY_TOTAL to 2,
+                                SyncOrchestrator.KEY_PHASE to SyncOrchestrator.PHASE_PHOTOS,
+                            ),
+                    ),
+                )
+            testDispatcher.scheduler.advanceUntilIdle()
+            val state = viewModel.uiState.value
+            assertTrue(state is SyncUiState.Running)
+            assertEquals(SyncOrchestrator.PHASE_PHOTOS, (state as SyncUiState.Running).phase)
+        }
+
+    @Test
+    fun `enqueued preferred over stale completed work`() =
+        runTest(testDispatcher) {
+            selectedSurveyId.value = 7L
+            viewModel = createViewModel()
+            testDispatcher.scheduler.advanceUntilIdle()
+            workInfos.value =
+                listOf(
+                    workInfo(WorkInfo.State.SUCCEEDED),
+                    workInfo(WorkInfo.State.ENQUEUED),
+                )
+            testDispatcher.scheduler.advanceUntilIdle()
+            assertEquals(SyncUiState.Resuming, viewModel.uiState.value)
         }
 
     @Test

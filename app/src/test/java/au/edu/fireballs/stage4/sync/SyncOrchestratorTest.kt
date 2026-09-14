@@ -471,6 +471,8 @@ class SyncOrchestratorTest {
         override fun getNotUploadedCount(surveyId: Long): Flow<Int> =
             flowOf(unuploaded.count { !it.uploaded && it.surveyId == surveyId })
 
+        override fun getAllNotUploadedCount(): Flow<Int> = flowOf(unuploaded.count { !it.uploaded })
+
         override fun getNotUploadedFailed(surveyId: Long): Flow<List<PendingPhotoUploadEntity>> =
             flowOf(
                 unuploaded.filter {
@@ -533,6 +535,8 @@ class SyncOrchestratorTest {
 
         override fun getUnsyncedCount(surveyId: Long): Flow<Int> =
             flowOf(unsynced.count { !it.synced && it.surveyId == surveyId })
+
+        override fun getAllUnsyncedCount(): Flow<Int> = flowOf(unsynced.count { !it.synced })
 
         override fun getUnsyncedFailed(surveyId: Long): Flow<List<LocalDecisionEntity>> =
             flowOf(

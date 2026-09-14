@@ -16,6 +16,9 @@ interface LocalDecisionDao {
     )
     fun getUnsyncedCount(surveyId: Long): Flow<Int>
 
+    @Query("SELECT COUNT(*) FROM local_decision WHERE synced = 0")
+    fun getAllUnsyncedCount(): Flow<Int>
+
     @Query(
         "SELECT * FROM local_decision WHERE synced = 0 AND syncFailedReason IS NOT NULL AND surveyId = :surveyId",
     )

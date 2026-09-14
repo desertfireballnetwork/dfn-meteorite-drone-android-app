@@ -106,7 +106,7 @@ class SyncViewModel
             summary: SyncSummary,
             workInfos: List<WorkInfo>,
         ): SyncUiState {
-            val current = workInfos.lastOrNull()
+            val current = activeWork(workInfos)
             return when (current?.state) {
                 WorkInfo.State.RUNNING -> {
                     val progress = current.progress
@@ -135,6 +135,11 @@ class SyncViewModel
                 else -> if (hasPending(summary)) SyncUiState.Pending(summary) else SyncUiState.Idle
             }
         }
+
+        private fun activeWork(workInfos: List<WorkInfo>): WorkInfo? =
+            workInfos.firstOrNull { it.state == WorkInfo.State.RUNNING }
+                ?: workInfos.firstOrNull { it.state == WorkInfo.State.ENQUEUED }
+                ?: workInfos.lastOrNull()
 
         private fun hasPending(summary: SyncSummary): Boolean =
             summary.pendingDecisions > 0 || summary.pendingPhotos > 0

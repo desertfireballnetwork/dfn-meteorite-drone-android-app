@@ -2,12 +2,15 @@ package au.edu.fireballs.stage4.ui.screen.sync
 
 import android.app.Application
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import au.edu.fireballs.stage4.data.local.LocalDecisionEntity
 import au.edu.fireballs.stage4.data.local.PendingPhotoUploadEntity
+import au.edu.fireballs.stage4.sync.SyncOrchestrator
 import au.edu.fireballs.stage4.ui.theme.Stage4Theme
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -115,6 +118,80 @@ class SyncScreenTest {
             ),
         )
         composeRule.onNodeWithText("Sync in progress 3/5").assertIsDisplayed()
+    }
+
+    @Test
+    fun runningState_showsPhaseLabel() {
+        val summary = emptySummary()
+        setContent(
+            SyncUiState.Running(
+                summary = summary,
+                done = 1,
+                total = 2,
+                phase = SyncOrchestrator.PHASE_PHOTOS,
+            ),
+        )
+        composeRule.onNodeWithText("Uploading photos").assertIsDisplayed()
+    }
+
+    @Test
+    fun runningState_showsVerdictsPhaseLabel() {
+        setContent(
+            SyncUiState.Running(
+                summary = emptySummary(),
+                done = 1,
+                total = 2,
+                phase = SyncOrchestrator.PHASE_VERDICTS,
+            ),
+        )
+        composeRule.onNodeWithText("Synchronising decisions").assertIsDisplayed()
+    }
+
+    @Test
+    fun runningState_showsDefaultPhaseLabel() {
+        setContent(
+            SyncUiState.Running(
+                summary = emptySummary(),
+                done = 1,
+                total = 2,
+                phase = null,
+            ),
+        )
+        composeRule.onNodeWithText("Synchronising").assertIsDisplayed()
+    }
+
+    @Test
+    fun runningState_disablesSyncNow() {
+        var synced = 0
+        setContent(
+            uiState =
+                SyncUiState.Running(
+                    summary = emptySummary(),
+                    done = 1,
+                    total = 2,
+                    phase = null,
+                ),
+            onSyncNow = { synced++ },
+        )
+        composeRule.onNodeWithText("Sync now").assertIsNotEnabled()
+        composeRule.onNodeWithText("Sync now").performClick()
+        assertEquals(0, synced)
+    }
+
+    @Test
+    fun failedState_showsFailedCount() {
+        val summary =
+            emptySummary().copy(
+                pendingDecisions = 1,
+                failedDecisions =
+                    listOf(
+                        decision(id = 1L, reason = "claim_required"),
+                        decision(id = 2L, reason = "file_missing"),
+                    ),
+                failedPhotos = listOf(photo(rowId = 9L, reason = "cross_campaign")),
+            )
+        setContent(SyncUiState.Failed(summary))
+        composeRule.onNodeWithText("3 failed items").assertIsDisplayed()
     }
 
     @Test
@@ -244,7 +321,8 @@ class SyncScreenTest {
         )
 
         composeRule.onNodeWithText("Decision 42").assertIsDisplayed()
-        composeRule.onNodeWithText("Delete").performClick()
+        composeRule.onNodeWithText("Delete").performScrollTo().performClick()
+        composeRule.onNodeWithText("Delete Decision 42?").assertIsDisplayed()
         composeRule.onNodeWithTag("delete-confirm").performClick()
         assertEquals(42L, deletedId)
     }

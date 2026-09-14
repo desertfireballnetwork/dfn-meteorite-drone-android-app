@@ -31,6 +31,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import au.edu.fireballs.stage4.sync.SyncOrchestrator
 import au.edu.fireballs.stage4.ui.theme.Stage4Theme
 
 private enum class RowKind { Decision, Photo }
@@ -139,6 +140,11 @@ private fun RunningContent(
         PendingCounts(state.summary)
         Spacer(Modifier.height(16.dp))
         Text(
+            text = phaseLabel(state.phase),
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(
             text = "Sync in progress ${state.done}/${state.total}",
             style = MaterialTheme.typography.bodyMedium,
         )
@@ -148,7 +154,7 @@ private fun RunningContent(
             modifier = Modifier.fillMaxWidth(),
         )
         Spacer(Modifier.height(16.dp))
-        SyncNowButton(onSyncNow)
+        SyncNowButton(onSyncNow, enabled = false)
         FailedRowsWithDelete(state.summary, onDeleteDecision, onDeletePhoto)
     }
 }
@@ -302,14 +308,25 @@ private fun CountCard(
 }
 
 @Composable
-private fun SyncNowButton(onSyncNow: () -> Unit) {
+private fun SyncNowButton(
+    onSyncNow: () -> Unit,
+    enabled: Boolean = true,
+) {
     Button(
         onClick = onSyncNow,
+        enabled = enabled,
         modifier = Modifier.fillMaxWidth(),
     ) {
         Text("Sync now")
     }
 }
+
+private fun phaseLabel(phase: String?): String =
+    when (phase) {
+        SyncOrchestrator.PHASE_PHOTOS -> "Uploading photos"
+        SyncOrchestrator.PHASE_VERDICTS -> "Synchronising decisions"
+        else -> "Synchronising"
+    }
 
 @Composable
 private fun FailedRowsWithDelete(
@@ -353,6 +370,11 @@ private fun FailedRowsSection(
         text = "Failed items",
         style = MaterialTheme.typography.titleMedium,
         fontWeight = FontWeight.Bold,
+    )
+    Spacer(Modifier.height(4.dp))
+    Text(
+        text = "${rows.size} failed items",
+        style = MaterialTheme.typography.bodySmall,
     )
     Spacer(Modifier.height(8.dp))
     Column(
