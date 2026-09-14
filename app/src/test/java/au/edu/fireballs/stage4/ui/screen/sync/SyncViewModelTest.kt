@@ -35,6 +35,22 @@ import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 import java.util.UUID
 
+/**
+ * SyncUiState -> test traceability matrix.
+ *
+ * | SyncUiState | Test |
+ * |---|---|
+ * | Idle | `idle when no survey selected even with pending rows`, `idle when no pending rows and no work` |
+ * | Pending | `pending when rows exist and no work running`, `pending when work succeeds but rows still pending` |
+ * | Running | `running when work running shows progress from persisted run entity`, `running preferred over stale completed work`, `enqueued preferred over stale completed work` |
+ * | Resuming | `running when work enqueued with no persisted run shows resuming`, `resume after session expired transitions to resuming then running` |
+ * | Failed | `failed when work fails and failed rows present` |
+ * | SessionExpired | `session expired when work succeeds with auth expired flag` |
+ * | Complete | `complete when work succeeds with no pending rows` |
+ * | Restart restoration | `restart restores running progress from persisted run entity` |
+ * | Survey scoping | `dao flows are queried with the selected survey id`, `dao flows are not queried when no survey selected` |
+ * | Actions | `syncNow enqueues via sync work manager`, `deleteDecision calls dao`, `deletePhoto calls dao` |
+ */
 @OptIn(ExperimentalCoroutinesApi::class)
 class SyncViewModelTest {
     private val testDispatcher = StandardTestDispatcher()
