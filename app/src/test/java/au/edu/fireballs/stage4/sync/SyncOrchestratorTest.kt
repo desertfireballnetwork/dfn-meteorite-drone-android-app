@@ -4,10 +4,12 @@ import au.edu.fireballs.stage4.data.local.CandidateEntity
 import au.edu.fireballs.stage4.data.local.ClaimEntity
 import au.edu.fireballs.stage4.data.local.LocalDecisionEntity
 import au.edu.fireballs.stage4.data.local.PendingPhotoUploadEntity
+import au.edu.fireballs.stage4.data.local.SyncRunEntity
 import au.edu.fireballs.stage4.data.local.dao.CandidateDao
 import au.edu.fireballs.stage4.data.local.dao.ClaimDao
 import au.edu.fireballs.stage4.data.local.dao.LocalDecisionDao
 import au.edu.fireballs.stage4.data.local.dao.PendingPhotoUploadDao
+import au.edu.fireballs.stage4.data.local.dao.SyncRunDao
 import au.edu.fireballs.stage4.data.remote.AccountManager
 import au.edu.fireballs.stage4.data.repository.PhotoUploadResult
 import au.edu.fireballs.stage4.data.repository.SyncRepository
@@ -99,6 +101,7 @@ class SyncOrchestratorTest {
         claimDao: ClaimDao,
         photoDao: PendingPhotoUploadDao,
         decisionDao: LocalDecisionDao,
+        syncRunDao: SyncRunDao = FakeSyncRunDao(),
     ): SyncOrchestrator =
         SyncOrchestrator(
             accountManager = accountManager,
@@ -107,6 +110,7 @@ class SyncOrchestratorTest {
             claimDao = claimDao,
             pendingPhotoUploadDao = photoDao,
             localDecisionDao = decisionDao,
+            syncRunDao = syncRunDao,
             ioDispatcher = testDispatcher,
         )
 
@@ -377,6 +381,159 @@ class SyncOrchestratorTest {
             verify(syncRepository, never()).postVerdict(any(), any())
         }
 
+    private class FakeSyncRunDao : SyncRunDao {
+        val upserts = mutableListOf<SyncRunEntity>()
+        val cleared = mutableListOf<Long>()
+
+        override suspend fun upsert(run: SyncRunEntity) {
+            upserts.add(run)
+        }
+
+        override fun observeRun(surveyId: Long): Flow<SyncRunEntity?> =
+            flowOf(upserts.lastOrNull { it.surveyId == surveyId })
+
+        override suspend fun clear(surveyId: Long) {
+            cleared.add(surveyId)
+        }
+    }
+
+    @Test
+    fun `persists phase total and done during run and clears on success`() =
+        runTest(testDispatcher) {
+            val accountManager = mock(AccountManager::class.java)
+            `when`(accountManager.isSignedIn()).thenReturn(true)
+            val syncRepository = mock(SyncRepository::class.java)
+            `when`(syncRepository.uploadPhoto(any(), any())).thenReturn(PhotoUploadResult.Success)
+            `when`(syncRepository.postVerdict(any(), any())).thenReturn(VerdictPostResult.Success)
+
+            val candidateDao = FakeCandidateDao(listOf(candidate(1L), candidate(2L)))
+            val claimDao = FakeClaimDao(listOf(claim(1L), claim(2L)))
+            val photoDao =
+                FakePendingPhotoUploadDao(listOf(pendingPhoto(1L), pendingPhoto(2L)))
+            val decisionDao = FakeLocalDecisionDao(listOf(decision(1L)))
+            val syncRunDao = FakeSyncRunDao()
+
+            val orchestrator =
+                orchestrator(
+                    accountManager,
+                    syncRepository,
+                    candidateDao,
+                    claimDao,
+                    photoDao,
+                    decisionDao,
+                    syncRunDao,
+                )
+
+            val outcome = orchestrator.run(SURVEY_ID) {}
+
+            assertEquals(SyncOutcome.Success, outcome)
+            assertEquals(
+                listOf(
+                    SyncRunEntity(SURVEY_ID, SyncOrchestrator.PHASE_PHOTOS, 2, 0),
+                    SyncRunEntity(SURVEY_ID, SyncOrchestrator.PHASE_PHOTOS, 2, 1),
+                    SyncRunEntity(SURVEY_ID, SyncOrchestrator.PHASE_PHOTOS, 2, 2),
+                    SyncRunEntity(SURVEY_ID, SyncOrchestrator.PHASE_VERDICTS, 1, 0),
+                    SyncRunEntity(SURVEY_ID, SyncOrchestrator.PHASE_VERDICTS, 1, 1),
+                ),
+                syncRunDao.upserts,
+            )
+            assertEquals(listOf(SURVEY_ID), syncRunDao.cleared)
+        }
+
+    @Test
+    fun `clears persisted run when auth expired before any work`() =
+        runTest(testDispatcher) {
+            val accountManager = mock(AccountManager::class.java)
+            `when`(accountManager.isSignedIn()).thenReturn(false)
+            val syncRepository = mock(SyncRepository::class.java)
+
+            val candidateDao = FakeCandidateDao(listOf(candidate(1L)))
+            val claimDao = FakeClaimDao(listOf(claim(1L)))
+            val photoDao = FakePendingPhotoUploadDao(listOf(pendingPhoto(1L)))
+            val decisionDao = FakeLocalDecisionDao(listOf(decision(1L)))
+            val syncRunDao = FakeSyncRunDao()
+
+            val orchestrator =
+                orchestrator(
+                    accountManager,
+                    syncRepository,
+                    candidateDao,
+                    claimDao,
+                    photoDao,
+                    decisionDao,
+                    syncRunDao,
+                )
+
+            val outcome = orchestrator.run(SURVEY_ID) {}
+
+            assertEquals(SyncOutcome.AuthExpired, outcome)
+            assertEquals(listOf(SURVEY_ID), syncRunDao.cleared)
+        }
+
+    @Test
+    fun `clears persisted run when auth expired during photo pass`() =
+        runTest(testDispatcher) {
+            val accountManager = mock(AccountManager::class.java)
+            `when`(accountManager.isSignedIn()).thenReturn(true)
+            val syncRepository = mock(SyncRepository::class.java)
+            `when`(syncRepository.uploadPhoto(pendingPhoto(1L), SURVEY_ID))
+                .thenReturn(PhotoUploadResult.AuthExpired)
+
+            val candidateDao = FakeCandidateDao(listOf(candidate(1L)))
+            val claimDao = FakeClaimDao(listOf(claim(1L)))
+            val photoDao = FakePendingPhotoUploadDao(listOf(pendingPhoto(1L)))
+            val decisionDao = FakeLocalDecisionDao(listOf(decision(1L)))
+            val syncRunDao = FakeSyncRunDao()
+
+            val orchestrator =
+                orchestrator(
+                    accountManager,
+                    syncRepository,
+                    candidateDao,
+                    claimDao,
+                    photoDao,
+                    decisionDao,
+                    syncRunDao,
+                )
+
+            val outcome = orchestrator.run(SURVEY_ID) {}
+
+            assertEquals(SyncOutcome.AuthExpired, outcome)
+            assertEquals(listOf(SURVEY_ID), syncRunDao.cleared)
+        }
+
+    @Test
+    fun `clears persisted run on terminal failure`() =
+        runTest(testDispatcher) {
+            val accountManager = mock(AccountManager::class.java)
+            `when`(accountManager.isSignedIn()).thenReturn(true)
+            val syncRepository = mock(SyncRepository::class.java)
+            `when`(syncRepository.uploadPhoto(any(), any()))
+                .thenReturn(PhotoUploadResult.Error("boom"))
+
+            val candidateDao = FakeCandidateDao(listOf(candidate(1L)))
+            val claimDao = FakeClaimDao(listOf(claim(1L)))
+            val photoDao = FakePendingPhotoUploadDao(listOf(pendingPhoto(1L)))
+            val decisionDao = FakeLocalDecisionDao(listOf(decision(1L)))
+            val syncRunDao = FakeSyncRunDao()
+
+            val orchestrator =
+                orchestrator(
+                    accountManager,
+                    syncRepository,
+                    candidateDao,
+                    claimDao,
+                    photoDao,
+                    decisionDao,
+                    syncRunDao,
+                )
+
+            val outcome = orchestrator.run(SURVEY_ID) {}
+
+            assertEquals(SyncOutcome.Failure("Photo upload failed"), outcome)
+            assertEquals(listOf(SURVEY_ID), syncRunDao.cleared)
+        }
+
     private class FakeCandidateDao(
         initial: List<CandidateEntity> = emptyList(),
     ) : CandidateDao {
@@ -468,6 +625,22 @@ class SyncOrchestratorTest {
         override suspend fun insert(pendingPhotoUpload: PendingPhotoUploadEntity): Long =
             pendingPhotoUpload.rowId
 
+        override fun getNotUploadedCount(surveyId: Long): Flow<Int> =
+            flowOf(unuploaded.count { !it.uploaded && it.surveyId == surveyId })
+
+        override fun getAllNotUploadedCount(): Flow<Int> = flowOf(unuploaded.count { !it.uploaded })
+
+        override fun getNotUploadedFailed(surveyId: Long): Flow<List<PendingPhotoUploadEntity>> =
+            flowOf(
+                unuploaded.filter {
+                    !it.uploaded && it.uploadFailedReason != null && it.surveyId == surveyId
+                },
+            )
+
+        override suspend fun deleteByRowId(rowId: Long) {
+            unuploaded = unuploaded.filterNot { it.rowId == rowId }
+        }
+
         override suspend fun getUnuploaded(): List<PendingPhotoUploadEntity> = unuploaded
 
         override fun getLocalPhotosForCandidate(
@@ -516,6 +689,18 @@ class SyncOrchestratorTest {
         override suspend fun saveDecision(decision: LocalDecisionEntity) {
             unsynced = unsynced + decision
         }
+
+        override fun getUnsyncedCount(surveyId: Long): Flow<Int> =
+            flowOf(unsynced.count { !it.synced && it.surveyId == surveyId })
+
+        override fun getAllUnsyncedCount(): Flow<Int> = flowOf(unsynced.count { !it.synced })
+
+        override fun getUnsyncedFailed(surveyId: Long): Flow<List<LocalDecisionEntity>> =
+            flowOf(
+                unsynced.filter {
+                    !it.synced && it.syncFailedReason != null && it.surveyId == surveyId
+                },
+            )
 
         override suspend fun getUnsynced(): List<LocalDecisionEntity> = unsynced
 

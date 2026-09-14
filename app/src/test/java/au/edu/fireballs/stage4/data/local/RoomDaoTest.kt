@@ -8,6 +8,7 @@ import au.edu.fireballs.stage4.data.local.dao.LocalDecisionDao
 import au.edu.fireballs.stage4.data.local.dao.OfflineBundleDao
 import au.edu.fireballs.stage4.data.local.dao.PendingPhotoUploadDao
 import au.edu.fireballs.stage4.data.local.dao.SurveyDao
+import au.edu.fireballs.stage4.data.local.dao.SyncRunDao
 import au.edu.fireballs.stage4.data.local.dao.TileManifestDao
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -31,6 +32,7 @@ class RoomDaoTest {
     private lateinit var pendingPhotoUploadDao: PendingPhotoUploadDao
     private lateinit var offlineBundleDao: OfflineBundleDao
     private lateinit var tileManifestDao: TileManifestDao
+    private lateinit var syncRunDao: SyncRunDao
 
     @Before
     fun createDb() {
@@ -49,6 +51,7 @@ class RoomDaoTest {
         pendingPhotoUploadDao = db.pendingPhotoUploadDao()
         offlineBundleDao = db.offlineBundleDao()
         tileManifestDao = db.tileManifestDao()
+        syncRunDao = db.syncRunDao()
     }
 
     @After
@@ -317,5 +320,268 @@ class RoomDaoTest {
 
             val unuploaded = pendingPhotoUploadDao.getUnuploaded()
             assertTrue(unuploaded.isEmpty())
+        }
+
+    @Test
+    fun localDecisionDao_getUnsyncedCountAndFailed() =
+        runBlocking {
+            val syncedDecision =
+                LocalDecisionEntity(
+                    inferenceResultId = 801L,
+                    surveyId = 101L,
+                    verdict = true,
+                    detectionTagId = 5L,
+                    capturedAt = "2026-07-24T12:00:00Z",
+                    evidencePhotoRowId = 12L,
+                    synced = true,
+                )
+            val failedDecision =
+                LocalDecisionEntity(
+                    inferenceResultId = 802L,
+                    surveyId = 101L,
+                    verdict = false,
+                    detectionTagId = 5L,
+                    capturedAt = "2026-07-24T12:00:00Z",
+                    evidencePhotoRowId = 12L,
+                    synced = false,
+                    syncFailedReason = "Server returned code: 500",
+                )
+            val pendingDecision =
+                LocalDecisionEntity(
+                    inferenceResultId = 803L,
+                    surveyId = 101L,
+                    verdict = true,
+                    detectionTagId = 5L,
+                    capturedAt = "2026-07-24T12:00:00Z",
+                    evidencePhotoRowId = 12L,
+                    synced = false,
+                )
+
+            localDecisionDao.saveDecision(syncedDecision)
+            localDecisionDao.saveDecision(failedDecision)
+            localDecisionDao.saveDecision(pendingDecision)
+
+            val unsyncedCount = localDecisionDao.getUnsyncedCount(101L).first()
+            assertEquals(2, unsyncedCount)
+
+            val failed = localDecisionDao.getUnsyncedFailed(101L).first()
+            assertEquals(1, failed.size)
+            assertEquals(802L, failed[0].inferenceResultId)
+        }
+
+    @Test
+    fun pendingPhotoUploadDao_getNotUploadedCountAndFailed() =
+        runBlocking {
+            val uploadedPhoto =
+                PendingPhotoUploadEntity(
+                    surveyId = 101L,
+                    inferenceResultId = 5001L,
+                    localFilePath = "/data/evidence/101/5001/1.jpg",
+                    capturedAt = "2026-07-24T12:00:00Z",
+                    uploaded = true,
+                    serverPhotoId = 1L,
+                )
+            val failedPhoto =
+                PendingPhotoUploadEntity(
+                    surveyId = 101L,
+                    inferenceResultId = 5002L,
+                    localFilePath = "/data/evidence/101/5002/1.jpg",
+                    capturedAt = "2026-07-24T12:00:00Z",
+                    uploaded = false,
+                    uploadFailedReason = "file_missing",
+                )
+            val pendingPhoto =
+                PendingPhotoUploadEntity(
+                    surveyId = 101L,
+                    inferenceResultId = 5003L,
+                    localFilePath = "/data/evidence/101/5003/1.jpg",
+                    capturedAt = "2026-07-24T12:00:00Z",
+                    uploaded = false,
+                )
+
+            pendingPhotoUploadDao.insert(uploadedPhoto)
+            val failedRowId = pendingPhotoUploadDao.insert(failedPhoto)
+            pendingPhotoUploadDao.insert(pendingPhoto)
+
+            val notUploadedCount = pendingPhotoUploadDao.getNotUploadedCount(101L).first()
+            assertEquals(2, notUploadedCount)
+
+            val failed = pendingPhotoUploadDao.getNotUploadedFailed(101L).first()
+            assertEquals(1, failed.size)
+            assertEquals(failedRowId, failed[0].rowId)
+
+            pendingPhotoUploadDao.deleteByRowId(failedRowId)
+
+            val notUploadedAfterDelete = pendingPhotoUploadDao.getNotUploadedCount(101L).first()
+            assertEquals(1, notUploadedAfterDelete)
+
+            val failedAfterDelete = pendingPhotoUploadDao.getNotUploadedFailed(101L).first()
+            assertTrue(failedAfterDelete.isEmpty())
+        }
+
+    @Test
+    fun counts_areIsolatedPerSurvey() =
+        runBlocking {
+            localDecisionDao.saveDecision(
+                LocalDecisionEntity(
+                    inferenceResultId = 901L,
+                    surveyId = 101L,
+                    verdict = true,
+                    detectionTagId = null,
+                    capturedAt = "2026-07-24T12:00:00Z",
+                    evidencePhotoRowId = null,
+                    synced = false,
+                    syncFailedReason = "Server returned code: 500",
+                ),
+            )
+            localDecisionDao.saveDecision(
+                LocalDecisionEntity(
+                    inferenceResultId = 902L,
+                    surveyId = 202L,
+                    verdict = true,
+                    detectionTagId = null,
+                    capturedAt = "2026-07-24T12:00:00Z",
+                    evidencePhotoRowId = null,
+                    synced = false,
+                    syncFailedReason = "Server returned code: 500",
+                ),
+            )
+            pendingPhotoUploadDao.insert(
+                PendingPhotoUploadEntity(
+                    surveyId = 101L,
+                    inferenceResultId = 6001L,
+                    localFilePath = "/data/evidence/101/6001/1.jpg",
+                    capturedAt = "2026-07-24T12:00:00Z",
+                    uploaded = false,
+                    uploadFailedReason = "file_missing",
+                ),
+            )
+            pendingPhotoUploadDao.insert(
+                PendingPhotoUploadEntity(
+                    surveyId = 202L,
+                    inferenceResultId = 6002L,
+                    localFilePath = "/data/evidence/202/6002/1.jpg",
+                    capturedAt = "2026-07-24T12:00:00Z",
+                    uploaded = false,
+                    uploadFailedReason = "file_missing",
+                ),
+            )
+
+            assertEquals(1, localDecisionDao.getUnsyncedCount(101L).first())
+            assertEquals(1, localDecisionDao.getUnsyncedCount(202L).first())
+            assertEquals(0, localDecisionDao.getUnsyncedCount(303L).first())
+            assertEquals(1, localDecisionDao.getUnsyncedFailed(101L).first().size)
+            assertEquals(1, localDecisionDao.getUnsyncedFailed(202L).first().size)
+            assertEquals(0, localDecisionDao.getUnsyncedFailed(303L).first().size)
+
+            assertEquals(1, pendingPhotoUploadDao.getNotUploadedCount(101L).first())
+            assertEquals(1, pendingPhotoUploadDao.getNotUploadedCount(202L).first())
+            assertEquals(0, pendingPhotoUploadDao.getNotUploadedCount(303L).first())
+            assertEquals(1, pendingPhotoUploadDao.getNotUploadedFailed(101L).first().size)
+            assertEquals(1, pendingPhotoUploadDao.getNotUploadedFailed(202L).first().size)
+            assertEquals(0, pendingPhotoUploadDao.getNotUploadedFailed(303L).first().size)
+        }
+
+    @Test
+    fun syncRunDao_upsertObserveAndClear() =
+        runBlocking {
+            val run = SyncRunEntity(surveyId = 101L, phase = "photos", total = 5, done = 2)
+
+            syncRunDao.upsert(run)
+
+            val observed = syncRunDao.observeRun(101L).first()
+            assertEquals(run, observed)
+
+            syncRunDao.upsert(run.copy(done = 4))
+            val updated = syncRunDao.observeRun(101L).first()
+            assertEquals(4, updated?.done)
+
+            syncRunDao.clear(101L)
+            assertTrue(syncRunDao.observeRun(101L).first() == null)
+        }
+
+    @Test
+    fun syncRunDao_isolatedPerSurvey() =
+        runBlocking {
+            syncRunDao.upsert(SyncRunEntity(surveyId = 101L, phase = "photos", total = 2, done = 1))
+            syncRunDao.upsert(
+                SyncRunEntity(surveyId = 202L, phase = "verdicts", total = 3, done = 0),
+            )
+
+            assertEquals(101L, syncRunDao.observeRun(101L).first()?.surveyId)
+            assertEquals(202L, syncRunDao.observeRun(202L).first()?.surveyId)
+
+            syncRunDao.clear(101L)
+            assertTrue(syncRunDao.observeRun(101L).first() == null)
+            assertEquals(202L, syncRunDao.observeRun(202L).first()?.surveyId)
+        }
+
+    @Test
+    fun globalCounts_includePendingRowsAcrossAllSurveys() =
+        runBlocking {
+            localDecisionDao.saveDecision(
+                LocalDecisionEntity(
+                    inferenceResultId = 1001L,
+                    surveyId = 101L,
+                    verdict = true,
+                    detectionTagId = null,
+                    capturedAt = "2026-07-24T12:00:00Z",
+                    evidencePhotoRowId = null,
+                    synced = false,
+                ),
+            )
+            localDecisionDao.saveDecision(
+                LocalDecisionEntity(
+                    inferenceResultId = 1002L,
+                    surveyId = 202L,
+                    verdict = true,
+                    detectionTagId = null,
+                    capturedAt = "2026-07-24T12:00:00Z",
+                    evidencePhotoRowId = null,
+                    synced = false,
+                ),
+            )
+            localDecisionDao.saveDecision(
+                LocalDecisionEntity(
+                    inferenceResultId = 1003L,
+                    surveyId = 303L,
+                    verdict = true,
+                    detectionTagId = null,
+                    capturedAt = "2026-07-24T12:00:00Z",
+                    evidencePhotoRowId = null,
+                    synced = true,
+                ),
+            )
+            pendingPhotoUploadDao.insert(
+                PendingPhotoUploadEntity(
+                    surveyId = 101L,
+                    inferenceResultId = 7001L,
+                    localFilePath = "/data/evidence/101/7001/1.jpg",
+                    capturedAt = "2026-07-24T12:00:00Z",
+                    uploaded = false,
+                ),
+            )
+            pendingPhotoUploadDao.insert(
+                PendingPhotoUploadEntity(
+                    surveyId = 202L,
+                    inferenceResultId = 7002L,
+                    localFilePath = "/data/evidence/202/7002/1.jpg",
+                    capturedAt = "2026-07-24T12:00:00Z",
+                    uploaded = false,
+                ),
+            )
+            pendingPhotoUploadDao.insert(
+                PendingPhotoUploadEntity(
+                    surveyId = 303L,
+                    inferenceResultId = 7003L,
+                    localFilePath = "/data/evidence/303/7003/1.jpg",
+                    capturedAt = "2026-07-24T12:00:00Z",
+                    uploaded = true,
+                    serverPhotoId = 1L,
+                ),
+            )
+
+            assertEquals(2, localDecisionDao.getAllUnsyncedCount().first())
+            assertEquals(2, pendingPhotoUploadDao.getAllNotUploadedCount().first())
         }
 }

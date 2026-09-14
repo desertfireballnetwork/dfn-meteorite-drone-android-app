@@ -10,6 +10,7 @@ import au.edu.fireballs.stage4.data.local.dao.LocalDecisionDao
 import au.edu.fireballs.stage4.data.local.dao.OfflineBundleDao
 import au.edu.fireballs.stage4.data.local.dao.PendingPhotoUploadDao
 import au.edu.fireballs.stage4.data.local.dao.SurveyDao
+import au.edu.fireballs.stage4.data.local.dao.SyncRunDao
 import au.edu.fireballs.stage4.data.local.dao.TileManifestDao
 
 @Database(
@@ -21,8 +22,9 @@ import au.edu.fireballs.stage4.data.local.dao.TileManifestDao
         PendingPhotoUploadEntity::class,
         OfflineBundleEntity::class,
         TileManifestEntity::class,
+        SyncRunEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = true,
 )
 abstract class Stage4Database : RoomDatabase() {
@@ -39,6 +41,8 @@ abstract class Stage4Database : RoomDatabase() {
     abstract fun offlineBundleDao(): OfflineBundleDao
 
     abstract fun tileManifestDao(): TileManifestDao
+
+    abstract fun syncRunDao(): SyncRunDao
 
     companion object {
         val MIGRATION_1_2 =
@@ -118,6 +122,22 @@ abstract class Stage4Database : RoomDatabase() {
                     // 5. Re-create index on surveyId
                     db.execSQL(
                         "CREATE INDEX IF NOT EXISTS index_candidate_surveyId ON candidate(surveyId)",
+                    )
+                }
+            }
+
+        val MIGRATION_4_5 =
+            object : Migration(4, 5) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    db.execSQL(
+                        """
+                        CREATE TABLE IF NOT EXISTS sync_run (
+                            surveyId INTEGER NOT NULL PRIMARY KEY,
+                            phase TEXT NOT NULL,
+                            total INTEGER NOT NULL,
+                            done INTEGER NOT NULL
+                        )
+                        """.trimIndent(),
                     )
                 }
             }

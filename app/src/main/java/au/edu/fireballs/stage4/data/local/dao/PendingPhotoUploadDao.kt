@@ -13,6 +13,23 @@ interface PendingPhotoUploadDao {
     suspend fun insert(pendingPhotoUpload: PendingPhotoUploadEntity): Long
 
     @Query(
+        "SELECT COUNT(*) FROM pending_photo_upload WHERE uploaded = 0 AND surveyId = :surveyId",
+    )
+    fun getNotUploadedCount(surveyId: Long): Flow<Int>
+
+    @Query("SELECT COUNT(*) FROM pending_photo_upload WHERE uploaded = 0")
+    fun getAllNotUploadedCount(): Flow<Int>
+
+    @Query(
+        "SELECT * FROM pending_photo_upload WHERE uploaded = 0 " +
+            "AND uploadFailedReason IS NOT NULL AND surveyId = :surveyId",
+    )
+    fun getNotUploadedFailed(surveyId: Long): Flow<List<PendingPhotoUploadEntity>>
+
+    @Query("DELETE FROM pending_photo_upload WHERE rowId = :rowId")
+    suspend fun deleteByRowId(rowId: Long)
+
+    @Query(
         "SELECT * FROM pending_photo_upload WHERE uploaded = 0 " +
             "AND (uploadFailedReason IS NULL OR uploadFailedReason != 'cross_campaign')",
     )

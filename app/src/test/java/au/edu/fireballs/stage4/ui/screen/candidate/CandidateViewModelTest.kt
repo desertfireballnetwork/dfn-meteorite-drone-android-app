@@ -3,6 +3,7 @@ package au.edu.fireballs.stage4.ui.screen.candidate
 import android.content.Context
 import android.graphics.Bitmap
 import android.net.Uri
+import androidx.lifecycle.viewModelScope
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import app.cash.turbine.test
@@ -16,14 +17,15 @@ import au.edu.fireballs.stage4.domain.model.Stage4Candidate
 import coil.request.ImageRequest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.test.StandardTestDispatcher
-import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -39,7 +41,7 @@ import java.io.File
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
 class CandidateViewModelTest {
-    private val testDispatcher = StandardTestDispatcher()
+    private val testDispatcher = UnconfinedTestDispatcher()
     private lateinit var db: Stage4Database
     private lateinit var decisionRepository: DecisionRepository
     private lateinit var evidencePhotoRepository: EvidencePhotoRepository
@@ -73,6 +75,7 @@ class CandidateViewModelTest {
 
     @After
     fun tearDown() {
+        viewModel.viewModelScope.cancel()
         db.close()
         Dispatchers.resetMain()
     }
@@ -103,21 +106,19 @@ class CandidateViewModelTest {
             .thenReturn("https://find.gfo.rocks/tiles/$surveyId/$candidateId/{z}/{x}/{y}/")
     }
 
-    private fun TestScope.awaitVerdict(expected: Boolean?) {
-        var waited = 0
-        while (viewModel.verdict.value != expected && waited < 500) {
-            Thread.sleep(10)
-            advanceUntilIdle()
-            waited++
+    private suspend fun awaitVerdict(expected: Boolean?) {
+        withContext(Dispatchers.Default) {
+            withTimeout(15_000) {
+                viewModel.verdict.first { it == expected }
+            }
         }
     }
 
-    private fun TestScope.awaitGallerySize(expected: Int) {
-        var waited = 0
-        while (viewModel.photoGalleryState.value.size != expected && waited < 500) {
-            Thread.sleep(10)
-            advanceUntilIdle()
-            waited++
+    private suspend fun awaitGallerySize(expected: Int) {
+        withContext(Dispatchers.Default) {
+            withTimeout(15_000) {
+                viewModel.photoGalleryState.first { it.size == expected }
+            }
         }
     }
 

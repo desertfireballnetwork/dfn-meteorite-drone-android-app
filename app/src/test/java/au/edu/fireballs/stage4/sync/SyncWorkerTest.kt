@@ -12,9 +12,13 @@ import androidx.work.WorkerParameters
 import androidx.work.impl.utils.taskexecutor.SerialExecutor
 import androidx.work.impl.utils.taskexecutor.TaskExecutor
 import au.edu.fireballs.stage4.data.repository.SelectedSurveyRepository
+import au.edu.fireballs.stage4.ui.session.SessionExpiredBus
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -32,8 +36,10 @@ import java.util.concurrent.Executors
 import kotlin.coroutines.EmptyCoroutineContext
 
 @RunWith(RobolectricTestRunner::class)
+@OptIn(ExperimentalCoroutinesApi::class)
 class SyncWorkerTest {
     private val context = ApplicationProvider.getApplicationContext<Context>()
+    private val sessionExpiredBus = SessionExpiredBus()
 
     @Test
     fun `null selected survey returns success without running orchestrator`() =
@@ -48,6 +54,7 @@ class SyncWorkerTest {
                     workerParams(),
                     selectedSurveyRepository,
                     orchestrator,
+                    sessionExpiredBus,
                 )
 
             assertEquals(Result.success(), worker.doWork())
@@ -68,18 +75,26 @@ class SyncWorkerTest {
                     workerParams(),
                     selectedSurveyRepository,
                     orchestrator,
+                    sessionExpiredBus,
                 )
 
             assertEquals(Result.success(), worker.doWork())
         }
 
     @Test
-    fun `auth expired returns success with auth flag`() =
+    fun `auth expired returns success with auth flag and emits bus`() =
         runTest {
             val selectedSurveyRepository = mock(SelectedSurveyRepository::class.java)
             `when`(selectedSurveyRepository.selectedSurveyId).thenReturn(flowOf(SURVEY_ID))
             val orchestrator = mock(SyncOrchestrator::class.java)
             `when`(orchestrator.run(eq(SURVEY_ID), any())).thenReturn(SyncOutcome.AuthExpired)
+
+            val emitted = mutableListOf<Unit>()
+            val collectJob =
+                launch {
+                    sessionExpiredBus.events.collect { emitted.add(it) }
+                }
+            advanceUntilIdle()
 
             val worker =
                 SyncWorker(
@@ -87,12 +102,17 @@ class SyncWorkerTest {
                     workerParams(),
                     selectedSurveyRepository,
                     orchestrator,
+                    sessionExpiredBus,
                 )
 
             val result = worker.doWork()
+            advanceUntilIdle()
+
             assertTrue(result is Result.Success)
             val output = (result as Result.Success).outputData
             assertTrue(output.getBoolean(SyncWorker.KEY_AUTH_EXPIRED, false))
+            assertEquals(1, emitted.size)
+            collectJob.cancel()
         }
 
     @Test
@@ -110,6 +130,7 @@ class SyncWorkerTest {
                     workerParams(),
                     selectedSurveyRepository,
                     orchestrator,
+                    sessionExpiredBus,
                 )
 
             assertEquals(Result.retry(), worker.doWork())
@@ -130,6 +151,7 @@ class SyncWorkerTest {
                     workerParams(),
                     selectedSurveyRepository,
                     orchestrator,
+                    sessionExpiredBus,
                 )
 
             assertEquals(Result.failure(), worker.doWork())
