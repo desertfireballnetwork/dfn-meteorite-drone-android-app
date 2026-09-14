@@ -34,7 +34,8 @@ class NetworkStateRepository
         private val callback =
             object : ConnectivityManager.NetworkCallback() {
                 override fun onAvailable(network: Network) {
-                    _networkState.value = NetworkState.Online
+                    _networkState.value =
+                        networkStateFor(connectivityManager.getNetworkCapabilities(network))
                 }
 
                 override fun onCapabilitiesChanged(
@@ -45,7 +46,7 @@ class NetworkStateRepository
                 }
 
                 override fun onLost(network: Network) {
-                    _networkState.value = NetworkState.Offline
+                    _networkState.value = initialNetworkState()
                 }
 
                 override fun onUnavailable() {

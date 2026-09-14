@@ -112,7 +112,13 @@ fun Stage4MapScreen(
                 onSurveyPositioned = { positionedSurveyId = state.state.survey.id },
                 onToggleLayer = viewModel::toggleLayer,
                 onSync = viewModel::syncNow,
-                onMarkerClick = { selectedCandidateId = it.inferenceResultId },
+                onMarkerClick = {
+                    if (hasOfflineBundle ||
+                        connectionBannerState != ConnectionBannerState.Offline
+                    ) {
+                        selectedCandidateId = it.inferenceResultId
+                    }
+                },
                 onUserLocationClick = { selectedUser = it },
                 onDismissUser = { selectedUser = null },
                 onOpenDownloads = onOpenDownloads,
