@@ -203,6 +203,13 @@ class Stage4MapViewModel
                     initialValue = ConnectionBannerState.Online,
                 )
 
+        val networkState: StateFlow<NetworkState> =
+            networkStateRepository.networkState.stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5000),
+                initialValue = NetworkState.Offline,
+            )
+
         @OptIn(ExperimentalCoroutinesApi::class)
         val hasOfflineBundle: StateFlow<Boolean> =
             surveyIdFlow

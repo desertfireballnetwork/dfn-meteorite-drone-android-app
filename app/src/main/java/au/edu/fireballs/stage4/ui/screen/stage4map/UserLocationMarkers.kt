@@ -26,9 +26,6 @@ private const val USER_LAYER_ID = "user-location-markers-layer"
 private const val USER_ICON = "marker-user"
 
 private const val PROP_USER_ID = "userId"
-private const val PROP_USERNAME = "username"
-private const val PROP_FULL_NAME = "fullName"
-private const val PROP_PROCESSED_AT = "processedAt"
 
 private const val ICON_SIZE = 0.4
 
@@ -98,9 +95,6 @@ internal fun buildUserLocationFeatures(userLocations: List<UserLocation>): List<
     userLocations.map { location ->
         val properties = JsonObject()
         properties.addProperty(PROP_USER_ID, location.userId)
-        properties.addProperty(PROP_USERNAME, location.username)
-        properties.addProperty(PROP_FULL_NAME, location.fullName)
-        properties.addProperty(PROP_PROCESSED_AT, location.processedAt)
         Feature.fromGeometry(
             Point.fromLngLat(location.coordinate.longitude, location.coordinate.latitude),
             properties,

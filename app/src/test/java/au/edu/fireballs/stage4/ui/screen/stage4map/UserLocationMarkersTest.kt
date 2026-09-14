@@ -43,9 +43,9 @@ class UserLocationMarkersTest {
         assertEquals(151.21, point.longitude(), 0.0001)
         assertEquals(-33.86, point.latitude(), 0.0001)
         assertEquals(7L, feature.getNumberProperty("userId")!!.toLong())
-        assertEquals("alice", feature.getStringProperty("username"))
-        assertEquals("Full Name 7", feature.getStringProperty("fullName"))
-        assertEquals("2026-09-14T10:00:00Z", feature.getStringProperty("processedAt"))
+        assertEquals(null, feature.getStringProperty("username"))
+        assertEquals(null, feature.getStringProperty("fullName"))
+        assertEquals(null, feature.getStringProperty("processedAt"))
     }
 
     @Test

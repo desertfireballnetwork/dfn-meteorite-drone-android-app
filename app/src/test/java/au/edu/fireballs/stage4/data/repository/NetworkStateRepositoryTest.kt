@@ -114,6 +114,12 @@ class NetworkStateRepositoryTest {
         assertEquals(NetworkState.Offline, networkStateFor(null))
     }
 
+    @Test
+    fun `networkStateFor requires validated internet to be online`() {
+        assertEquals(NetworkState.Offline, networkStateFor(internetCapabilitiesWithoutValidation()))
+        assertEquals(NetworkState.Online, networkStateFor(internetCapabilities()))
+    }
+
     private fun setActiveNetwork(network: Network) {
         val info =
             ShadowNetworkInfo.newInstance(
@@ -127,12 +133,23 @@ class NetworkStateRepositoryTest {
         shadowOf(connectivityManager).addNetwork(network, info)
     }
 
-    private fun internetCapabilities(): NetworkCapabilities {
+    private fun internetCapabilities(): NetworkCapabilities =
+        capabilitiesWith(
+            NetworkCapabilities.NET_CAPABILITY_INTERNET,
+            NetworkCapabilities.NET_CAPABILITY_VALIDATED,
+        )
+
+    private fun internetCapabilitiesWithoutValidation(): NetworkCapabilities =
+        capabilitiesWith(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+
+    private fun capabilitiesWith(vararg capabilities: Int): NetworkCapabilities {
         val builderClass = Class.forName("android.net.NetworkCapabilities\$Builder")
         val builder = builderClass.getConstructor().newInstance()
-        builderClass
-            .getMethod("addCapability", Int::class.javaPrimitiveType)
-            .invoke(builder, NetworkCapabilities.NET_CAPABILITY_INTERNET)
+        capabilities.forEach { capability ->
+            builderClass
+                .getMethod("addCapability", Int::class.javaPrimitiveType)
+                .invoke(builder, capability)
+        }
         return builderClass.getMethod("build").invoke(builder) as NetworkCapabilities
     }
 }

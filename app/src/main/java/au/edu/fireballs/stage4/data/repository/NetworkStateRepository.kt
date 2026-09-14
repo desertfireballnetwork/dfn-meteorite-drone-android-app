@@ -80,7 +80,10 @@ class NetworkStateRepository
     }
 
 internal fun networkStateFor(capabilities: NetworkCapabilities?): NetworkState =
-    if (capabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true) {
+    if (
+        capabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true &&
+        capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+    ) {
         NetworkState.Online
     } else {
         NetworkState.Offline

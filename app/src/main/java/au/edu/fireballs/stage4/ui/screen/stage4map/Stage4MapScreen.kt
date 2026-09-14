@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import au.edu.fireballs.stage4.data.repository.NetworkState
 import au.edu.fireballs.stage4.domain.model.Stage4Candidate
 import au.edu.fireballs.stage4.domain.model.UserLocation
 import au.edu.fireballs.stage4.ui.PendingSyncBadge
@@ -57,6 +58,7 @@ fun Stage4MapScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val syncStatus by viewModel.syncStatus.collectAsStateWithLifecycle()
     val connectionBannerState by viewModel.connectionBannerState.collectAsStateWithLifecycle()
+    val networkState by viewModel.networkState.collectAsStateWithLifecycle()
     val hasOfflineBundle by viewModel.hasOfflineBundle.collectAsStateWithLifecycle()
     val mapViewportState = rememberMapViewportState()
     val locationPermission = rememberLocationPermission()
@@ -113,9 +115,7 @@ fun Stage4MapScreen(
                 onToggleLayer = viewModel::toggleLayer,
                 onSync = viewModel::syncNow,
                 onMarkerClick = {
-                    if (hasOfflineBundle ||
-                        connectionBannerState != ConnectionBannerState.Offline
-                    ) {
+                    if (shouldAllowCandidateSelection(hasOfflineBundle, networkState)) {
                         selectedCandidateId = it.inferenceResultId
                     }
                 },
@@ -401,3 +401,8 @@ private fun PositionSurveyCamera(
         }
     }
 }
+
+internal fun shouldAllowCandidateSelection(
+    hasOfflineBundle: Boolean,
+    networkState: NetworkState,
+): Boolean = hasOfflineBundle || networkState == NetworkState.Online
