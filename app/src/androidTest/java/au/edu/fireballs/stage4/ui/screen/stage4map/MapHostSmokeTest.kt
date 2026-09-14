@@ -42,6 +42,7 @@ class MapHostSmokeTest {
                 state = dummyState(),
                 layerToggleState = LayerToggleState(),
                 onMarkerClick = {},
+                onUserLocationClick = {},
             )
         }
         composeRule.waitForIdle()
@@ -57,6 +58,7 @@ class MapHostSmokeTest {
                 state = dummyState(),
                 layerToggleState = LayerToggleState(),
                 onMarkerClick = {},
+                onUserLocationClick = {},
             )
         }
         composeRule.waitForIdle()
@@ -73,6 +75,7 @@ class MapHostSmokeTest {
                 state = dummyState(),
                 layerToggleState = LayerToggleState(),
                 onMarkerClick = {},
+                onUserLocationClick = {},
             )
             LaunchedEffect(Unit) {
                 granted = false

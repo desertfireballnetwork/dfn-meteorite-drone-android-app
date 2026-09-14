@@ -5,8 +5,12 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkInfo
 import androidx.work.workDataOf
 import au.edu.fireballs.stage4.data.local.LocalDecisionEntity
+import au.edu.fireballs.stage4.data.local.OfflineBundleEntity
 import au.edu.fireballs.stage4.data.local.dao.LocalDecisionDao
+import au.edu.fireballs.stage4.data.local.dao.OfflineBundleDao
 import au.edu.fireballs.stage4.data.repository.CandidateImageRepository
+import au.edu.fireballs.stage4.data.repository.NetworkState
+import au.edu.fireballs.stage4.data.repository.NetworkStateRepository
 import au.edu.fireballs.stage4.data.repository.Stage4FetchResult
 import au.edu.fireballs.stage4.data.repository.Stage4Repository
 import au.edu.fireballs.stage4.data.tiles.AuthenticatedTileHttpInterceptor
@@ -19,10 +23,12 @@ import au.edu.fireballs.stage4.domain.model.Stage4Candidate
 import au.edu.fireballs.stage4.domain.model.Stage4State
 import au.edu.fireballs.stage4.domain.model.Stage4Survey
 import au.edu.fireballs.stage4.sync.SyncWorker
+import au.edu.fireballs.stage4.ui.screen.basecamp.PreDownloadWorkManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -49,11 +55,15 @@ class Stage4MapViewModelTest {
     private val testDispatcher = StandardTestDispatcher()
     private val repository: Stage4Repository = mock()
     private val localDecisionDao: LocalDecisionDao = mock()
+    private val offlineBundleDao: OfflineBundleDao = mock()
     private val candidateImageRepository: CandidateImageRepository = mock()
     private val pendingDecisionsFlow = MutableStateFlow<List<LocalDecisionEntity>>(emptyList())
     private val tileStore = TileStore(File.createTempFile("vm-tiles", "").parentFile)
     private val tileHttpInterceptor: AuthenticatedTileHttpInterceptor = mock()
     private val syncWorkManager: SyncWorkManager = mock()
+    private val networkStateRepository: NetworkStateRepository = mock()
+    private val preDownloadWorkManager: PreDownloadWorkManager = mock()
+    private val networkStateFlow = MutableStateFlow<NetworkState>(NetworkState.Online)
     private lateinit var viewModel: Stage4MapViewModel
 
     @Before
@@ -62,6 +72,11 @@ class Stage4MapViewModelTest {
         pendingDecisionsFlow.value = emptyList()
         whenever(localDecisionDao.observeDecisionsForSurvey(any()))
             .thenReturn(pendingDecisionsFlow)
+        whenever(offlineBundleDao.observeLatestBundleForSurvey(any()))
+            .thenReturn(MutableStateFlow(null))
+        whenever(networkStateRepository.networkState).thenReturn(networkStateFlow)
+        whenever(preDownloadWorkManager.getWorkInfosForUniqueWorkFlow(any()))
+            .thenReturn(emptyFlow())
     }
 
     @After
@@ -93,10 +108,13 @@ class Stage4MapViewModelTest {
                 Stage4MapViewModel(
                     repository,
                     localDecisionDao,
+                    offlineBundleDao,
                     candidateImageRepository,
                     tileStore,
                     tileHttpInterceptor,
                     syncWorkManager,
+                    networkStateRepository,
+                    preDownloadWorkManager,
                 )
 
             assertEquals(Stage4MapUiState.Loading, viewModel.uiState.value)
@@ -113,10 +131,13 @@ class Stage4MapViewModelTest {
                 Stage4MapViewModel(
                     repository,
                     localDecisionDao,
+                    offlineBundleDao,
                     candidateImageRepository,
                     tileStore,
                     tileHttpInterceptor,
                     syncWorkManager,
+                    networkStateRepository,
+                    preDownloadWorkManager,
                 )
             val collectJob =
                 backgroundScope.launch(testDispatcher) {
@@ -146,10 +167,13 @@ class Stage4MapViewModelTest {
                 Stage4MapViewModel(
                     repository,
                     localDecisionDao,
+                    offlineBundleDao,
                     candidateImageRepository,
                     tileStore,
                     tileHttpInterceptor,
                     syncWorkManager,
+                    networkStateRepository,
+                    preDownloadWorkManager,
                 )
             val collectJob =
                 backgroundScope.launch(testDispatcher) {
@@ -182,10 +206,13 @@ class Stage4MapViewModelTest {
                 Stage4MapViewModel(
                     repository,
                     localDecisionDao,
+                    offlineBundleDao,
                     candidateImageRepository,
                     tileStore,
                     tileHttpInterceptor,
                     syncWorkManager,
+                    networkStateRepository,
+                    preDownloadWorkManager,
                 )
             val collectJob =
                 backgroundScope.launch(testDispatcher) {
@@ -212,10 +239,13 @@ class Stage4MapViewModelTest {
                 Stage4MapViewModel(
                     repository,
                     localDecisionDao,
+                    offlineBundleDao,
                     candidateImageRepository,
                     tileStore,
                     tileHttpInterceptor,
                     syncWorkManager,
+                    networkStateRepository,
+                    preDownloadWorkManager,
                 )
             val collectJob =
                 backgroundScope.launch(testDispatcher) {
@@ -245,10 +275,13 @@ class Stage4MapViewModelTest {
                 Stage4MapViewModel(
                     repository,
                     localDecisionDao,
+                    offlineBundleDao,
                     candidateImageRepository,
                     tileStore,
                     tileHttpInterceptor,
                     syncWorkManager,
+                    networkStateRepository,
+                    preDownloadWorkManager,
                 )
             val collectJob =
                 backgroundScope.launch(testDispatcher) {
@@ -278,10 +311,13 @@ class Stage4MapViewModelTest {
                 Stage4MapViewModel(
                     repository,
                     localDecisionDao,
+                    offlineBundleDao,
                     candidateImageRepository,
                     tileStore,
                     tileHttpInterceptor,
                     syncWorkManager,
+                    networkStateRepository,
+                    preDownloadWorkManager,
                 )
             val collectJob =
                 backgroundScope.launch(testDispatcher) {
@@ -307,10 +343,13 @@ class Stage4MapViewModelTest {
                 Stage4MapViewModel(
                     repository,
                     localDecisionDao,
+                    offlineBundleDao,
                     candidateImageRepository,
                     tileStore,
                     tileHttpInterceptor,
                     syncWorkManager,
+                    networkStateRepository,
+                    preDownloadWorkManager,
                 )
             val onAuthLostCaptor = argumentCaptor<() -> Unit>()
             verify(tileHttpInterceptor).onAuthLost = onAuthLostCaptor.capture()
@@ -342,10 +381,13 @@ class Stage4MapViewModelTest {
                 Stage4MapViewModel(
                     repository,
                     localDecisionDao,
+                    offlineBundleDao,
                     candidateImageRepository,
                     tileStore,
                     tileHttpInterceptor,
                     syncWorkManager,
+                    networkStateRepository,
+                    preDownloadWorkManager,
                 )
             val collectJob =
                 backgroundScope.launch(testDispatcher) {
@@ -378,10 +420,13 @@ class Stage4MapViewModelTest {
                 Stage4MapViewModel(
                     repository,
                     localDecisionDao,
+                    offlineBundleDao,
                     candidateImageRepository,
                     tileStore,
                     tileHttpInterceptor,
                     syncWorkManager,
+                    networkStateRepository,
+                    preDownloadWorkManager,
                 )
             val collectJob =
                 backgroundScope.launch(testDispatcher) {
@@ -417,10 +462,13 @@ class Stage4MapViewModelTest {
                 Stage4MapViewModel(
                     repository,
                     localDecisionDao,
+                    offlineBundleDao,
                     candidateImageRepository,
                     tileStore,
                     tileHttpInterceptor,
                     syncWorkManager,
+                    networkStateRepository,
+                    preDownloadWorkManager,
                 )
 
             val states = mutableListOf<Stage4MapUiState>()
@@ -455,10 +503,13 @@ class Stage4MapViewModelTest {
                 Stage4MapViewModel(
                     repository,
                     localDecisionDao,
+                    offlineBundleDao,
                     candidateImageRepository,
                     tileStore,
                     tileHttpInterceptor,
                     syncWorkManager,
+                    networkStateRepository,
+                    preDownloadWorkManager,
                 )
 
             val states = mutableListOf<Stage4MapUiState>()
@@ -500,10 +551,13 @@ class Stage4MapViewModelTest {
                 Stage4MapViewModel(
                     repository,
                     localDecisionDao,
+                    offlineBundleDao,
                     candidateImageRepository,
                     tileStore,
                     tileHttpInterceptor,
                     syncWorkManager,
+                    networkStateRepository,
+                    preDownloadWorkManager,
                 )
             val collectJob =
                 backgroundScope.launch(testDispatcher) {
@@ -544,10 +598,13 @@ class Stage4MapViewModelTest {
                 Stage4MapViewModel(
                     repository,
                     localDecisionDao,
+                    offlineBundleDao,
                     candidateImageRepository,
                     tileStore,
                     tileHttpInterceptor,
                     syncWorkManager,
+                    networkStateRepository,
+                    preDownloadWorkManager,
                 )
 
             val states = mutableListOf<Stage4MapUiState>()
@@ -582,10 +639,13 @@ class Stage4MapViewModelTest {
                 Stage4MapViewModel(
                     repository,
                     localDecisionDao,
+                    offlineBundleDao,
                     candidateImageRepository,
                     tileStore,
                     tileHttpInterceptor,
                     syncWorkManager,
+                    networkStateRepository,
+                    preDownloadWorkManager,
                 )
             val collectJob =
                 backgroundScope.launch(testDispatcher) {
@@ -649,10 +709,13 @@ class Stage4MapViewModelTest {
                 Stage4MapViewModel(
                     repository,
                     localDecisionDao,
+                    offlineBundleDao,
                     candidateImageRepository,
                     tileStore,
                     tileHttpInterceptor,
                     syncWorkManager,
+                    networkStateRepository,
+                    preDownloadWorkManager,
                 )
             val collectJob =
                 backgroundScope.launch(testDispatcher) {
@@ -686,10 +749,13 @@ class Stage4MapViewModelTest {
                 Stage4MapViewModel(
                     repository,
                     localDecisionDao,
+                    offlineBundleDao,
                     candidateImageRepository,
                     tileStore,
                     tileHttpInterceptor,
                     syncWorkManager,
+                    networkStateRepository,
+                    preDownloadWorkManager,
                 )
 
             viewModel.syncNow()
@@ -721,10 +787,13 @@ class Stage4MapViewModelTest {
                 Stage4MapViewModel(
                     repository,
                     localDecisionDao,
+                    offlineBundleDao,
                     candidateImageRepository,
                     tileStore,
                     tileHttpInterceptor,
                     syncWorkManager,
+                    networkStateRepository,
+                    preDownloadWorkManager,
                 )
             val collectJob =
                 backgroundScope.launch(testDispatcher) {
@@ -762,10 +831,13 @@ class Stage4MapViewModelTest {
                 Stage4MapViewModel(
                     repository,
                     localDecisionDao,
+                    offlineBundleDao,
                     candidateImageRepository,
                     tileStore,
                     tileHttpInterceptor,
                     syncWorkManager,
+                    networkStateRepository,
+                    preDownloadWorkManager,
                 )
 
             viewModel.syncNow()
@@ -783,5 +855,51 @@ class Stage4MapViewModelTest {
 
             assertEquals(SyncStatus.Syncing, viewModel.syncStatus.value)
             verify(syncWorkManager, times(2)).enqueueSync()
+        }
+
+    @Test
+    fun `hasOfflineBundle reflects bundle presence for the opened survey`() =
+        runTest(testDispatcher) {
+            val bundleFlow = MutableStateFlow<OfflineBundleEntity?>(null)
+            whenever(offlineBundleDao.observeLatestBundleForSurvey(any())).thenReturn(bundleFlow)
+            val fixture = dummyState(7L)
+            whenever(repository.getCandidatesState(7L))
+                .thenReturn(Stage4FetchResult.Success(fixture))
+
+            viewModel =
+                Stage4MapViewModel(
+                    repository,
+                    localDecisionDao,
+                    offlineBundleDao,
+                    candidateImageRepository,
+                    tileStore,
+                    tileHttpInterceptor,
+                    syncWorkManager,
+                    networkStateRepository,
+                    preDownloadWorkManager,
+                )
+            val collectJob =
+                backgroundScope.launch(testDispatcher) {
+                    viewModel.hasOfflineBundle.collect {}
+                }
+
+            viewModel.openSurvey(7L)
+            advanceUntilIdle()
+            assertFalse(viewModel.hasOfflineBundle.value)
+
+            bundleFlow.value =
+                OfflineBundleEntity(
+                    surveyId = 7L,
+                    created = "2026-09-14T00:00:00Z",
+                    totalBytes = 100L,
+                    tileCount = 1,
+                    satelliteRegionCount = 1,
+                    candidateCount = 0,
+                    bufferMeters = 0f,
+                )
+            advanceUntilIdle()
+            assertTrue(viewModel.hasOfflineBundle.value)
+
+            collectJob.cancel()
         }
 }

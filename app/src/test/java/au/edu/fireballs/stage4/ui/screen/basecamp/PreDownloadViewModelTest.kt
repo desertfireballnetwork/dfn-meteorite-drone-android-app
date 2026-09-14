@@ -14,6 +14,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -283,6 +284,9 @@ class PreDownloadViewModelTest {
 
         override fun getWorkInfoByIdFlow(id: UUID): Flow<WorkInfo> =
             flows[id] ?: MutableSharedFlow()
+
+        override fun getWorkInfosForUniqueWorkFlow(uniqueWorkName: String): Flow<List<WorkInfo>> =
+            emptyFlow()
 
         override fun cancelUniqueWork(uniqueWorkName: String): Operation {
             cancelled.add(uniqueWorkName)

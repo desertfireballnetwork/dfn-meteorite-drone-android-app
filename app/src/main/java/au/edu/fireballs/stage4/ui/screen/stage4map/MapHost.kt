@@ -6,6 +6,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import au.edu.fireballs.stage4.domain.model.Stage4Candidate
 import au.edu.fireballs.stage4.domain.model.Stage4State
+import au.edu.fireballs.stage4.domain.model.UserLocation
 import au.edu.fireballs.stage4.ui.screen.stage4map.marker.CandidateMarkers
 import com.mapbox.maps.CameraBoundsOptions
 import com.mapbox.maps.MapView
@@ -28,6 +29,7 @@ internal fun MapHost(
     state: Stage4State,
     layerToggleState: LayerToggleState,
     onMarkerClick: (Stage4Candidate) -> Unit,
+    onUserLocationClick: (UserLocation) -> Unit,
     candidateId: Long? = null,
     tileUrlPattern: String? = null,
 ) {
@@ -49,7 +51,10 @@ internal fun MapHost(
             )
         },
     ) {
-        MapHostEffects(locationPermissionGranted = locationPermissionGranted)
+        MapHostEffects(
+            locationPermissionGranted = locationPermissionGranted,
+            showAccuracyRing = state.showGeolocationAccuracyCircle,
+        )
 
         SurveyedAreaOverlay(
             polygons = state.surveyedAreas,
@@ -63,6 +68,10 @@ internal fun MapHost(
             toggleState = layerToggleState,
             onMarkerClick = onMarkerClick,
         )
+        UserLocationMarkers(
+            userLocations = state.userLocations,
+            onUserLocationClick = onUserLocationClick,
+        )
         CustomRasterOverlay(
             surveyId = state.survey.id,
             candidateId = candidateId,
@@ -72,26 +81,35 @@ internal fun MapHost(
 }
 
 @Composable
-private fun MapHostEffects(locationPermissionGranted: Boolean) {
+private fun MapHostEffects(
+    locationPermissionGranted: Boolean,
+    showAccuracyRing: Boolean,
+) {
     MapEffect(Unit) { mapView ->
         mapView.mapboxMap.setBounds(
             CameraBoundsOptions.Builder().maxZoom(MAX_CAMERA_ZOOM).build(),
         )
     }
 
-    MapEffect(locationPermissionGranted) { mapView ->
-        setLocationPuckEnabled(mapView, enabled = locationPermissionGranted)
+    MapEffect(locationPermissionGranted, showAccuracyRing) { mapView ->
+        setLocationPuckEnabled(
+            mapView,
+            enabled = locationPermissionGranted,
+            showAccuracyRing = showAccuracyRing,
+        )
     }
 }
 
 private fun setLocationPuckEnabled(
     mapView: MapView,
     enabled: Boolean,
+    showAccuracyRing: Boolean,
 ) {
     val locationPlugin =
         mapView.getPlugin(Plugin.MAPBOX_LOCATION_COMPONENT_PLUGIN_ID) as? LocationComponentPlugin
     locationPlugin?.updateSettings {
         this.enabled = enabled
         this.pulsingEnabled = enabled
+        this.showAccuracyRing = showAccuracyRing
     }
 }

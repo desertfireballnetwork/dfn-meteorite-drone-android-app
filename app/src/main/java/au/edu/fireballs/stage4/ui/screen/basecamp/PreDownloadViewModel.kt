@@ -61,7 +61,6 @@ sealed interface PreDownloadEvent {
 
 private const val TILES_BYTES_PER_CANDIDATE = 1_100_000L
 private const val SATELLITE_BYTES_PER_CANDIDATE = 500_000L
-private const val UNIQUE_WORK_PREFIX = "pre_download_"
 
 @HiltViewModel
 class PreDownloadViewModel
@@ -206,5 +205,6 @@ class PreDownloadViewModel
             return tiles + satellite
         }
 
-        private fun uniqueWorkName(surveyId: Long): String = UNIQUE_WORK_PREFIX + surveyId
+        private fun uniqueWorkName(surveyId: Long): String =
+            PreDownloadWorkManager.UNIQUE_WORK_PREFIX + surveyId
     }
