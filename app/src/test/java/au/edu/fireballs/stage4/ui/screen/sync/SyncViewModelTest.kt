@@ -6,8 +6,10 @@ import androidx.work.WorkInfo
 import androidx.work.workDataOf
 import au.edu.fireballs.stage4.data.local.LocalDecisionEntity
 import au.edu.fireballs.stage4.data.local.PendingPhotoUploadEntity
+import au.edu.fireballs.stage4.data.local.SyncRunEntity
 import au.edu.fireballs.stage4.data.local.dao.LocalDecisionDao
 import au.edu.fireballs.stage4.data.local.dao.PendingPhotoUploadDao
+import au.edu.fireballs.stage4.data.local.dao.SyncRunDao
 import au.edu.fireballs.stage4.data.repository.SelectedSurveyRepository
 import au.edu.fireballs.stage4.sync.SyncOrchestrator
 import au.edu.fireballs.stage4.sync.SyncWorker
@@ -38,6 +40,7 @@ class SyncViewModelTest {
     private val testDispatcher = StandardTestDispatcher()
     private val localDecisionDao: LocalDecisionDao = mock()
     private val pendingPhotoUploadDao: PendingPhotoUploadDao = mock()
+    private val syncRunDao: SyncRunDao = mock()
     private val selectedSurveyRepository: SelectedSurveyRepository = mock()
     private val syncWorkManager: SyncWorkManager = mock()
 
@@ -46,6 +49,7 @@ class SyncViewModelTest {
     private val notUploadedCount = MutableStateFlow(0)
     private val failedDecisions = MutableStateFlow<List<LocalDecisionEntity>>(emptyList())
     private val failedPhotos = MutableStateFlow<List<PendingPhotoUploadEntity>>(emptyList())
+    private val syncRun = MutableStateFlow<SyncRunEntity?>(null)
     private val workInfos = MutableStateFlow<List<WorkInfo>>(emptyList())
 
     private lateinit var viewModel: SyncViewModel
@@ -58,6 +62,7 @@ class SyncViewModelTest {
         whenever(pendingPhotoUploadDao.getNotUploadedCount(any())).thenReturn(notUploadedCount)
         whenever(localDecisionDao.getUnsyncedFailed(any())).thenReturn(failedDecisions)
         whenever(pendingPhotoUploadDao.getNotUploadedFailed(any())).thenReturn(failedPhotos)
+        whenever(syncRunDao.observeRun(any())).thenReturn(syncRun)
         whenever(
             syncWorkManager.getWorkInfosForUniqueWorkFlow(
                 WorkManagerSyncWorkManager.UNIQUE_WORK_NAME,
@@ -77,6 +82,7 @@ class SyncViewModelTest {
         SyncViewModel(
             localDecisionDao,
             pendingPhotoUploadDao,
+            syncRunDao,
             selectedSurveyRepository,
             syncWorkManager,
         )
@@ -128,23 +134,13 @@ class SyncViewModelTest {
         }
 
     @Test
-    fun `running when work enqueued with progress`() =
+    fun `running when work running shows progress from persisted run entity`() =
         runTest(testDispatcher) {
             selectedSurveyId.value = 7L
             viewModel = createViewModel()
             testDispatcher.scheduler.advanceUntilIdle()
-            workInfos.value =
-                listOf(
-                    workInfo(
-                        WorkInfo.State.RUNNING,
-                        progress =
-                            workDataOf(
-                                SyncOrchestrator.KEY_DONE to 3,
-                                SyncOrchestrator.KEY_TOTAL to 5,
-                                SyncOrchestrator.KEY_PHASE to SyncOrchestrator.PHASE_VERDICTS,
-                            ),
-                    ),
-                )
+            syncRun.value = SyncRunEntity(7L, SyncOrchestrator.PHASE_VERDICTS, 5, 3)
+            workInfos.value = listOf(workInfo(WorkInfo.State.RUNNING))
             testDispatcher.scheduler.advanceUntilIdle()
             val state = viewModel.uiState.value
             assertTrue(state is SyncUiState.Running)
@@ -154,7 +150,7 @@ class SyncViewModelTest {
         }
 
     @Test
-    fun `resuming when work enqueued`() =
+    fun `running when work enqueued with no persisted run shows resuming`() =
         runTest(testDispatcher) {
             selectedSurveyId.value = 7L
             viewModel = createViewModel()
@@ -162,6 +158,22 @@ class SyncViewModelTest {
             workInfos.value = listOf(workInfo(WorkInfo.State.ENQUEUED))
             testDispatcher.scheduler.advanceUntilIdle()
             assertEquals(SyncUiState.Resuming, viewModel.uiState.value)
+        }
+
+    @Test
+    fun `restart restores running progress from persisted run entity`() =
+        runTest(testDispatcher) {
+            selectedSurveyId.value = 7L
+            syncRun.value = SyncRunEntity(7L, SyncOrchestrator.PHASE_VERDICTS, 5, 3)
+            viewModel = createViewModel()
+            testDispatcher.scheduler.advanceUntilIdle()
+            workInfos.value = listOf(workInfo(WorkInfo.State.ENQUEUED))
+            testDispatcher.scheduler.advanceUntilIdle()
+            val state = viewModel.uiState.value
+            assertTrue(state is SyncUiState.Running)
+            assertEquals(3, (state as SyncUiState.Running).done)
+            assertEquals(5, state.total)
+            assertEquals(SyncOrchestrator.PHASE_VERDICTS, state.phase)
         }
 
     @Test
@@ -271,18 +283,8 @@ class SyncViewModelTest {
             testDispatcher.scheduler.advanceUntilIdle()
             assertEquals(SyncUiState.Resuming, viewModel.uiState.value)
 
-            workInfos.value =
-                listOf(
-                    workInfo(
-                        WorkInfo.State.RUNNING,
-                        progress =
-                            workDataOf(
-                                SyncOrchestrator.KEY_DONE to 1,
-                                SyncOrchestrator.KEY_TOTAL to 2,
-                                SyncOrchestrator.KEY_PHASE to SyncOrchestrator.PHASE_VERDICTS,
-                            ),
-                    ),
-                )
+            syncRun.value = SyncRunEntity(7L, SyncOrchestrator.PHASE_VERDICTS, 2, 1)
+            workInfos.value = listOf(workInfo(WorkInfo.State.RUNNING))
             testDispatcher.scheduler.advanceUntilIdle()
             assertTrue(viewModel.uiState.value is SyncUiState.Running)
         }
@@ -293,18 +295,11 @@ class SyncViewModelTest {
             selectedSurveyId.value = 7L
             viewModel = createViewModel()
             testDispatcher.scheduler.advanceUntilIdle()
+            syncRun.value = SyncRunEntity(7L, SyncOrchestrator.PHASE_PHOTOS, 2, 1)
             workInfos.value =
                 listOf(
                     workInfo(WorkInfo.State.SUCCEEDED),
-                    workInfo(
-                        WorkInfo.State.RUNNING,
-                        progress =
-                            workDataOf(
-                                SyncOrchestrator.KEY_DONE to 1,
-                                SyncOrchestrator.KEY_TOTAL to 2,
-                                SyncOrchestrator.KEY_PHASE to SyncOrchestrator.PHASE_PHOTOS,
-                            ),
-                    ),
+                    workInfo(WorkInfo.State.RUNNING),
                 )
             testDispatcher.scheduler.advanceUntilIdle()
             val state = viewModel.uiState.value

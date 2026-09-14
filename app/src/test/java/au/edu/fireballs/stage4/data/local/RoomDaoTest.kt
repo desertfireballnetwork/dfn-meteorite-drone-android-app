@@ -8,6 +8,7 @@ import au.edu.fireballs.stage4.data.local.dao.LocalDecisionDao
 import au.edu.fireballs.stage4.data.local.dao.OfflineBundleDao
 import au.edu.fireballs.stage4.data.local.dao.PendingPhotoUploadDao
 import au.edu.fireballs.stage4.data.local.dao.SurveyDao
+import au.edu.fireballs.stage4.data.local.dao.SyncRunDao
 import au.edu.fireballs.stage4.data.local.dao.TileManifestDao
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -31,6 +32,7 @@ class RoomDaoTest {
     private lateinit var pendingPhotoUploadDao: PendingPhotoUploadDao
     private lateinit var offlineBundleDao: OfflineBundleDao
     private lateinit var tileManifestDao: TileManifestDao
+    private lateinit var syncRunDao: SyncRunDao
 
     @Before
     fun createDb() {
@@ -49,6 +51,7 @@ class RoomDaoTest {
         pendingPhotoUploadDao = db.pendingPhotoUploadDao()
         offlineBundleDao = db.offlineBundleDao()
         tileManifestDao = db.tileManifestDao()
+        syncRunDao = db.syncRunDao()
     }
 
     @After
@@ -477,6 +480,40 @@ class RoomDaoTest {
             assertEquals(1, pendingPhotoUploadDao.getNotUploadedFailed(101L).first().size)
             assertEquals(1, pendingPhotoUploadDao.getNotUploadedFailed(202L).first().size)
             assertEquals(0, pendingPhotoUploadDao.getNotUploadedFailed(303L).first().size)
+        }
+
+    @Test
+    fun syncRunDao_upsertObserveAndClear() =
+        runBlocking {
+            val run = SyncRunEntity(surveyId = 101L, phase = "photos", total = 5, done = 2)
+
+            syncRunDao.upsert(run)
+
+            val observed = syncRunDao.observeRun(101L).first()
+            assertEquals(run, observed)
+
+            syncRunDao.upsert(run.copy(done = 4))
+            val updated = syncRunDao.observeRun(101L).first()
+            assertEquals(4, updated?.done)
+
+            syncRunDao.clear(101L)
+            assertTrue(syncRunDao.observeRun(101L).first() == null)
+        }
+
+    @Test
+    fun syncRunDao_isolatedPerSurvey() =
+        runBlocking {
+            syncRunDao.upsert(SyncRunEntity(surveyId = 101L, phase = "photos", total = 2, done = 1))
+            syncRunDao.upsert(
+                SyncRunEntity(surveyId = 202L, phase = "verdicts", total = 3, done = 0),
+            )
+
+            assertEquals(101L, syncRunDao.observeRun(101L).first()?.surveyId)
+            assertEquals(202L, syncRunDao.observeRun(202L).first()?.surveyId)
+
+            syncRunDao.clear(101L)
+            assertTrue(syncRunDao.observeRun(101L).first() == null)
+            assertEquals(202L, syncRunDao.observeRun(202L).first()?.surveyId)
         }
 
     @Test

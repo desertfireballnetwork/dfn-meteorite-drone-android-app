@@ -145,3 +145,11 @@ data class TileManifestEntity(
     val y: Int,
     val bytes: Long = 0L,
 )
+
+@Entity(tableName = "sync_run")
+data class SyncRunEntity(
+    @PrimaryKey val surveyId: Long,
+    val phase: String,
+    val total: Int,
+    val done: Int,
+)

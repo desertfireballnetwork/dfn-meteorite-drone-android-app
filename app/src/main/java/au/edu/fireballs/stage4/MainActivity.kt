@@ -126,6 +126,9 @@ private val topLevelDestinations =
         TopLevelDestination("settings", "Settings", Icons.Filled.Settings),
     )
 
+internal fun pendingSyncRoute(selectedSurveyId: Long?): String =
+    if (selectedSurveyId != null) "sync" else "map"
+
 @Composable
 private fun MainScaffold(
     navController: NavHostController,
@@ -153,7 +156,7 @@ private fun MainScaffold(
                         pendingDecisions = pendingDecisions,
                         pendingPhotos = pendingPhotos,
                         onTap = {
-                            navController.navigate("sync") {
+                            navController.navigate(pendingSyncRoute(selectedSurveyId)) {
                                 popUpTo(navController.graph.findStartDestination().id) {
                                     saveState = true
                                 }

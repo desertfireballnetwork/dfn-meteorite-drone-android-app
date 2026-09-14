@@ -2,10 +2,12 @@ package au.edu.fireballs.stage4.sync
 
 import androidx.work.Data
 import androidx.work.workDataOf
+import au.edu.fireballs.stage4.data.local.SyncRunEntity
 import au.edu.fireballs.stage4.data.local.dao.CandidateDao
 import au.edu.fireballs.stage4.data.local.dao.ClaimDao
 import au.edu.fireballs.stage4.data.local.dao.LocalDecisionDao
 import au.edu.fireballs.stage4.data.local.dao.PendingPhotoUploadDao
+import au.edu.fireballs.stage4.data.local.dao.SyncRunDao
 import au.edu.fireballs.stage4.data.remote.AccountManager
 import au.edu.fireballs.stage4.data.repository.PhotoUploadResult
 import au.edu.fireballs.stage4.data.repository.SyncRepository
@@ -37,6 +39,7 @@ class SyncOrchestrator
         private val claimDao: ClaimDao,
         private val pendingPhotoUploadDao: PendingPhotoUploadDao,
         private val localDecisionDao: LocalDecisionDao,
+        private val syncRunDao: SyncRunDao,
         @IoDispatcher private val ioDispatcher: CoroutineDispatcher,
     ) {
         suspend fun run(
@@ -44,21 +47,25 @@ class SyncOrchestrator
             progress: suspend (Data) -> Unit,
         ): SyncOutcome =
             withContext(ioDispatcher) {
-                if (!accountManager.isSignedIn()) {
-                    SyncOutcome.AuthExpired
-                } else {
-                    val eligible = buildEligibleIds(surveyId)
-                    val photoOutcome = uploadPendingPhotos(surveyId, eligible, progress)
-                    if (photoOutcome != null) {
-                        photoOutcome
+                try {
+                    if (!accountManager.isSignedIn()) {
+                        SyncOutcome.AuthExpired
                     } else {
-                        val verdictOutcome = postPendingVerdicts(surveyId, eligible, progress)
-                        if (verdictOutcome != null) {
-                            verdictOutcome
+                        val eligible = buildEligibleIds(surveyId)
+                        val photoOutcome = uploadPendingPhotos(surveyId, eligible, progress)
+                        if (photoOutcome != null) {
+                            photoOutcome
                         } else {
-                            SyncOutcome.Success
+                            val verdictOutcome = postPendingVerdicts(surveyId, eligible, progress)
+                            if (verdictOutcome != null) {
+                                verdictOutcome
+                            } else {
+                                SyncOutcome.Success
+                            }
                         }
                     }
+                } finally {
+                    syncRunDao.clear(surveyId)
                 }
             }
 
@@ -86,12 +93,14 @@ class SyncOrchestrator
                 pendingPhotoUploadDao
                     .getUnuploaded()
                     .filter { it.inferenceResultId in eligible }
+            syncRunDao.upsert(SyncRunEntity(surveyId, PHASE_PHOTOS, pending.size, 0))
             var done = 0
             var retryable = false
             var terminal = false
             for (photo in pending) {
                 val result = syncRepository.uploadPhoto(photo, surveyId)
                 done++
+                syncRunDao.upsert(SyncRunEntity(surveyId, PHASE_PHOTOS, pending.size, done))
                 progress(
                     workDataOf(
                         KEY_DONE to done,
@@ -122,12 +131,14 @@ class SyncOrchestrator
                 localDecisionDao
                     .getUnsynced()
                     .filter { it.inferenceResultId in eligible }
+            syncRunDao.upsert(SyncRunEntity(surveyId, PHASE_VERDICTS, decisions.size, 0))
             var done = 0
             var retryable = false
             var terminal = false
             for (decision in decisions) {
                 val result = syncRepository.postVerdict(decision, surveyId)
                 done++
+                syncRunDao.upsert(SyncRunEntity(surveyId, PHASE_VERDICTS, decisions.size, done))
                 progress(
                     workDataOf(
                         KEY_DONE to done,

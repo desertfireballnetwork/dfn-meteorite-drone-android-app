@@ -5,10 +5,11 @@ import androidx.lifecycle.viewModelScope
 import androidx.work.WorkInfo
 import au.edu.fireballs.stage4.data.local.LocalDecisionEntity
 import au.edu.fireballs.stage4.data.local.PendingPhotoUploadEntity
+import au.edu.fireballs.stage4.data.local.SyncRunEntity
 import au.edu.fireballs.stage4.data.local.dao.LocalDecisionDao
 import au.edu.fireballs.stage4.data.local.dao.PendingPhotoUploadDao
+import au.edu.fireballs.stage4.data.local.dao.SyncRunDao
 import au.edu.fireballs.stage4.data.repository.SelectedSurveyRepository
-import au.edu.fireballs.stage4.sync.SyncOrchestrator
 import au.edu.fireballs.stage4.sync.SyncWorker
 import au.edu.fireballs.stage4.ui.screen.stage4map.SyncWorkManager
 import au.edu.fireballs.stage4.ui.screen.stage4map.WorkManagerSyncWorkManager
@@ -29,6 +30,14 @@ data class SyncSummary(
     val pendingPhotos: Int,
     val failedDecisions: List<LocalDecisionEntity>,
     val failedPhotos: List<PendingPhotoUploadEntity>,
+)
+
+private data class SyncRunData(
+    val decisions: Int,
+    val photos: Int,
+    val failedDecisions: List<LocalDecisionEntity>,
+    val failedPhotos: List<PendingPhotoUploadEntity>,
+    val run: SyncRunEntity?,
 )
 
 sealed interface SyncUiState {
@@ -62,6 +71,7 @@ class SyncViewModel
     constructor(
         private val localDecisionDao: LocalDecisionDao,
         private val pendingPhotoUploadDao: PendingPhotoUploadDao,
+        private val syncRunDao: SyncRunDao,
         private val selectedSurveyRepository: SelectedSurveyRepository,
         private val syncWorkManager: SyncWorkManager,
     ) : ViewModel() {
@@ -77,22 +87,33 @@ class SyncViewModel
                             flowOf(SyncUiState.Idle)
                         } else {
                             combine(
-                                localDecisionDao.getUnsyncedCount(surveyId),
-                                pendingPhotoUploadDao.getNotUploadedCount(surveyId),
-                                localDecisionDao.getUnsyncedFailed(surveyId),
-                                pendingPhotoUploadDao.getNotUploadedFailed(surveyId),
+                                combine(
+                                    localDecisionDao.getUnsyncedCount(surveyId),
+                                    pendingPhotoUploadDao.getNotUploadedCount(surveyId),
+                                    localDecisionDao.getUnsyncedFailed(surveyId),
+                                    pendingPhotoUploadDao.getNotUploadedFailed(surveyId),
+                                    syncRunDao.observeRun(surveyId),
+                                ) { decisions, photos, failedDecisions, failedPhotos, run ->
+                                    SyncRunData(
+                                        decisions,
+                                        photos,
+                                        failedDecisions,
+                                        failedPhotos,
+                                        run,
+                                    )
+                                },
                                 syncWorkManager.getWorkInfosForUniqueWorkFlow(
                                     WorkManagerSyncWorkManager.UNIQUE_WORK_NAME,
                                 ),
-                            ) { decisions, photos, failedDecisions, failedPhotos, workInfos ->
+                            ) { data, workInfos ->
                                 val summary =
                                     SyncSummary(
-                                        pendingDecisions = decisions,
-                                        pendingPhotos = photos,
-                                        failedDecisions = failedDecisions,
-                                        failedPhotos = failedPhotos,
+                                        pendingDecisions = data.decisions,
+                                        pendingPhotos = data.photos,
+                                        failedDecisions = data.failedDecisions,
+                                        failedPhotos = data.failedPhotos,
                                     )
-                                resolveState(summary, workInfos)
+                                resolveState(summary, data.run, workInfos)
                             }
                         }
                     }.distinctUntilChanged()
@@ -104,21 +125,32 @@ class SyncViewModel
 
         private fun resolveState(
             summary: SyncSummary,
+            run: SyncRunEntity?,
             workInfos: List<WorkInfo>,
         ): SyncUiState {
             val current = activeWork(workInfos)
             return when (current?.state) {
                 WorkInfo.State.RUNNING -> {
-                    val progress = current.progress
                     SyncUiState.Running(
                         summary = summary,
-                        done = progress.getInt(SyncOrchestrator.KEY_DONE, 0),
-                        total = progress.getInt(SyncOrchestrator.KEY_TOTAL, 0),
-                        phase = progress.getString(SyncOrchestrator.KEY_PHASE),
+                        done = run?.done ?: 0,
+                        total = run?.total ?: 0,
+                        phase = run?.phase,
                     )
                 }
 
-                WorkInfo.State.ENQUEUED -> SyncUiState.Resuming
+                WorkInfo.State.ENQUEUED -> {
+                    if (run != null) {
+                        SyncUiState.Running(
+                            summary = summary,
+                            done = run.done,
+                            total = run.total,
+                            phase = run.phase,
+                        )
+                    } else {
+                        SyncUiState.Resuming
+                    }
+                }
 
                 WorkInfo.State.SUCCEEDED -> {
                     if (current.outputData.getBoolean(SyncWorker.KEY_AUTH_EXPIRED, false)) {
