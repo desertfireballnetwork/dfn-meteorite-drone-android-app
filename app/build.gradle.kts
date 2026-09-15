@@ -178,4 +178,5 @@ dependencies {
     testImplementation(libs.cash.turbine)
     testImplementation(libs.mockito.kotlin)
     testImplementation(libs.mockk)
+    testImplementation(libs.coil.test)
 }

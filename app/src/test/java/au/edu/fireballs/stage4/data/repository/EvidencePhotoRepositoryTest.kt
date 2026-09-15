@@ -9,6 +9,7 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import au.edu.fireballs.stage4.data.local.Stage4Database
 import au.edu.fireballs.stage4.data.local.dao.PendingPhotoUploadDao
+import au.edu.fireballs.stage4.data.remote.EvidenceService
 import io.mockk.coEvery
 import io.mockk.mockk
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -31,6 +32,7 @@ import java.io.File
 @RunWith(RobolectricTestRunner::class)
 class EvidencePhotoRepositoryTest {
     private val testDispatcher = StandardTestDispatcher()
+    private val evidenceService: EvidenceService = mockk()
     private lateinit var context: Context
     private lateinit var db: Stage4Database
     private lateinit var dao: PendingPhotoUploadDao
@@ -45,7 +47,7 @@ class EvidencePhotoRepositoryTest {
                 .allowMainThreadQueries()
                 .build()
         dao = db.pendingPhotoUploadDao()
-        repository = EvidencePhotoRepository(context, dao, testDispatcher)
+        repository = EvidencePhotoRepository(context, dao, evidenceService, testDispatcher)
         evidenceDir().deleteRecursively()
         context.cacheDir.listFiles()?.forEach { it.delete() }
     }
@@ -156,7 +158,7 @@ class EvidencePhotoRepositoryTest {
                 mockk<PendingPhotoUploadDao> {
                     coEvery { insert(any()) } throws RuntimeException("insert failed")
                 }
-            val repo = EvidencePhotoRepository(context, failingDao, testDispatcher)
+            val repo = EvidencePhotoRepository(context, failingDao, evidenceService, testDispatcher)
 
             val result =
                 suspendRunCatching {
@@ -200,7 +202,7 @@ class EvidencePhotoRepositoryTest {
                 mockk<PendingPhotoUploadDao> {
                     coEvery { insert(any()) } throws RuntimeException("insert failed")
                 }
-            val repo = EvidencePhotoRepository(context, failingDao, testDispatcher)
+            val repo = EvidencePhotoRepository(context, failingDao, evidenceService, testDispatcher)
 
             val result =
                 suspendRunCatching {

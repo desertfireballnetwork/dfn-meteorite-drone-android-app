@@ -15,6 +15,7 @@ import androidx.compose.ui.test.performClick
 import androidx.test.core.app.ApplicationProvider
 import au.edu.fireballs.stage4.data.repository.CandidateImageRepository
 import au.edu.fireballs.stage4.data.repository.DecisionRepository
+import au.edu.fireballs.stage4.data.repository.EvidenceFetchResult
 import au.edu.fireballs.stage4.data.repository.EvidencePhotoRepository
 import au.edu.fireballs.stage4.domain.model.BoundingBox
 import au.edu.fireballs.stage4.domain.model.DetectionTag
@@ -22,6 +23,7 @@ import au.edu.fireballs.stage4.domain.model.GeoCoordinate
 import au.edu.fireballs.stage4.domain.model.ImageDims
 import au.edu.fireballs.stage4.domain.model.Stage4Candidate
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -169,6 +171,10 @@ class CandidateModalTest {
         val evidencePhotoRepository: EvidencePhotoRepository = mock()
         whenever(evidencePhotoRepository.getLocalPhotosForCandidate(any()))
             .thenReturn(flowOf(emptyList()))
+        runBlocking {
+            whenever(evidencePhotoRepository.fetchServerEvidence(any(), any()))
+                .thenReturn(EvidenceFetchResult.Success(emptyList()))
+        }
 
         val viewModel =
             CandidateViewModel(

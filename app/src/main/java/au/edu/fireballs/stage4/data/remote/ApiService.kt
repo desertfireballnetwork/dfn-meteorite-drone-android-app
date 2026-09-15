@@ -2,6 +2,7 @@ package au.edu.fireballs.stage4.data.remote
 
 import au.edu.fireballs.stage4.data.remote.dto.ClaimRequestDto
 import au.edu.fireballs.stage4.data.remote.dto.ClaimResponseDto
+import au.edu.fireballs.stage4.data.remote.dto.EvidenceListResponseDto
 import au.edu.fireballs.stage4.data.remote.dto.ListClaimsResponseDto
 import au.edu.fireballs.stage4.data.remote.dto.ReleaseRequestDto
 import au.edu.fireballs.stage4.data.remote.dto.ReleaseResponseDto
@@ -72,5 +73,16 @@ interface EvidenceService {
         @Path("survey_id") surveyId: String,
         @Part file: MultipartBody.Part,
         @Part("inference_result_id") irId: RequestBody,
+    ): Response<ResponseBody>
+
+    @GET("api/stage4/surveys/{survey_id}/candidates/{inference_result_id}/evidence/")
+    suspend fun listEvidencePhotos(
+        @Path("survey_id") surveyId: String,
+        @Path("inference_result_id") inferenceResultId: String,
+    ): Response<EvidenceListResponseDto>
+
+    @GET("api/stage4/evidence/{photo_id}/")
+    suspend fun viewEvidencePhoto(
+        @Path("photo_id") photoId: Long,
     ): Response<ResponseBody>
 }

@@ -8,17 +8,38 @@ import android.net.Uri
 import androidx.exifinterface.media.ExifInterface
 import au.edu.fireballs.stage4.data.local.PendingPhotoUploadEntity
 import au.edu.fireballs.stage4.data.local.dao.PendingPhotoUploadDao
+import au.edu.fireballs.stage4.data.remote.EvidenceService
+import au.edu.fireballs.stage4.data.remote.LoginRedirectDetector
+import au.edu.fireballs.stage4.data.remote.dto.EvidencePhotoDto
 import au.edu.fireballs.stage4.di.IoDispatcher
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
+import retrofit2.HttpException
 import java.io.File
+import java.io.IOException
+import java.net.HttpURLConnection
 import java.time.Instant
+import java.util.concurrent.CancellationException
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.coroutines.coroutineContext
+
+sealed interface EvidenceFetchResult {
+    data class Success(
+        val photos: List<EvidencePhotoDto>,
+    ) : EvidenceFetchResult
+
+    data class Error(
+        val message: String? = null,
+    ) : EvidenceFetchResult
+
+    data object AuthExpired : EvidenceFetchResult
+
+    data object NetworkError : EvidenceFetchResult
+}
 
 @Singleton
 class EvidencePhotoRepository
@@ -26,6 +47,7 @@ class EvidencePhotoRepository
     constructor(
         @param:ApplicationContext private val context: Context,
         private val pendingPhotoUploadDao: PendingPhotoUploadDao,
+        private val evidenceService: EvidenceService,
         @IoDispatcher private val ioDispatcher: CoroutineDispatcher,
     ) {
         @Suppress("TooGenericExceptionCaught")
@@ -85,6 +107,57 @@ class EvidencePhotoRepository
         ) {
             pendingPhotoUploadDao.markUploaded(rowId, serverPhotoId)
         }
+
+        @Suppress("TooGenericExceptionCaught", "SwallowedException")
+        suspend fun fetchServerEvidence(
+            surveyId: Long,
+            inferenceResultId: Long,
+        ): EvidenceFetchResult =
+            withContext(ioDispatcher) {
+                try {
+                    val response =
+                        evidenceService.listEvidencePhotos(
+                            surveyId.toString(),
+                            inferenceResultId.toString(),
+                        )
+                    if (LoginRedirectDetector.isLoginRedirect(response)) {
+                        EvidenceFetchResult.AuthExpired
+                    } else if (response.isSuccessful) {
+                        EvidenceFetchResult.Success(
+                            response.body()?.photos ?: emptyList(),
+                        )
+                    } else {
+                        errorForHttpCode(response.code())
+                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: IOException) {
+                    EvidenceFetchResult.NetworkError
+                } catch (e: HttpException) {
+                    if (e.code() == HttpURLConnection.HTTP_UNAUTHORIZED) {
+                        EvidenceFetchResult.AuthExpired
+                    } else {
+                        EvidenceFetchResult.Error("Couldn't load server evidence")
+                    }
+                } catch (e: Exception) {
+                    EvidenceFetchResult.Error("Couldn't load server evidence")
+                }
+            }
+
+        private fun errorForHttpCode(code: Int): EvidenceFetchResult =
+            when (code) {
+                HttpURLConnection.HTTP_UNAUTHORIZED -> EvidenceFetchResult.AuthExpired
+                HttpURLConnection.HTTP_FORBIDDEN ->
+                    EvidenceFetchResult.Error(
+                        "You don't have access to this survey's evidence",
+                    )
+                HttpURLConnection.HTTP_NOT_FOUND ->
+                    EvidenceFetchResult.Error(
+                        "No evidence found for this candidate.",
+                    )
+                else ->
+                    EvidenceFetchResult.Error("Server returned code: $code")
+            }
 
         private fun deleteSourceFile(uri: Uri) {
             if (uri.scheme == "file") {

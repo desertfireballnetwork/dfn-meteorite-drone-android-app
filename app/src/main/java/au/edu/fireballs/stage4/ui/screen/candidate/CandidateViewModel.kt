@@ -4,8 +4,10 @@ import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import au.edu.fireballs.stage4.data.local.PendingPhotoUploadEntity
+import au.edu.fireballs.stage4.data.remote.dto.EvidencePhotoDto
 import au.edu.fireballs.stage4.data.repository.CandidateImageRepository
 import au.edu.fireballs.stage4.data.repository.DecisionRepository
+import au.edu.fireballs.stage4.data.repository.EvidenceFetchResult
 import au.edu.fireballs.stage4.data.repository.EvidencePhotoRepository
 import au.edu.fireballs.stage4.domain.model.Stage4Candidate
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -31,6 +33,24 @@ data class CandidateUiState(
     val tileUrlPattern: String = "",
 )
 
+sealed interface EvidenceGalleryUiState {
+    data object Loading : EvidenceGalleryUiState
+
+    data class Content(
+        val photos: List<EvidencePhotoDto>,
+    ) : EvidenceGalleryUiState
+
+    data object Empty : EvidenceGalleryUiState
+
+    data class Error(
+        val message: String? = null,
+    ) : EvidenceGalleryUiState
+
+    data object Offline : EvidenceGalleryUiState
+
+    data object AuthExpired : EvidenceGalleryUiState
+}
+
 @HiltViewModel
 class CandidateViewModel
     @Inject
@@ -53,9 +73,15 @@ class CandidateViewModel
         val photoGalleryState: StateFlow<List<PendingPhotoUploadEntity>> =
             _photoGalleryState.asStateFlow()
 
+        private val _serverGalleryState =
+            MutableStateFlow<EvidenceGalleryUiState>(EvidenceGalleryUiState.Loading)
+        val serverGalleryState: StateFlow<EvidenceGalleryUiState> =
+            _serverGalleryState.asStateFlow()
+
         private var retryCount = 0
         private var verdictJob: Job? = null
         private var galleryJob: Job? = null
+        private var serverGalleryJob: Job? = null
 
         fun initialize(
             candidate: Stage4Candidate,
@@ -109,6 +135,47 @@ class CandidateViewModel
                     evidencePhotoRepository
                         .getLocalPhotosForCandidate(candidate.inferenceResultId)
                         .collect { photos -> _photoGalleryState.value = photos }
+                }
+
+            fetchServerGallery(candidate.inferenceResultId, surveyId)
+        }
+
+        fun retryServerGallery() {
+            val state = _uiState.value ?: return
+            fetchServerGallery(
+                candidateId = state.candidate.inferenceResultId,
+                surveyId = state.surveyId,
+            )
+        }
+
+        private fun fetchServerGallery(
+            candidateId: Long,
+            surveyId: Long,
+        ) {
+            serverGalleryJob?.cancel()
+            _serverGalleryState.value = EvidenceGalleryUiState.Loading
+            serverGalleryJob =
+                viewModelScope.launch {
+                    val result =
+                        evidencePhotoRepository.fetchServerEvidence(
+                            surveyId = surveyId,
+                            inferenceResultId = candidateId,
+                        )
+                    _serverGalleryState.value =
+                        when (result) {
+                            is EvidenceFetchResult.Success ->
+                                if (result.photos.isEmpty()) {
+                                    EvidenceGalleryUiState.Empty
+                                } else {
+                                    EvidenceGalleryUiState.Content(result.photos)
+                                }
+                            is EvidenceFetchResult.Error ->
+                                EvidenceGalleryUiState.Error(result.message)
+                            EvidenceFetchResult.AuthExpired ->
+                                EvidenceGalleryUiState.AuthExpired
+                            EvidenceFetchResult.NetworkError ->
+                                EvidenceGalleryUiState.Offline
+                        }
                 }
         }
 
