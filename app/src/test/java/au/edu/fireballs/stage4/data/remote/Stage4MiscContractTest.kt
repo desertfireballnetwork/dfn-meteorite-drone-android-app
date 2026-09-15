@@ -16,7 +16,9 @@ class Stage4MiscContractTest : Stage4FixtureContractTest() {
             harness.assertRequest(contract)
             val body = response.body()
             assertNotNull("Expected parseable SurveyList for surveys-index", body)
-            assertEquals(1, body?.surveys?.size)
+            val survey = body?.surveys?.single()
+            assertEquals(1L, survey?.id)
+            assertEquals(true, survey?.hasStage4)
         }
 
     @Test
