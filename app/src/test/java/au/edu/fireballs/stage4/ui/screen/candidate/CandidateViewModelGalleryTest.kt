@@ -140,7 +140,7 @@ class CandidateViewModelGalleryTest {
         }
 
     @Test
-    fun `re-initializing same candidate does not refetch`() =
+    fun `re-initializing same candidate creates a new fetch boundary`() =
         runTest(testDispatcher) {
             val candidate = createCandidate(id = 42L)
             val surveyId = 10L
@@ -151,7 +151,7 @@ class CandidateViewModelGalleryTest {
             viewModel.initialize(candidate, surveyId)
             viewModel.initialize(candidate.copy(claimedByMe = true), surveyId)
 
-            verify(evidenceService, times(1)).listEvidencePhotos(any(), any())
+            verify(evidenceService, times(3)).listEvidencePhotos(any(), any())
         }
 
     @Test

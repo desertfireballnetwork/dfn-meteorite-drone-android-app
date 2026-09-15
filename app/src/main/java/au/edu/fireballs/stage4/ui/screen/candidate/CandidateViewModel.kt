@@ -82,7 +82,6 @@ class CandidateViewModel
         private var verdictJob: Job? = null
         private var galleryJob: Job? = null
         private var serverGalleryJob: Job? = null
-        private var currentCandidateId: Long? = null
 
         fun initialize(
             candidate: Stage4Candidate,
@@ -138,11 +137,7 @@ class CandidateViewModel
                         .collect { photos -> _photoGalleryState.value = photos }
                 }
 
-            val candidateId = candidate.inferenceResultId
-            if (currentCandidateId != candidateId) {
-                currentCandidateId = candidateId
-                fetchServerGallery(candidateId, surveyId)
-            }
+            fetchServerGallery(candidate.inferenceResultId, surveyId)
         }
 
         fun retryServerGallery() {
@@ -180,7 +175,6 @@ class CandidateViewModel
                                 EvidenceGalleryUiState.AuthExpired
                             EvidenceFetchResult.NetworkError ->
                                 EvidenceGalleryUiState.Offline
-                            else -> EvidenceGalleryUiState.Error()
                         }
                 }
         }

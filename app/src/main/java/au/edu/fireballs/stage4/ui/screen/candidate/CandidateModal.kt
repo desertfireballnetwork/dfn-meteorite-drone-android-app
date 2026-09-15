@@ -69,6 +69,7 @@ import au.edu.fireballs.stage4.ui.theme.dfnMarkerNo
 import au.edu.fireballs.stage4.ui.theme.dfnMarkerYes
 import coil.compose.AsyncImage
 import coil.compose.SubcomposeAsyncImage
+import coil.network.HttpException
 import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
 import dagger.hilt.android.EntryPointAccessors
@@ -398,6 +399,14 @@ private fun ServerEvidenceSection(
 ) {
     var selectedPhoto by remember { mutableStateOf<EvidencePhotoDto?>(null) }
     LaunchedEffect(state) {
+        val visiblePhotoIds =
+            (state as? EvidenceGalleryUiState.Content)
+                ?.photos
+                ?.mapTo(mutableSetOf()) { it.id }
+                .orEmpty()
+        if (selectedPhoto?.id !in visiblePhotoIds) {
+            selectedPhoto = null
+        }
         if (state is EvidenceGalleryUiState.AuthExpired) {
             onAuthExpired()
         }
@@ -437,6 +446,7 @@ private fun ServerEvidenceSection(
                             photo = photo,
                             serverUrl = serverUrl,
                             onClick = { selectedPhoto = photo },
+                            onAuthExpired = onAuthExpired,
                         )
                     }
                 }
@@ -494,6 +504,7 @@ private fun ServerEvidenceSection(
             photo = photo,
             serverUrl = serverUrl,
             onDismiss = { selectedPhoto = null },
+            onAuthExpired = onAuthExpired,
         )
     }
 }
@@ -508,6 +519,7 @@ private fun ServerEvidenceItem(
     photo: EvidencePhotoDto,
     serverUrl: String,
     onClick: () -> Unit,
+    onAuthExpired: () -> Unit,
 ) {
     val url = serverEvidenceUrl(serverUrl, photo.id)
     Column(
@@ -524,7 +536,13 @@ private fun ServerEvidenceItem(
                     .clip(RoundedCornerShape(8.dp))
                     .clickable(onClick = onClick)
                     .testTag("server-evidence-photo-${photo.id}"),
-            error = {
+            error = { errorState ->
+                LaunchedEffect(errorState.result.throwable) {
+                    val throwable = errorState.result.throwable
+                    if (throwable is HttpException && throwable.response.code in 401..403) {
+                        onAuthExpired()
+                    }
+                }
                 Box(
                     modifier =
                         Modifier
@@ -561,6 +579,7 @@ private fun ServerPhotoDialog(
     photo: EvidencePhotoDto,
     serverUrl: String,
     onDismiss: () -> Unit,
+    onAuthExpired: () -> Unit,
 ) {
     val url = serverEvidenceUrl(serverUrl, photo.id)
     Dialog(
@@ -579,7 +598,13 @@ private fun ServerPhotoDialog(
                 contentDescription = "Full evidence photo by ${photo.username}",
                 contentScale = ContentScale.Fit,
                 modifier = Modifier.fillMaxSize().testTag("server-evidence-full-image"),
-                error = {
+                error = { errorState ->
+                    LaunchedEffect(errorState.result.throwable) {
+                        val throwable = errorState.result.throwable
+                        if (throwable is HttpException && throwable.response.code in 401..403) {
+                            onAuthExpired()
+                        }
+                    }
                     Box(
                         modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center,
