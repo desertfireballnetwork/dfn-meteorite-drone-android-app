@@ -119,9 +119,10 @@ class BasecampScreenTest {
     private fun openLoaded(
         fixture: Stage4State,
         claims: List<Claim>,
+        offline: Boolean = false,
     ) {
         wheneverBlocking { stage4Repository.getCandidatesState(7L) }
-            .thenReturn(Stage4FetchResult.Success(fixture))
+            .thenReturn(Stage4FetchResult.Success(fixture, isOffline = offline))
         wheneverBlocking { claimRepository.listClaims() }
             .thenReturn(ClaimResult.Listed(claims = claims))
         viewModel =
@@ -194,5 +195,29 @@ class BasecampScreenTest {
         )
 
         composeRule.onNodeWithText("No claims").assertExists()
+    }
+
+    @Test
+    fun claimFlow_unclaimedCandidateClaimsViaTap() {
+        openLoaded(
+            fixture = state(candidate(1L, GeoCoordinate(0.0, 0.0))),
+            claims = emptyList(),
+        )
+
+        viewModel.onCandidateTap(1L)
+        composeRule.waitForIdle()
+
+        verifyBlocking(claimRepository) { claim(listOf(1L)) }
+    }
+
+    @Test
+    fun offlineStatus_showsOfflineMessageWhenCachedDataReturned() {
+        openLoaded(
+            fixture = state(candidate(1L, GeoCoordinate(0.0, 0.0))),
+            claims = emptyList(),
+            offline = true,
+        )
+
+        composeRule.onNodeWithText("Offline — displaying previous map data").assertExists()
     }
 }
