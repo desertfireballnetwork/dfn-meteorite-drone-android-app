@@ -1,0 +1,29 @@
+{
+  "name": "recovery-release-all",
+  "endpoint": "recovery_release_all",
+  "method": "POST",
+  "request": {
+    "url_params": {
+      "survey": 1
+    },
+    "body": {
+      "confirmation": "RESET SURVEY @survey:1",
+      "reason": "release all"
+    },
+    "content_type": "application/json"
+  },
+  "expected": {
+    "status": 200,
+    "content_type": "application/json",
+    "redirect": false,
+    "body": {
+      "released_candidate_ids": [
+        1,
+        2
+      ],
+      "released_claim_episode_ids": [
+        "@dynamic"
+      ]
+    }
+  }
+}

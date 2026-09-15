@@ -1,0 +1,25 @@
+{
+  "name": "surveys-index",
+  "endpoint": "surveys_index",
+  "method": "GET",
+  "request": {
+    "url_params": {}
+  },
+  "expected": {
+    "status": 200,
+    "content_type": "application/json",
+    "redirect": false,
+    "body": {
+      "surveys": [
+        {
+          "id": 1,
+          "event_id": "root",
+          "description": "",
+          "created": "@dynamic",
+          "has_stage4": true,
+          "is_starred": false
+        }
+      ]
+    }
+  }
+}

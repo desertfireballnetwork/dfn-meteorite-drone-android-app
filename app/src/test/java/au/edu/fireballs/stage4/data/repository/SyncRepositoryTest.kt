@@ -362,6 +362,48 @@ class SyncRepositoryTest {
             assertTrue(decisionDao.markedSynced.isEmpty())
             assertTrue(decisionDao.markedFailed.isEmpty())
         }
+
+    @Test
+    fun `retry after network failure does not duplicate uploads`() =
+        runTest(testDispatcher) {
+            val file = tempPhotoFile()
+            mockWebServer.enqueue(
+                MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AT_START),
+            )
+            assertEquals(
+                PhotoUploadResult.NetworkError,
+                repository.uploadPhoto(pendingPhoto(file), 7L),
+            )
+
+            mockWebServer.enqueue(
+                MockResponse()
+                    .setResponseCode(201)
+                    .setBody("""{"id": 123}"""),
+            )
+            assertEquals(PhotoUploadResult.Success, repository.uploadPhoto(pendingPhoto(file), 7L))
+
+            assertEquals(listOf(1L to 123L), photoDao.markedUploaded)
+            assertTrue(photoDao.markedFailed.isEmpty())
+            file.delete()
+        }
+
+    @Test
+    fun `retry after network failure does not duplicate decisions`() =
+        runTest(testDispatcher) {
+            mockWebServer.enqueue(
+                MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AT_START),
+            )
+            assertEquals(
+                VerdictPostResult.NetworkError,
+                repository.postVerdict(localDecision(), 7L),
+            )
+
+            mockWebServer.enqueue(MockResponse().setResponseCode(200).setBody("OK"))
+            assertEquals(VerdictPostResult.Success, repository.postVerdict(localDecision(), 7L))
+
+            assertEquals(listOf(101L), decisionDao.markedSynced.map { it.first })
+            assertTrue(decisionDao.markedFailed.isEmpty())
+        }
 }
 
 private class FakePendingPhotoUploadDao : PendingPhotoUploadDao {

@@ -1,0 +1,27 @@
+{
+  "name": "claim-ok",
+  "endpoint": "claim",
+  "method": "POST",
+  "request": {
+    "url_params": {
+      "survey": 1
+    },
+    "body": {
+      "inference_result_ids": [
+        1
+      ]
+    },
+    "content_type": "application/json"
+  },
+  "expected": {
+    "status": 200,
+    "content_type": "application/json",
+    "redirect": false,
+    "body": {
+      "claimed": [
+        1
+      ],
+      "already_claimed": []
+    }
+  }
+}

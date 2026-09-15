@@ -1,0 +1,27 @@
+{
+  "name": "evidence-list",
+  "endpoint": "evidence_list",
+  "method": "GET",
+  "request": {
+    "url_params": {
+      "survey": 1,
+      "inference_result_id": 1
+    }
+  },
+  "expected": {
+    "status": 200,
+    "content_type": "application/json",
+    "redirect": false,
+    "body": {
+      "photos": [
+        {
+          "id": "@dynamic",
+          "captured_at": "2026-08-19T10:15:30Z",
+          "created": "@dynamic",
+          "user_id": "@dynamic",
+          "username": "root-user"
+        }
+      ]
+    }
+  }
+}

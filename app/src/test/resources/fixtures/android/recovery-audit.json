@@ -1,0 +1,29 @@
+{
+  "name": "recovery-audit",
+  "endpoint": "recovery_audit",
+  "method": "GET",
+  "request": {
+    "url_params": {
+      "survey": 1
+    }
+  },
+  "expected": {
+    "status": 200,
+    "content_type": "application/json",
+    "redirect": false,
+    "body": {
+      "audit": [
+        {
+          "operation": "selected",
+          "actor": "admin",
+          "reason": "first",
+          "candidate_ids": [
+            1
+          ],
+          "claim_episode_ids": [],
+          "created": "@dynamic"
+        }
+      ]
+    }
+  }
+}

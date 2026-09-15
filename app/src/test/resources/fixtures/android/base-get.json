@@ -1,0 +1,16 @@
+{
+  "name": "base-get",
+  "endpoint": "base",
+  "method": "GET",
+  "request": {
+    "url_params": {
+      "survey": 1
+    }
+  },
+  "expected": {
+    "status": 404,
+    "content_type": "text/html",
+    "redirect": false,
+    "body": {"_html_error": true}
+  }
+}

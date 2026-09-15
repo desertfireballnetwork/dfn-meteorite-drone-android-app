@@ -1,0 +1,27 @@
+{
+  "name": "evidence-upload-malformed",
+  "endpoint": "evidence_upload",
+  "method": "POST",
+  "request": {
+    "url_params": {
+      "survey": 1
+    },
+    "body": {
+      "file": {
+        "filename": "evidence.jpg",
+        "content": "/9j/2Q==",
+        "content_type": "image/jpeg"
+      },
+      "captured_at": "2026-08-19T10:15:30Z"
+    },
+    "content_type": "multipart/form-data"
+  },
+  "expected": {
+    "status": 400,
+    "content_type": "application/json",
+    "redirect": false,
+    "body": {
+      "error": "missing_inference_result_id"
+    }
+  }
+}

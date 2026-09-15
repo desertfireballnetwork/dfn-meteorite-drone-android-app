@@ -1,0 +1,35 @@
+{
+  "name": "claims-list",
+  "endpoint": "claims_list",
+  "method": "GET",
+  "request": {
+    "url_params": {
+      "survey": 1
+    }
+  },
+  "expected": {
+    "status": 200,
+    "content_type": "application/json",
+    "redirect": false,
+    "body": {
+      "claims": [
+        {
+          "inference_result_id": 1,
+          "user_id": "@dynamic",
+          "username": "root-user",
+          "full_name": "",
+          "claimed_at": "@dynamic",
+          "is_me": true
+        },
+        {
+          "inference_result_id": 2,
+          "user_id": "@dynamic",
+          "username": "other-user",
+          "full_name": "",
+          "claimed_at": "@dynamic",
+          "is_me": false
+        }
+      ]
+    }
+  }
+}

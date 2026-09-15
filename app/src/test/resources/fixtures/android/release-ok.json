@@ -1,0 +1,26 @@
+{
+  "name": "release-ok",
+  "endpoint": "release",
+  "method": "POST",
+  "request": {
+    "url_params": {
+      "survey": 1
+    },
+    "body": {
+      "inference_result_ids": [
+        1
+      ]
+    },
+    "content_type": "application/json"
+  },
+  "expected": {
+    "status": 200,
+    "content_type": "application/json",
+    "redirect": false,
+    "body": {
+      "released": [
+        1
+      ]
+    }
+  }
+}

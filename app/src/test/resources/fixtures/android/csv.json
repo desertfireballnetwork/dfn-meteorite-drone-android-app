@@ -1,0 +1,18 @@
+{
+  "name": "csv",
+  "endpoint": "csv",
+  "method": "GET",
+  "request": {
+    "url_params": {
+      "survey": 1
+    }
+  },
+  "expected": {
+    "status": 200,
+    "content_type": "text/csv",
+    "redirect": false,
+    "body": {
+      "_stream": true
+    }
+  }
+}

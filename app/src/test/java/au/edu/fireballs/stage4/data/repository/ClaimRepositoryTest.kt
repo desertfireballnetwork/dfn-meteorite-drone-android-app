@@ -220,6 +220,42 @@ class ClaimRepositoryTest {
         }
 
     @Test
+    fun `release self-releases an old active claim and deactivates it locally`() =
+        runTest(testDispatcher) {
+            claimDao.upserted.add(
+                ClaimEntity(
+                    inferenceResultId = 1L,
+                    surveyId = 7L,
+                    userId = 2L,
+                    username = "me",
+                    claimedAt = "2026-01-01T00:00:00Z",
+                    isMine = true,
+                    isActive = true,
+                ),
+            )
+            mockWebServer.enqueue(
+                MockResponse()
+                    .setResponseCode(200)
+                    .setBody("""{"released": [1]}"""),
+            )
+
+            val result = repository.release(listOf(1L))
+
+            assertTrue("Expected Released but got $result", result is ClaimResult.Released)
+            assertEquals(listOf(1L), (result as ClaimResult.Released).released)
+
+            mockWebServer.enqueue(
+                MockResponse()
+                    .setResponseCode(200)
+                    .setBody("""{"claims": []}"""),
+            )
+            repository.refreshClaimsToRoom(7L)
+
+            val local = claimDao.upserted.find { it.inferenceResultId == 1L }
+            assertTrue("Expected local claim deactivated", local != null && !local!!.isActive)
+        }
+
+    @Test
     fun `listClaims maps claims to domain model`() =
         runTest(testDispatcher) {
             mockWebServer.enqueue(

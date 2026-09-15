@@ -1,0 +1,18 @@
+{
+  "name": "evidence-view",
+  "endpoint": "evidence_view",
+  "method": "GET",
+  "request": {
+    "url_params": {
+      "photo_id": 1
+    }
+  },
+  "expected": {
+    "status": 200,
+    "content_type": "image/jpeg",
+    "redirect": false,
+    "body": {
+      "_stream": true
+    }
+  }
+}

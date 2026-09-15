@@ -305,6 +305,46 @@ class Stage4RepositoryTest {
         }
 
     @Test
+    fun `getCandidatesState follows root to child to grandchild redirect chain`() =
+        runTest(testDispatcher) {
+            val jsonPayload =
+                """
+                {
+                  "survey": {"id": 7, "event_id": "DN240703-02", "tileset_id": null},
+                  "base": null,
+                  "surveyed_areas": [],
+                  "unprocessed_candidates": [],
+                  "yes_meteorites": [],
+                  "no_meteorites": [],
+                  "detection_tags": [],
+                  "user_locations": [],
+                  "settings": {"show_geolocation_accuracy_circle": true},
+                  "latest_task_created": "2026-08-20T09:30:00Z"
+                }
+                """.trimIndent()
+
+            mockWebServer.enqueue(
+                MockResponse()
+                    .setResponseCode(302)
+                    .setHeader("Location", mockWebServer.url("/api/stage4/surveys/3/candidates/")),
+            )
+            mockWebServer.enqueue(
+                MockResponse()
+                    .setResponseCode(302)
+                    .setHeader("Location", mockWebServer.url("/api/stage4/surveys/9/candidates/")),
+            )
+            mockWebServer.enqueue(MockResponse().setResponseCode(200).setBody(jsonPayload))
+
+            val result = repository.getCandidatesState(7L)
+
+            assertTrue("Expected Success but got $result", result is Stage4FetchResult.Success)
+            val state = (result as Stage4FetchResult.Success).state
+            assertEquals(7L, state.survey.id)
+            assertEquals("DN240703-02", state.survey.eventId)
+            assertTrue(state.showGeolocationAccuracyCircle)
+        }
+
+    @Test
     fun `getCandidatesState handles HTTP 403 as access denied Error`() =
         runTest(testDispatcher) {
             mockWebServer.enqueue(MockResponse().setResponseCode(403))

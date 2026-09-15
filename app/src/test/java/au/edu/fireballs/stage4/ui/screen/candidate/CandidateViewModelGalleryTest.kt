@@ -17,7 +17,9 @@ import coil.request.ImageRequest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
@@ -40,7 +42,7 @@ import java.io.IOException
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
 class CandidateViewModelGalleryTest {
-    private val testDispatcher = UnconfinedTestDispatcher()
+    private val testDispatcher = StandardTestDispatcher()
     private lateinit var db: Stage4Database
     private lateinit var decisionRepository: DecisionRepository
     private lateinit var evidencePhotoRepository: EvidencePhotoRepository
@@ -125,13 +127,14 @@ class CandidateViewModelGalleryTest {
 
     @Test
     fun `initialize fetches server evidence and exposes content`() =
-        runTest(testDispatcher) {
+        runTest {
             val candidate = createCandidate(id = 42L)
             val surveyId = 10L
             stubImageRepository(42L, surveyId)
             stubSuccess(listOf(photo(1L), photo(2L)))
 
             viewModel.initialize(candidate, surveyId)
+            advanceUntilIdle()
 
             val state = viewModel.serverGalleryState.value
             assertTrue(state is EvidenceGalleryUiState.Content)
@@ -141,29 +144,34 @@ class CandidateViewModelGalleryTest {
 
     @Test
     fun `re-initializing same candidate creates a new fetch boundary`() =
-        runTest(testDispatcher) {
+        runTest {
             val candidate = createCandidate(id = 42L)
             val surveyId = 10L
             stubImageRepository(42L, surveyId)
             stubSuccess(listOf(photo(1L)))
 
             viewModel.initialize(candidate, surveyId)
+            advanceUntilIdle()
             viewModel.initialize(candidate, surveyId)
+            advanceUntilIdle()
             viewModel.initialize(candidate.copy(claimedByMe = true), surveyId)
+            advanceUntilIdle()
 
             verify(evidenceService, times(3)).listEvidencePhotos(any(), any())
         }
 
     @Test
     fun `retryServerGallery refetches server evidence`() =
-        runTest(testDispatcher) {
+        runTest {
             val candidate = createCandidate(id = 42L)
             val surveyId = 10L
             stubImageRepository(42L, surveyId)
             stubSuccess(listOf(photo(1L)))
 
             viewModel.initialize(candidate, surveyId)
+            advanceUntilIdle()
             viewModel.retryServerGallery()
+            advanceUntilIdle()
 
             verify(evidenceService, times(2)).listEvidencePhotos(any(), any())
             assertTrue(viewModel.serverGalleryState.value is EvidenceGalleryUiState.Content)
@@ -171,7 +179,7 @@ class CandidateViewModelGalleryTest {
 
     @Test
     fun `switching candidate creates a new fetch boundary`() =
-        runTest(testDispatcher) {
+        runTest {
             val candidate1 = createCandidate(id = 42L)
             val candidate2 = createCandidate(id = 99L)
             val surveyId = 10L
@@ -180,7 +188,9 @@ class CandidateViewModelGalleryTest {
             stubSuccess(listOf(photo(1L)))
 
             viewModel.initialize(candidate1, surveyId)
+            advanceUntilIdle()
             viewModel.initialize(candidate2, surveyId)
+            advanceUntilIdle()
 
             verify(evidenceService, times(2)).listEvidencePhotos(any(), any())
             assertEquals(
@@ -195,33 +205,35 @@ class CandidateViewModelGalleryTest {
 
     @Test
     fun `auth expired result maps to AuthExpired state`() =
-        runTest(testDispatcher) {
+        runTest {
             val candidate = createCandidate(id = 42L)
             val surveyId = 10L
             stubImageRepository(42L, surveyId)
             stubAuthExpired()
 
             viewModel.initialize(candidate, surveyId)
+            advanceUntilIdle()
 
             assertEquals(EvidenceGalleryUiState.AuthExpired, viewModel.serverGalleryState.value)
         }
 
     @Test
     fun `empty server evidence maps to Empty state`() =
-        runTest(testDispatcher) {
+        runTest {
             val candidate = createCandidate(id = 42L)
             val surveyId = 10L
             stubImageRepository(42L, surveyId)
             stubSuccess(emptyList())
 
             viewModel.initialize(candidate, surveyId)
+            advanceUntilIdle()
 
             assertEquals(EvidenceGalleryUiState.Empty, viewModel.serverGalleryState.value)
         }
 
     @Test
     fun `network error maps to Offline state`() =
-        runTest(testDispatcher) {
+        runTest {
             val candidate = createCandidate(id = 42L)
             val surveyId = 10L
             stubImageRepository(42L, surveyId)
@@ -229,6 +241,7 @@ class CandidateViewModelGalleryTest {
                 .thenAnswer { throw IOException("boom") }
 
             viewModel.initialize(candidate, surveyId)
+            advanceUntilIdle()
 
             assertEquals(EvidenceGalleryUiState.Offline, viewModel.serverGalleryState.value)
         }

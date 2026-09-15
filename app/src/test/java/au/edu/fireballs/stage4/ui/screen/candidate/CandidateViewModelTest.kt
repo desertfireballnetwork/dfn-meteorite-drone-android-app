@@ -20,6 +20,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
@@ -42,7 +43,7 @@ import java.io.File
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
 class CandidateViewModelTest {
-    private val testDispatcher = UnconfinedTestDispatcher()
+    private val testDispatcher = StandardTestDispatcher()
     private lateinit var db: Stage4Database
     private lateinit var decisionRepository: DecisionRepository
     private lateinit var evidencePhotoRepository: EvidencePhotoRepository
@@ -127,13 +128,13 @@ class CandidateViewModelTest {
 
     @Test
     fun `initial uiState is null`() =
-        runTest(testDispatcher) {
+        runTest {
             assertNull(viewModel.uiState.value)
         }
 
     @Test
     fun `initialization populates candidate and media model`() =
-        runTest(testDispatcher) {
+        runTest {
             val candidate = createCandidate(id = 42L)
             val surveyId = 10L
             val imageRequest: ImageRequest = mock()
@@ -160,7 +161,7 @@ class CandidateViewModelTest {
 
     @Test
     fun `changing view mode updates StateFlow`() =
-        runTest(testDispatcher) {
+        runTest {
             val candidate = createCandidate(id = 42L)
             val surveyId = 10L
             stubImageRepository()
@@ -183,7 +184,7 @@ class CandidateViewModelTest {
 
     @Test
     fun `calling initialize again for same candidate preserves current viewMode`() =
-        runTest(testDispatcher) {
+        runTest {
             val candidate = createCandidate(id = 42L)
             val surveyId = 10L
             stubImageRepository()
@@ -203,7 +204,7 @@ class CandidateViewModelTest {
 
     @Test
     fun `calling initialize for different candidate resets viewMode to MAP`() =
-        runTest(testDispatcher) {
+        runTest {
             val candidate1 = createCandidate(id = 42L)
             val candidate2 = createCandidate(id = 99L)
             val surveyId = 10L
@@ -226,14 +227,14 @@ class CandidateViewModelTest {
 
     @Test
     fun `setViewMode when uninitialized does not throw and remains null`() =
-        runTest(testDispatcher) {
+        runTest {
             viewModel.setViewMode(CandidateViewMode.IMAGE)
             assertNull(viewModel.uiState.value)
         }
 
     @Test
     fun `retryImage rebuilds cropped image model with a new retry key`() =
-        runTest(testDispatcher) {
+        runTest {
             val candidate = createCandidate(id = 42L)
             val surveyId = 10L
             val initialRequest: ImageRequest = mock()
@@ -254,7 +255,7 @@ class CandidateViewModelTest {
 
     @Test
     fun `tapping Yes accepts verdict and emits it`() =
-        runTest(testDispatcher) {
+        runTest {
             val candidate = createCandidate(id = 42L)
             stubImageRepository()
             viewModel.initialize(candidate, 10L)
@@ -268,7 +269,7 @@ class CandidateViewModelTest {
 
     @Test
     fun `tapping No offers tag picker`() =
-        runTest(testDispatcher) {
+        runTest {
             val candidate = createCandidate(id = 42L)
             stubImageRepository()
             viewModel.initialize(candidate, 10L)
@@ -282,7 +283,7 @@ class CandidateViewModelTest {
 
     @Test
     fun `switching from No to Yes clears tag`() =
-        runTest(testDispatcher) {
+        runTest {
             val candidate = createCandidate(id = 42L)
             stubImageRepository()
             viewModel.initialize(candidate, 10L)
@@ -300,7 +301,7 @@ class CandidateViewModelTest {
 
     @Test
     fun `submitVerdict persists a row with synced false`() =
-        runTest(testDispatcher) {
+        runTest {
             val candidate = createCandidate(id = 42L)
             stubImageRepository()
             viewModel.initialize(candidate, 10L)
@@ -317,7 +318,7 @@ class CandidateViewModelTest {
 
     @Test
     fun `initialize pre-selects an existing verdict and tag from Room`() =
-        runTest(testDispatcher) {
+        runTest {
             val candidate = createCandidate(id = 42L)
             stubImageRepository()
             val decisionDao = db.localDecisionDao()
@@ -342,7 +343,7 @@ class CandidateViewModelTest {
 
     @Test
     fun `clearVerdict clears selection and deletes the Room row`() =
-        runTest(testDispatcher) {
+        runTest {
             val candidate = createCandidate(id = 42L)
             stubImageRepository()
             viewModel.initialize(candidate, 10L)
@@ -359,7 +360,7 @@ class CandidateViewModelTest {
 
     @Test
     fun `onPhotoCaptured persists photo and updates gallery`() =
-        runTest(testDispatcher) {
+        runTest {
             val candidate = createCandidate(id = 42L)
             stubImageRepository()
             viewModel.initialize(candidate, 10L)
