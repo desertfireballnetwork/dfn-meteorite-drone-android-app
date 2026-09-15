@@ -137,12 +137,10 @@ class EvidencePhotoRepository
                     if (e.code() == HttpURLConnection.HTTP_UNAUTHORIZED) {
                         EvidenceFetchResult.AuthExpired
                     } else {
-                        EvidenceFetchResult.Error(e.message())
+                        EvidenceFetchResult.Error("Couldn't load server evidence")
                     }
                 } catch (e: Exception) {
-                    EvidenceFetchResult.Error(
-                        e.localizedMessage ?: "An unexpected error occurred",
-                    )
+                    EvidenceFetchResult.Error("Couldn't load server evidence")
                 }
             }
 

@@ -1,13 +1,21 @@
 package au.edu.fireballs.stage4.ui.screen.candidate
 
 import android.app.Application
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.test.core.app.ApplicationProvider
 import au.edu.fireballs.stage4.data.local.PendingPhotoUploadEntity
 import au.edu.fireballs.stage4.data.remote.dto.EvidencePhotoDto
+import coil.ImageLoader
+import coil.compose.LocalImageLoader
+import coil.intercept.Interceptor
+import coil.request.ErrorResult
+import coil.request.ImageResult
+import coil.test.FakeImageLoaderEngine
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -203,6 +211,57 @@ class CandidateModalGalleryTest {
             serverGalleryState = EvidenceGalleryUiState.AuthExpired,
             onAuthExpired = { authExpired = true },
         )
+
+        composeRule.waitForIdle()
+        assertTrue(authExpired)
+    }
+
+    @Test
+    fun serverPhotoHttp403TriggersAuthExpired() {
+        var authExpired = false
+        val response =
+            okhttp3.Response
+                .Builder()
+                .request(
+                    okhttp3.Request
+                        .Builder()
+                        .url("https://example.com")
+                        .build(),
+                ).protocol(okhttp3.Protocol.HTTP_1_1)
+                .code(403)
+                .message("Forbidden")
+                .build()
+        val engine =
+            FakeImageLoaderEngine
+                .Builder()
+                .default(
+                    object : Interceptor {
+                        override suspend fun intercept(chain: Interceptor.Chain): ImageResult =
+                            ErrorResult(
+                                drawable = null,
+                                request = chain.request,
+                                throwable = coil.network.HttpException(response),
+                            )
+                    },
+                ).build()
+        val imageLoader =
+            ImageLoader
+                .Builder(ApplicationProvider.getApplicationContext())
+                .components { add(engine) }
+                .build()
+        composeRule.setContent {
+            CompositionLocalProvider(LocalImageLoader provides imageLoader) {
+                PhotoGallery(
+                    photos = emptyList(),
+                    onPhotoCaptured = {},
+                    onPhotoPicked = {},
+                    serverGalleryState = EvidenceGalleryUiState.Content(listOf(serverPhoto(1L))),
+                    onRetryServerGallery = {},
+                    serverUrl = "https://example.com",
+                    onAuthExpired = { authExpired = true },
+                )
+            }
+        }
 
         composeRule.waitForIdle()
         assertTrue(authExpired)
