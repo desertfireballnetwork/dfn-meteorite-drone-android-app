@@ -1,0 +1,16 @@
+{
+  "name": "candidates-child-permission",
+  "endpoint": "candidates",
+  "method": "GET",
+  "request": {
+    "url_params": {
+      "survey": 2
+    }
+  },
+  "expected": {
+    "status": 403,
+    "content_type": "text/html",
+    "redirect": false,
+    "body": {"_html_error": true}
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "name": "verdict-already-completed-409",
+  "endpoint": "verdict",
+  "method": "POST",
+  "request": {
+    "url_params": {
+      "survey": 1
+    },
+    "body": {
+      "inference_result": "1",
+      "is_meteorite": "true"
+    },
+    "content_type": "application/x-www-form-urlencoded"
+  },
+  "expected": {
+    "status": 409,
+    "content_type": "application/json",
+    "redirect": false,
+    "body": {
+      "status": "already_completed"
+    }
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "name": "claim-cross-campaign",
+  "endpoint": "claim",
+  "method": "POST",
+  "request": {
+    "url_params": {
+      "survey": 1
+    },
+    "body": {
+      "inference_result_ids": [
+        6
+      ]
+    },
+    "content_type": "application/json"
+  },
+  "expected": {
+    "status": 403,
+    "content_type": "application/json",
+    "redirect": false,
+    "body": {
+      "invalid_inference_result_ids": [
+        6
+      ]
+    }
+  }
+}

@@ -1,0 +1,54 @@
+{
+  "name": "candidates-ineligible",
+  "endpoint": "candidates",
+  "method": "GET",
+  "request": {
+    "url_params": {
+      "survey": 1
+    }
+  },
+  "expected": {
+    "status": 200,
+    "content_type": "application/json",
+    "redirect": false,
+    "body": {
+      "survey": {
+        "id": 1,
+        "event_id": "ineligible-root",
+        "tileset_id": null
+      },
+      "base": null,
+      "surveyed_areas": [],
+      "unprocessed_candidates": [
+        {
+          "inference_result_id": 2,
+          "image_id": "@dynamic",
+          "image_filename": "scenario-2.jpg",
+          "image_dims": {
+            "w": 100,
+            "h": 100
+          },
+          "geo_centroid": null,
+          "geo_area": null,
+          "box": {
+            "x": 10,
+            "y": 10,
+            "w": 20,
+            "h": 20
+          },
+          "confidence": 0.9,
+          "size_m": null,
+          "claimed_by_me": false
+        }
+      ],
+      "yes_meteorites": [],
+      "no_meteorites": [],
+      "detection_tags": "@dynamic",
+      "user_locations": [],
+      "settings": {
+        "show_geolocation_accuracy_circle": true
+      },
+      "latest_task_created": "@dynamic"
+    }
+  }
+}

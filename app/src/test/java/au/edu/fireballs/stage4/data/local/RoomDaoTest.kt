@@ -584,4 +584,131 @@ class RoomDaoTest {
             assertEquals(2, localDecisionDao.getAllUnsyncedCount().first())
             assertEquals(2, pendingPhotoUploadDao.getAllNotUploadedCount().first())
         }
+
+    @Test
+    fun claimDao_selfReleaseDeactivatesOnlyTargetedCandidate() =
+        runBlocking {
+            val oldActive =
+                ClaimEntity(
+                    inferenceResultId = 1L,
+                    surveyId = 101L,
+                    userId = 42L,
+                    username = "user_a",
+                    claimedAt = "2026-07-20T10:00:00Z",
+                    isMine = true,
+                    isActive = true,
+                )
+            val otherActive =
+                ClaimEntity(
+                    inferenceResultId = 2L,
+                    surveyId = 101L,
+                    userId = 42L,
+                    username = "user_a",
+                    claimedAt = "2026-07-24T10:00:00Z",
+                    isMine = true,
+                    isActive = true,
+                )
+            val otherUser =
+                ClaimEntity(
+                    inferenceResultId = 3L,
+                    surveyId = 101L,
+                    userId = 7L,
+                    username = "user_b",
+                    claimedAt = "2026-07-24T10:00:00Z",
+                    isMine = false,
+                    isActive = true,
+                )
+
+            claimDao.upsertAll(listOf(oldActive, otherActive, otherUser))
+
+            claimDao.releaseClaimsForUser(42L, listOf(1L))
+
+            val active = claimDao.getClaims(101L, onlyActive = true).first()
+            assertEquals(listOf(2L, 3L), active.map { it.inferenceResultId })
+            val released = claimDao.getByCandidateId(1L)
+            assertTrue(
+                "Expected old active claim deactivated",
+                released != null && !released!!.isActive,
+            )
+        }
+
+    @Test
+    fun claimDao_claimsIsolatedPerSelectedSurvey() =
+        runBlocking {
+            claimDao.upsertAll(
+                listOf(
+                    ClaimEntity(
+                        inferenceResultId = 1L,
+                        surveyId = 101L,
+                        userId = 42L,
+                        username = "a",
+                        claimedAt = "2026-07-24T10:00:00Z",
+                        isMine = true,
+                        isActive = true,
+                    ),
+                    ClaimEntity(
+                        inferenceResultId = 2L,
+                        surveyId = 202L,
+                        userId = 42L,
+                        username = "a",
+                        claimedAt = "2026-07-24T10:00:00Z",
+                        isMine = true,
+                        isActive = true,
+                    ),
+                ),
+            )
+
+            val survey101 = claimDao.getClaims(101L, onlyActive = true).first()
+            val survey202 = claimDao.getClaims(202L, onlyActive = true).first()
+            assertEquals(listOf(1L), survey101.map { it.inferenceResultId })
+            assertEquals(listOf(2L), survey202.map { it.inferenceResultId })
+        }
+
+    @Test
+    fun localDecisionDao_markSyncedIsIdempotent() =
+        runBlocking {
+            val decision =
+                LocalDecisionEntity(
+                    inferenceResultId = 701L,
+                    surveyId = 101L,
+                    verdict = true,
+                    detectionTagId = 5L,
+                    capturedAt = "2026-07-24T12:00:00Z",
+                    evidencePhotoRowId = 12L,
+                    synced = false,
+                )
+
+            localDecisionDao.saveDecision(decision)
+
+            localDecisionDao.markSynced(701L, "2026-07-24T12:01:00Z")
+            localDecisionDao.markSynced(701L, "2026-07-24T12:02:00Z")
+
+            val all = db.localDecisionDao().observeDecisionsForSurvey(101L).first()
+            assertEquals(1, all.size)
+            assertTrue(all.single().synced)
+            assertTrue(localDecisionDao.getUnsynced().isEmpty())
+        }
+
+    @Test
+    fun pendingPhotoUploadDao_markUploadedIsIdempotent() =
+        runBlocking {
+            val photo =
+                PendingPhotoUploadEntity(
+                    surveyId = 101L,
+                    inferenceResultId = 701L,
+                    localFilePath = "/data/photos/p1.jpg",
+                    capturedAt = "2026-07-24T12:00:00Z",
+                    uploaded = false,
+                )
+
+            val rowId = pendingPhotoUploadDao.insert(photo)
+
+            pendingPhotoUploadDao.markUploaded(rowId, serverPhotoId = 9999L)
+            pendingPhotoUploadDao.markUploaded(rowId, serverPhotoId = 9999L)
+
+            val all = pendingPhotoUploadDao.getLocalPhotosForCandidate(701L).first()
+            assertEquals(1, all.size)
+            assertTrue(all.single().uploaded)
+            assertTrue(pendingPhotoUploadDao.getUnuploaded().isEmpty())
+        }
 }

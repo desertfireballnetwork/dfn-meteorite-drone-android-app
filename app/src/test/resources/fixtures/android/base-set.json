@@ -1,0 +1,21 @@
+{
+  "name": "base-set",
+  "endpoint": "base",
+  "method": "POST",
+  "request": {
+    "url_params": {
+      "survey": 1
+    },
+    "body": {
+      "latitude": "-31.5",
+      "longitude": "116.0"
+    },
+    "content_type": "application/x-www-form-urlencoded"
+  },
+  "expected": {
+    "status": 200,
+    "content_type": "text/html",
+    "redirect": false,
+    "body": "OK"
+  }
+}
