@@ -14,6 +14,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import okhttp3.Call
 import okhttp3.Cookie
 import okhttp3.CookieJar
@@ -605,12 +606,15 @@ class AuthenticatedTileHttpInterceptorTest {
                     .sdkInformation(SdkInformation("test", "1.0", "test"))
                     .build()
 
-            cancellableInterceptor.onRequest(request, CapturingContinuation())
+            val continuation = CapturingContinuation()
+            cancellableInterceptor.onRequest(request, continuation)
             while (capturedCalls.isEmpty()) {
                 delay(10)
             }
             cancellableInterceptor.cancel(url)
             assertTrue(capturedCalls.first().isCanceled())
+            val result = withTimeout(1_000) { continuation.result.await() }
+            assertTrue(result.isHttpResponse())
         }
 
     @Test
