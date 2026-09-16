@@ -258,7 +258,6 @@ class OfflineRegionWrapper(
                 .maxZoom(maxZoom.toDouble())
                 .glyphsRasterizationMode(
                     GlyphsRasterizationMode.IDEOGRAPHS_RASTERIZED_LOCALLY,
-                )
-                .build()
+                ).build()
     }
 }
