@@ -1,5 +1,7 @@
 package au.edu.fireballs.stage4.data.tiles
 
+import android.os.Handler
+import android.os.Looper
 import com.mapbox.bindgen.Expected
 import com.mapbox.maps.AsyncOperationResultCallback
 import com.mapbox.maps.OfflineRegion
@@ -48,47 +50,53 @@ interface OfflineRegionSource {
 }
 
 class MapboxOfflineRegionSource(
-    private val manager: OfflineRegionManager,
+    private val mainHandler: Handler = Handler(Looper.getMainLooper()),
 ) : OfflineRegionSource {
+    private val manager by lazy { OfflineRegionManager() }
+
     override fun createOfflineRegion(
         definition: OfflineRegionTilePyramidDefinition,
         callback: (Result<OfflineRegionHandle>) -> Unit,
     ) {
-        manager.createOfflineRegion(
-            definition,
-            object : OfflineRegionCreateCallback {
-                override fun run(expected: Expected<String, OfflineRegion>) {
-                    callback(
-                        when {
-                            expected.isError ->
-                                Result.failure(IllegalStateException(expected.error))
+        mainHandler.post {
+            manager.createOfflineRegion(
+                definition,
+                object : OfflineRegionCreateCallback {
+                    override fun run(expected: Expected<String, OfflineRegion>) {
+                        callback(
+                            when {
+                                expected.isError ->
+                                    Result.failure(IllegalStateException(expected.error))
 
-                            else ->
-                                expected.value?.let {
-                                    Result.success(MapboxOfflineRegionHandle(it))
-                                } ?: Result.failure(
-                                    IllegalStateException("Mapbox returned no offline region"),
-                                )
-                        },
-                    )
-                }
-            },
-        )
+                                else ->
+                                    expected.value?.let {
+                                        Result.success(MapboxOfflineRegionHandle(it))
+                                    } ?: Result.failure(
+                                        IllegalStateException("Mapbox returned no offline region"),
+                                    )
+                            },
+                        )
+                    }
+                },
+            )
+        }
     }
 
     override fun getOfflineRegions(callback: (Result<List<OfflineRegionHandle>>) -> Unit) {
-        manager.getOfflineRegions { expected: Expected<String, List<OfflineRegion>> ->
-            callback(
-                when {
-                    expected.isError ->
-                        Result.failure(IllegalStateException(expected.error))
+        mainHandler.post {
+            manager.getOfflineRegions { expected: Expected<String, List<OfflineRegion>> ->
+                callback(
+                    when {
+                        expected.isError ->
+                            Result.failure(IllegalStateException(expected.error))
 
-                    else ->
-                        Result.success(
-                            expected.value.orEmpty().map { MapboxOfflineRegionHandle(it) },
-                        )
-                },
-            )
+                        else ->
+                            Result.success(
+                                expected.value.orEmpty().map { MapboxOfflineRegionHandle(it) },
+                            )
+                    },
+                )
+            }
         }
     }
 }

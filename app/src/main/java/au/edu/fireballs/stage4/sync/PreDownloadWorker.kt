@@ -15,16 +15,16 @@ import au.edu.fireballs.stage4.data.tiles.OfflineBundleRepository
 import au.edu.fireballs.stage4.data.tiles.OfflineManagerWrapper
 import au.edu.fireballs.stage4.data.tiles.TileStore
 import au.edu.fireballs.stage4.di.IoDispatcher
-import dagger.hilt.android.qualifiers.ApplicationContext
+import dagger.assisted.Assisted
+import dagger.assisted.AssistedInject
 import kotlinx.coroutines.CoroutineDispatcher
-import javax.inject.Inject
 
 @HiltWorker
 class PreDownloadWorker
-    @Inject
+    @AssistedInject
     constructor(
-        @ApplicationContext appContext: Context,
-        params: WorkerParameters,
+        @Assisted appContext: Context,
+        @Assisted params: WorkerParameters,
         private val claimRepository: ClaimRepository,
         private val stage4Repository: Stage4Repository,
         private val candidateDao: CandidateDao,

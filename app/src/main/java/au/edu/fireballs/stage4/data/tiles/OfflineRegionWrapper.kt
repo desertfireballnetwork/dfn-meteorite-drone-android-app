@@ -4,9 +4,9 @@ import android.os.Handler
 import android.os.Looper
 import com.mapbox.geojson.Point
 import com.mapbox.maps.CoordinateBounds
+import com.mapbox.maps.GlyphsRasterizationMode
 import com.mapbox.maps.OfflineRegionDownloadState
 import com.mapbox.maps.OfflineRegionError
-import com.mapbox.maps.OfflineRegionManager
 import com.mapbox.maps.OfflineRegionObserver
 import com.mapbox.maps.OfflineRegionStatus
 import com.mapbox.maps.OfflineRegionTilePyramidDefinition
@@ -14,7 +14,7 @@ import java.util.concurrent.CancellationException
 import java.util.concurrent.atomic.AtomicBoolean
 
 class OfflineRegionWrapper(
-    private val source: OfflineRegionSource = MapboxOfflineRegionSource(OfflineRegionManager()),
+    private val source: OfflineRegionSource = MapboxOfflineRegionSource(),
     private val mainHandler: Handler = Handler(Looper.getMainLooper()),
     private val definitionFactory: (Bbox, Int, Int) -> OfflineRegionTilePyramidDefinition =
         ::defaultDefinition,
@@ -256,6 +256,9 @@ class OfflineRegionWrapper(
                     ),
                 ).minZoom(minZoom.toDouble())
                 .maxZoom(maxZoom.toDouble())
+                .glyphsRasterizationMode(
+                    GlyphsRasterizationMode.IDEOGRAPHS_RASTERIZED_LOCALLY,
+                )
                 .build()
     }
 }

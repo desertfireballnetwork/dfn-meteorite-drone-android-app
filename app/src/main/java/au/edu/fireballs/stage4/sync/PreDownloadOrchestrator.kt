@@ -332,6 +332,10 @@ class PreDownloadOrchestrator(
                     )
                 }
             if (result.isFailure) {
+                android.util.Log.e(
+                    "PreDownload",
+                    "Satellite download failed: ${result.exceptionOrNull()}",
+                )
                 return false
             }
             completed++
