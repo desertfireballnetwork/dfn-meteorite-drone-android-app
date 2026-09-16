@@ -33,11 +33,27 @@ import org.mockito.kotlin.mock
 import org.mockito.kotlin.whenever
 import org.robolectric.RobolectricTestRunner
 import java.nio.file.Files
+import java.util.Base64
 import java.util.HashMap
 import java.util.concurrent.TimeUnit
 
 @RunWith(RobolectricTestRunner::class)
 class AuthenticatedTileHttpInterceptorTest {
+    private val fakeCompositor =
+        object : LowZoomCompositor {
+            override fun compose(
+                surveyId: Long,
+                candidateId: Long,
+                parent: TileCoord,
+            ): ByteArray = FAKE_COMPOSITE_BYTES
+
+            override fun parentTiles(
+                surveyId: Long,
+                candidateId: Long,
+                zoom: Int,
+            ): List<TileCoord> = emptyList()
+        }
+
     private lateinit var server: MockWebServer
     private lateinit var store: TileStore
     private lateinit var cookieJar: InMemoryCookieJar
@@ -69,10 +85,71 @@ class AuthenticatedTileHttpInterceptorTest {
 
     @Test
     fun outOfRangeZoomIsPassedThroughUnchanged() {
-        val url = server.url("/image_geotiff_candidate_tile/1/2/19/100/50/").toString()
+        val url = server.url("/image_geotiff_candidate_tile/1/2/10/100/50/").toString()
         val result = onRequest(url)
         assertTrue(result.isHttpRequest())
         assertEquals(url, result.getHttpRequest().getUrl())
+    }
+
+    @Test
+    fun lowZoomTransparentStoreHitFallsBackToComposite() {
+        val childX = 887_826
+        val childY = 433_111
+        val parentZoom = 18
+        val scale = 1 shl (20 - parentZoom)
+        val parentX = childX / scale
+        val parentXyzY = childY / scale
+        val parentTmsY = (1 shl parentZoom) - 1 - parentXyzY
+        store.write(1, 2, 20, childX, childY, opaquePng())
+        store.write(
+            1,
+            2,
+            parentZoom,
+            parentX,
+            parentXyzY,
+            LocalFileRasterTileProvider.TRANSPARENT_PNG,
+        )
+
+        val result =
+            onRequest(
+                candidateUrl(z = parentZoom, x = parentX, y = parentTmsY),
+                newInterceptor(client, offlineConnectivityManager()),
+            )
+
+        val bytes = responseData(result).getData()
+        assertArrayEquals(FAKE_COMPOSITE_BYTES, bytes)
+        assertEquals(0, server.requestCount)
+    }
+
+    @Test
+    fun lowZoomTmsYIsConvertedToXyzParentBeforeCompositing() {
+        val xyzChildY = 433_111
+        store.write(
+            1,
+            2,
+            20,
+            887_826,
+            xyzChildY,
+            LocalFileRasterTileProvider.TRANSPARENT_PNG,
+        )
+        val parentZoom = 18
+        val scale = 1 shl (20 - parentZoom)
+        val parentX = 887_826 / scale
+        val parentXyzY = xyzChildY / scale
+        val parentTmsY = (1 shl parentZoom) - 1 - parentXyzY
+
+        val result =
+            onRequest(
+                candidateUrl(
+                    z = parentZoom,
+                    x = parentX,
+                    y = parentTmsY,
+                ),
+                newInterceptor(client, offlineConnectivityManager()),
+            )
+
+        assertArrayEquals(FAKE_COMPOSITE_BYTES, responseData(result).getData())
+        assertEquals(0, server.requestCount)
     }
 
     @Test
@@ -603,6 +680,7 @@ class AuthenticatedTileHttpInterceptorTest {
             baseUrl,
             connectivityManager,
             Dispatchers.Unconfined,
+            fakeCompositor,
         )
 
     private fun candidateUrl(
@@ -643,6 +721,12 @@ class AuthenticatedTileHttpInterceptorTest {
         assertTrue(response.getResult().isValue())
         return response.getResult().getValue()!!
     }
+
+    private fun opaquePng(): ByteArray =
+        Base64
+            .getDecoder()
+            .decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAF")
+            .plus(Base64.getDecoder().decode("gAIBQfH3WQAAAABJRU5ErkJggg=="))
 
     private fun seedLocalTile(): ByteArray {
         val bytes = byteArrayOf(9, 8, 7, 6, 5)
@@ -692,6 +776,10 @@ class AuthenticatedTileHttpInterceptorTest {
         val manager = mock<ConnectivityManager>()
         whenever(manager.activeNetwork).thenReturn(null)
         return manager
+    }
+
+    companion object {
+        private val FAKE_COMPOSITE_BYTES = byteArrayOf(1, 2, 3)
     }
 
     private class CapturingContinuation : HttpServiceInterceptorRequestContinuation {

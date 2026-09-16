@@ -20,9 +20,12 @@ import au.edu.fireballs.stage4.data.repository.ClaimRepository
 import au.edu.fireballs.stage4.data.repository.Stage4Repository
 import au.edu.fireballs.stage4.data.tiles.Bbox
 import au.edu.fireballs.stage4.data.tiles.GeotiffRadiusRepository
+import au.edu.fireballs.stage4.data.tiles.LocalFileRasterTileProvider
+import au.edu.fireballs.stage4.data.tiles.LowZoomCompositor
 import au.edu.fireballs.stage4.data.tiles.NoOpSatelliteRegionStore
 import au.edu.fireballs.stage4.data.tiles.OfflineBundleRepository
 import au.edu.fireballs.stage4.data.tiles.OfflineManagerWrapper
+import au.edu.fireballs.stage4.data.tiles.TileCoord
 import au.edu.fireballs.stage4.data.tiles.TileStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -52,6 +55,21 @@ import java.io.File
 import java.nio.file.Files
 
 class PreDownloadWorkerTest {
+    private val noOpCompositor =
+        object : LowZoomCompositor {
+            override fun compose(
+                surveyId: Long,
+                candidateId: Long,
+                parent: TileCoord,
+            ): ByteArray = LocalFileRasterTileProvider.TRANSPARENT_PNG
+
+            override fun parentTiles(
+                surveyId: Long,
+                candidateId: Long,
+                zoom: Int,
+            ): List<TileCoord> = emptyList()
+        }
+
     private val testDispatcher = Dispatchers.IO
     private val candidateImageRepository =
         mock(CandidateImageRepository::class.java)
@@ -182,6 +200,7 @@ class PreDownloadWorkerTest {
                     claimDao = claimDao,
                     surveyDao = surveyDao,
                     tileStore = tileStore,
+                    lowZoomCompositor = noOpCompositor,
                     tileService = tileService,
                     offlineManagerWrapper = offlineManagerWrapper,
                     offlineBundleRepository = offlineBundleRepository,
@@ -325,6 +344,7 @@ class PreDownloadWorkerTest {
                     claimDao = claimDao,
                     surveyDao = surveyDao,
                     tileStore = tileStore,
+                    lowZoomCompositor = noOpCompositor,
                     tileService = tileService,
                     offlineManagerWrapper = offlineManagerWrapper,
                     offlineBundleRepository = offlineBundleRepository,
@@ -400,6 +420,7 @@ class PreDownloadWorkerTest {
                     claimDao = claimDao,
                     surveyDao = surveyDao,
                     tileStore = tileStore,
+                    lowZoomCompositor = noOpCompositor,
                     tileService = tileService,
                     offlineManagerWrapper = offlineManagerWrapper,
                     offlineBundleRepository = offlineBundleRepository,
@@ -476,6 +497,7 @@ class PreDownloadWorkerTest {
                     claimDao = claimDao,
                     surveyDao = surveyDao,
                     tileStore = tileStore,
+                    lowZoomCompositor = noOpCompositor,
                     tileService = tileService,
                     offlineManagerWrapper = offlineManagerWrapper,
                     offlineBundleRepository = offlineBundleRepository,
@@ -589,6 +611,7 @@ class PreDownloadWorkerTest {
                     claimDao = claimDao,
                     surveyDao = surveyDao,
                     tileStore = tileStore,
+                    lowZoomCompositor = noOpCompositor,
                     tileService = tileService,
                     offlineManagerWrapper = offlineManagerWrapper,
                     offlineBundleRepository = offlineBundleRepository,
@@ -689,6 +712,7 @@ class PreDownloadWorkerTest {
                     claimDao = claimDao,
                     surveyDao = surveyDao,
                     tileStore = tileStore,
+                    lowZoomCompositor = noOpCompositor,
                     tileService = tileService,
                     offlineManagerWrapper = offlineManagerWrapper,
                     offlineBundleRepository = offlineBundleRepository,
@@ -777,6 +801,7 @@ class PreDownloadWorkerTest {
                     claimDao = claimDao,
                     surveyDao = surveyDao,
                     tileStore = tileStore,
+                    lowZoomCompositor = noOpCompositor,
                     tileService = tileService,
                     offlineManagerWrapper = offlineManagerWrapper,
                     offlineBundleRepository = offlineBundleRepository,
@@ -886,6 +911,7 @@ class PreDownloadWorkerTest {
                     claimDao = claimDao,
                     surveyDao = surveyDao,
                     tileStore = tileStore,
+                    lowZoomCompositor = noOpCompositor,
                     tileService = tileService,
                     offlineManagerWrapper = offlineManagerWrapper,
                     offlineBundleRepository = offlineBundleRepository,
@@ -996,6 +1022,7 @@ class PreDownloadWorkerTest {
                     claimDao = claimDao,
                     surveyDao = surveyDao,
                     tileStore = tileStore,
+                    lowZoomCompositor = noOpCompositor,
                     tileService = tileService,
                     offlineManagerWrapper = offlineManagerWrapper,
                     offlineBundleRepository = offlineBundleRepository,

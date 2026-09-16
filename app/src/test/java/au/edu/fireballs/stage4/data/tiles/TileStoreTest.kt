@@ -39,6 +39,21 @@ class TileStoreTest {
     }
 
     @Test
+    fun candidateTilesEnumeratesOnlyRequestedCandidateAndZoom() {
+        val store = tempStore()
+        store.write(1, 2, 20, 100, 200, byteArrayOf(1))
+        store.write(1, 2, 20, 101, 201, byteArrayOf(2))
+        store.write(1, 2, 21, 200, 400, byteArrayOf(3))
+        store.write(1, 3, 20, 100, 200, byteArrayOf(4))
+
+        val tiles = store.candidateTiles(1, 2, 20).toSet()
+
+        assertTrue(TileCoord(20, 100, 200) in tiles)
+        assertTrue(TileCoord(20, 101, 201) in tiles)
+        assertTrue(tiles.size == 2)
+    }
+
+    @Test
     fun deleteSurveyTilesRemovesSurveyTreeButLeavesOthers() {
         val store = tempStore()
         store.write(1, 2, 3, 4, 5, byteArrayOf(1))

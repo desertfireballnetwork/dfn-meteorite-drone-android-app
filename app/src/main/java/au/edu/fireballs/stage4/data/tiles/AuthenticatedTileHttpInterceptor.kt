@@ -34,6 +34,7 @@ import okhttp3.ResponseBody
 import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.net.HttpURLConnection
+import java.util.LinkedHashMap
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Named
@@ -50,6 +51,8 @@ class AuthenticatedTileHttpInterceptor
         @Named("serverUrl") serverUrl: String,
         private val connectivityManager: ConnectivityManager,
         @IoDispatcher private val ioDispatcher: CoroutineDispatcher,
+        private val lowZoomCompositor: LowZoomCompositor =
+            LowZoomTileCompositor(tileStore),
     ) : HttpServiceInterceptorInterface {
         private val serverOrigin: HttpUrl =
             serverUrl.toHttpUrl().also { origin ->
@@ -61,6 +64,13 @@ class AuthenticatedTileHttpInterceptor
         private val scope = CoroutineScope(SupervisorJob() + ioDispatcher)
         private val inFlight = ConcurrentHashMap<String, MutableSet<Job>>()
         private val inFlightCalls = ConcurrentHashMap<String, MutableSet<Call>>()
+
+        private val compositeCache =
+            object : LinkedHashMap<String, ByteArray>(COMPOSITE_CACHE_ENTRIES, 0.75f, true) {
+                override fun removeEldestEntry(
+                    eldest: MutableMap.MutableEntry<String, ByteArray>,
+                ): Boolean = size > COMPOSITE_CACHE_ENTRIES
+            }
 
         var onAuthLost: () -> Unit = {}
 
@@ -111,6 +121,31 @@ class AuthenticatedTileHttpInterceptor
             request: HttpRequest,
             tile: CandidateTile,
         ): HttpResponse {
+            if (tile.z < SOURCE_TILE_ZOOM) {
+                val xyzTile = tile.toXyz()
+                val stored =
+                    if (tileStore.contains(tile.surveyId, tile.candidateId, xyzTile)) {
+                        localProvider.tile(
+                            tile.surveyId,
+                            tile.candidateId,
+                            xyzTile.z,
+                            xyzTile.x,
+                            xyzTile.y,
+                        )
+                    } else {
+                        null
+                    }
+                val bytes =
+                    if (
+                        stored != null &&
+                        !stored.contentEquals(LocalFileRasterTileProvider.TRANSPARENT_PNG)
+                    ) {
+                        stored
+                    } else {
+                        cachedComposite(tile, xyzTile)
+                    }
+                return imageResponse(request, bytes)
+            }
             val local = readLocal(tile)
             if (isDefinitelyOffline()) {
                 return imageResponse(request, local)
@@ -173,6 +208,27 @@ class AuthenticatedTileHttpInterceptor
         private fun readLocal(tile: CandidateTile): ByteArray {
             val localY = (1 shl tile.z) - 1 - tile.y
             return localProvider.tile(tile.surveyId, tile.candidateId, tile.z, tile.x, localY)
+        }
+
+        private fun cachedComposite(
+            tile: CandidateTile,
+            xyzTile: TileCoord,
+        ): ByteArray {
+            val cacheKey =
+                "${tile.surveyId}/${tile.candidateId}/${xyzTile.z}/${xyzTile.x}/${xyzTile.y}"
+            synchronized(compositeCache) {
+                compositeCache[cacheKey]?.let { return it }
+            }
+            val bytes =
+                lowZoomCompositor.compose(
+                    tile.surveyId,
+                    tile.candidateId,
+                    xyzTile,
+                )
+            synchronized(compositeCache) {
+                compositeCache[cacheKey] = bytes
+            }
+            return bytes
         }
 
         private fun isDefinitelyOffline(): Boolean {
@@ -304,12 +360,21 @@ class AuthenticatedTileHttpInterceptor
             val z: Int,
             val x: Int,
             val y: Int,
-        )
+        ) {
+            fun toXyz(): TileCoord =
+                TileCoord(
+                    z,
+                    x,
+                    (1 shl z) - 1 - y,
+                )
+        }
 
         companion object {
             private const val CANDIDATE_TILE_PATH = "image_geotiff_candidate_tile"
-            private const val MIN_TILE_ZOOM = 20
+            private const val MIN_TILE_ZOOM = LowZoomTileCompositor.MIN_ZOOM
             private const val MAX_TILE_ZOOM = 22
+            private const val SOURCE_TILE_ZOOM = LowZoomTileCompositor.SOURCE_ZOOM
+            private const val COMPOSITE_CACHE_ENTRIES = 64
             private const val READ_BUFFER_BYTES = 8 * 1024
             private val PNG_SIGNATURE =
                 byteArrayOf(

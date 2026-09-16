@@ -63,6 +63,11 @@ internal fun MapHost(
         )
         BaseMarker(base = state.base)
 
+        CustomRasterOverlay(
+            surveyId = state.survey.id,
+            candidateId = candidateId,
+            tileUrlPattern = tileUrlPattern,
+        )
         CandidateMarkers(
             state = state,
             toggleState = layerToggleState,
@@ -71,11 +76,6 @@ internal fun MapHost(
         UserLocationMarkers(
             userLocations = state.userLocations,
             onUserLocationClick = onUserLocationClick,
-        )
-        CustomRasterOverlay(
-            surveyId = state.survey.id,
-            candidateId = candidateId,
-            tileUrlPattern = tileUrlPattern,
         )
     }
 }
