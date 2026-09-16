@@ -369,7 +369,7 @@ class PreDownloadOrchestrator(
         val work = mutableListOf<SatelliteWork>()
         for (cluster in clusters) {
             val bbox = unionBbox(cluster, bufferRadius)
-            val signature = satelliteSignature(bbox)
+            val signature = satelliteSignature(cluster, bbox)
             if (forceRefresh || !satelliteRegionStore.contains(surveyId, signature)) {
                 work += SatelliteWork(bbox, signature)
             }
@@ -377,9 +377,14 @@ class PreDownloadOrchestrator(
         return work
     }
 
-    private fun satelliteSignature(bbox: Bbox): String =
+    private fun satelliteSignature(
+        cluster: List<CandidatePoint>,
+        bbox: Bbox,
+    ): String =
         buildString {
             append("sat:")
+            append(cluster.map { it.inferenceResultId }.sorted().joinToString(","))
+            append(':')
             append(bbox.minLat.toBits())
             append(',')
             append(bbox.minLon.toBits())
