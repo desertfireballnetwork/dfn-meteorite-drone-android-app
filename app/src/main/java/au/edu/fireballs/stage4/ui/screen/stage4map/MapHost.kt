@@ -2,6 +2,7 @@ package au.edu.fireballs.stage4.ui.screen.stage4map
 
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.key
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import au.edu.fireballs.stage4.domain.model.MapCameraTarget
@@ -80,11 +81,13 @@ internal fun MapHost(
         BaseMarker(base = state.base)
 
         overlayCandidates.forEach { (candidateId, pattern) ->
-            CustomRasterOverlay(
-                surveyId = state.survey.id,
-                candidateId = candidateId,
-                tileUrlPattern = pattern,
-            )
+            key(candidateId) {
+                CustomRasterOverlay(
+                    surveyId = state.survey.id,
+                    candidateId = candidateId,
+                    tileUrlPattern = pattern,
+                )
+            }
         }
         CandidateMarkers(
             state = state,
