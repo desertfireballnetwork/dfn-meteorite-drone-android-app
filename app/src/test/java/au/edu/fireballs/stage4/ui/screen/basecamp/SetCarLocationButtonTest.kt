@@ -4,7 +4,9 @@ import android.Manifest
 import android.app.Application
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -19,46 +21,80 @@ class SetCarLocationButtonTest {
     @get:Rule
     val composeRule = createComposeRule()
 
-    @Test
-    fun showsVisibleLabelWhenIdle() {
+    private fun setContent(
+        showSuccess: Boolean = false,
+        submitting: Boolean = false,
+    ) {
         composeRule.setContent {
             SetCarLocationButton(
-                showSuccess = false,
-                submitting = false,
+                showSuccess = showSuccess,
+                submitting = submitting,
                 onSetLocation = { _, _ -> },
                 onMessage = {},
             )
         }
-        composeRule.onNodeWithText("Set my location as car location").assertIsDisplayed()
-        composeRule.onNodeWithText("Car location set").assertDoesNotExist()
     }
 
     @Test
-    fun showsCheckmarkOnlyAfterServerSuccess() {
-        composeRule.setContent {
-            SetCarLocationButton(
-                showSuccess = true,
-                submitting = false,
-                onSetLocation = { _, _ -> },
-                onMessage = {},
-            )
-        }
-        composeRule.onNodeWithText("Car location set").assertIsDisplayed()
-        composeRule.onNodeWithText("Set my location as car location").assertDoesNotExist()
+    fun idleShowsSetCarLocationIcon() {
+        setContent()
+
+        composeRule.onNodeWithContentDescription("Set car location").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Car location set").assertDoesNotExist()
     }
 
     @Test
-    fun showsBusyStateWhileSubmitting() {
-        composeRule.setContent {
-            SetCarLocationButton(
-                showSuccess = false,
-                submitting = true,
-                onSetLocation = { _, _ -> },
-                onMessage = {},
-            )
-        }
-        composeRule.onNodeWithText("Set my location as car location").assertDoesNotExist()
-        composeRule.onNodeWithText("Car location set").assertDoesNotExist()
+    fun clickingIdleIconShowsConfirmationDialog() {
+        setContent()
+
+        composeRule.onNodeWithContentDescription("Set car location").performClick()
+
+        composeRule.onNodeWithText("Set car location?").assertIsDisplayed()
+        composeRule
+            .onNodeWithText(
+                "Use this device's current location as the car location for this survey?",
+            ).assertIsDisplayed()
+        composeRule.onNodeWithText("Set location").assertIsDisplayed()
+        composeRule.onNodeWithText("Cancel").assertIsDisplayed()
+    }
+
+    @Test
+    fun cancelDismissesConfirmationDialog() {
+        setContent()
+        composeRule.onNodeWithContentDescription("Set car location").performClick()
+
+        composeRule.onNodeWithText("Cancel").performClick()
+
+        composeRule.onNodeWithText("Set car location?").assertDoesNotExist()
+    }
+
+    @Test
+    fun setLocationDismissesConfirmationDialog() {
+        setContent()
+        composeRule.onNodeWithContentDescription("Set car location").performClick()
+
+        composeRule.onNodeWithText("Set location").performClick()
+
+        composeRule.onNodeWithText("Set car location?").assertDoesNotExist()
+    }
+
+    @Test
+    fun successShowsCarLocationSetIcon() {
+        setContent(showSuccess = true)
+
+        composeRule.onNodeWithContentDescription("Car location set").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Set car location").assertDoesNotExist()
+    }
+
+    @Test
+    fun busyShowsNeitherIdleNorSuccessIcon() {
+        setContent(submitting = true)
+
+        composeRule
+            .onNodeWithContentDescription("Setting car location")
+            .assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Set car location").assertDoesNotExist()
+        composeRule.onNodeWithContentDescription("Car location set").assertDoesNotExist()
     }
 
     @Test

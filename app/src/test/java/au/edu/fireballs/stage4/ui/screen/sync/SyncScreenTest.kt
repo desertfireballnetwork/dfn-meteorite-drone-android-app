@@ -320,7 +320,7 @@ class SyncScreenTest {
             onDeleteDecision = { deletedId = it },
         )
 
-        composeRule.onNodeWithText("Decision 42").assertIsDisplayed()
+        composeRule.onNodeWithText("Decision 42").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("Delete").performScrollTo().performClick()
         composeRule.onNodeWithText("Delete Decision 42?").assertIsDisplayed()
         composeRule.onNodeWithTag("delete-confirm").performClick()

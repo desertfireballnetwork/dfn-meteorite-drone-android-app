@@ -7,8 +7,12 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.Settings
@@ -149,6 +153,8 @@ private fun MainScaffold(
         }
 
     Scaffold(
+        contentWindowInsets =
+            WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal),
         bottomBar = {
             if (showBottomBar) {
                 Column {
@@ -285,9 +291,6 @@ private fun MainScaffold(
                                 popUpTo(0) { inclusive = true }
                             }
                         },
-                        onNavigateToSettings = {
-                            navController.navigate("settings")
-                        },
                     )
                 } else {
                     SurveyListScreen(
@@ -314,9 +317,7 @@ private fun MainScaffold(
             }
 
             composable("settings") {
-                SettingsScreen(
-                    onBack = { navController.popBackStack() },
-                )
+                SettingsScreen()
             }
         }
     }
