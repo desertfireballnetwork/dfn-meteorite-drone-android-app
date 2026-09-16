@@ -8,10 +8,14 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -165,7 +169,7 @@ fun BasecampScreen(
                 )
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End,
+                    horizontalArrangement = Arrangement.Start,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     when (val state = uiState) {
@@ -203,6 +207,8 @@ fun BasecampScreen(
             }
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
+        contentWindowInsets =
+            WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal),
     ) { paddingValues ->
         Box(
             modifier =
@@ -264,55 +270,63 @@ private fun BasecampToolbarActions(
     onSetLocation: (Double, Double) -> Unit,
     onMessage: (String) -> Unit,
 ) {
-    IconToggleButton(
-        checked = drawing,
-        onCheckedChange = { onTogglePolygon() },
-        modifier =
-            Modifier.semantics {
-                contentDescription =
-                    if (drawing) {
-                        "Stop drawing polygon"
-                    } else {
-                        "Draw claim polygon"
-                    }
-            },
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(
-            imageVector = Icons.Default.Polyline,
-            contentDescription = null,
-            tint =
-                if (drawing) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    LocalContentColor.current
-                },
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconToggleButton(
+                checked = drawing,
+                onCheckedChange = { onTogglePolygon() },
+                modifier =
+                    Modifier.semantics {
+                        contentDescription =
+                            if (drawing) {
+                                "Stop drawing polygon"
+                            } else {
+                                "Draw claim polygon"
+                            }
+                    },
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Polyline,
+                    contentDescription = null,
+                    tint =
+                        if (drawing) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            LocalContentColor.current
+                        },
+                )
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            FilterChip(
+                selected = mineOnly,
+                onClick = onToggleMine,
+                label = { Text(text = "Mine") },
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            IconButton(onClick = onRefresh, enabled = !isRefreshing) {
+                Icon(
+                    imageVector = Icons.Default.Refresh,
+                    contentDescription = "Refresh",
+                )
+            }
+            IconButton(onClick = onDownload) {
+                Icon(
+                    imageVector = Icons.Default.Download,
+                    contentDescription = "Download for offline",
+                )
+            }
+        }
+        SetCarLocationButton(
+            showSuccess = showSuccess,
+            submitting = submitting,
+            onSetLocation = onSetLocation,
+            onMessage = onMessage,
         )
     }
-    Spacer(modifier = Modifier.width(8.dp))
-    FilterChip(
-        selected = mineOnly,
-        onClick = onToggleMine,
-        label = { Text(text = "Mine") },
-    )
-    Spacer(modifier = Modifier.width(8.dp))
-    IconButton(onClick = onRefresh, enabled = !isRefreshing) {
-        Icon(
-            imageVector = Icons.Default.Refresh,
-            contentDescription = "Refresh",
-        )
-    }
-    IconButton(onClick = onDownload) {
-        Icon(
-            imageVector = Icons.Default.Download,
-            contentDescription = "Download for offline",
-        )
-    }
-    SetCarLocationButton(
-        showSuccess = showSuccess,
-        submitting = submitting,
-        onSetLocation = onSetLocation,
-        onMessage = onMessage,
-    )
 }
 
 @Composable
