@@ -7,16 +7,16 @@ import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import au.edu.fireballs.stage4.data.repository.SelectedSurveyRepository
 import au.edu.fireballs.stage4.ui.session.SessionExpiredBus
-import dagger.hilt.android.qualifiers.ApplicationContext
+import dagger.assisted.Assisted
+import dagger.assisted.AssistedInject
 import kotlinx.coroutines.flow.first
-import javax.inject.Inject
 
 @HiltWorker
 class SyncWorker
-    @Inject
+    @AssistedInject
     constructor(
-        @ApplicationContext appContext: Context,
-        params: WorkerParameters,
+        @Assisted appContext: Context,
+        @Assisted params: WorkerParameters,
         private val selectedSurveyRepository: SelectedSurveyRepository,
         private val orchestrator: SyncOrchestrator,
         private val sessionExpiredBus: SessionExpiredBus,

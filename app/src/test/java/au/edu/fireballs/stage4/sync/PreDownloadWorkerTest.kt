@@ -15,9 +15,12 @@ import au.edu.fireballs.stage4.data.remote.Stage4Service
 import au.edu.fireballs.stage4.data.remote.TileService
 import au.edu.fireballs.stage4.data.remote.dto.ClaimDto
 import au.edu.fireballs.stage4.data.remote.dto.ListClaimsResponseDto
+import au.edu.fireballs.stage4.data.repository.CandidateImageRepository
 import au.edu.fireballs.stage4.data.repository.ClaimRepository
 import au.edu.fireballs.stage4.data.repository.Stage4Repository
 import au.edu.fireballs.stage4.data.tiles.Bbox
+import au.edu.fireballs.stage4.data.tiles.GeotiffRadiusRepository
+import au.edu.fireballs.stage4.data.tiles.NoOpSatelliteRegionStore
 import au.edu.fireballs.stage4.data.tiles.OfflineBundleRepository
 import au.edu.fireballs.stage4.data.tiles.OfflineManagerWrapper
 import au.edu.fireballs.stage4.data.tiles.TileStore
@@ -50,6 +53,13 @@ import java.nio.file.Files
 
 class PreDownloadWorkerTest {
     private val testDispatcher = Dispatchers.IO
+    private val candidateImageRepository =
+        mock(CandidateImageRepository::class.java)
+    private val geotiffRadiusRepository =
+        mock(GeotiffRadiusRepository::class.java).also {
+            `when`(it.getRadiusMeters()).thenReturn(15.0f)
+        }
+    private val satelliteRegionStore = NoOpSatelliteRegionStore
 
     private fun candidate(
         id: Long,
@@ -175,6 +185,9 @@ class PreDownloadWorkerTest {
                     tileService = tileService,
                     offlineManagerWrapper = offlineManagerWrapper,
                     offlineBundleRepository = offlineBundleRepository,
+                    candidateImageRepository = candidateImageRepository,
+                    geotiffRadiusRepository = geotiffRadiusRepository,
+                    satelliteRegionStore = satelliteRegionStore,
                     filesDir = filesDir,
                     ioDispatcher = testDispatcher,
                     freeBytes = { Long.MAX_VALUE },
@@ -315,6 +328,9 @@ class PreDownloadWorkerTest {
                     tileService = tileService,
                     offlineManagerWrapper = offlineManagerWrapper,
                     offlineBundleRepository = offlineBundleRepository,
+                    candidateImageRepository = candidateImageRepository,
+                    geotiffRadiusRepository = geotiffRadiusRepository,
+                    satelliteRegionStore = satelliteRegionStore,
                     filesDir = filesDir,
                     ioDispatcher = testDispatcher,
                     freeBytes = { Long.MAX_VALUE },
@@ -387,6 +403,9 @@ class PreDownloadWorkerTest {
                     tileService = tileService,
                     offlineManagerWrapper = offlineManagerWrapper,
                     offlineBundleRepository = offlineBundleRepository,
+                    candidateImageRepository = candidateImageRepository,
+                    geotiffRadiusRepository = geotiffRadiusRepository,
+                    satelliteRegionStore = satelliteRegionStore,
                     filesDir = filesDir,
                     ioDispatcher = testDispatcher,
                     freeBytes = { Long.MAX_VALUE },
@@ -460,6 +479,9 @@ class PreDownloadWorkerTest {
                     tileService = tileService,
                     offlineManagerWrapper = offlineManagerWrapper,
                     offlineBundleRepository = offlineBundleRepository,
+                    candidateImageRepository = candidateImageRepository,
+                    geotiffRadiusRepository = geotiffRadiusRepository,
+                    satelliteRegionStore = satelliteRegionStore,
                     filesDir = filesDir,
                     ioDispatcher = testDispatcher,
                     freeBytes = { 1L },
@@ -570,6 +592,9 @@ class PreDownloadWorkerTest {
                     tileService = tileService,
                     offlineManagerWrapper = offlineManagerWrapper,
                     offlineBundleRepository = offlineBundleRepository,
+                    candidateImageRepository = candidateImageRepository,
+                    geotiffRadiusRepository = geotiffRadiusRepository,
+                    satelliteRegionStore = satelliteRegionStore,
                     filesDir = filesDir,
                     ioDispatcher = testDispatcher,
                     freeBytes = { Long.MAX_VALUE },
@@ -667,6 +692,9 @@ class PreDownloadWorkerTest {
                     tileService = tileService,
                     offlineManagerWrapper = offlineManagerWrapper,
                     offlineBundleRepository = offlineBundleRepository,
+                    candidateImageRepository = candidateImageRepository,
+                    geotiffRadiusRepository = geotiffRadiusRepository,
+                    satelliteRegionStore = satelliteRegionStore,
                     filesDir = filesDir,
                     ioDispatcher = testDispatcher,
                     freeBytes = { Long.MAX_VALUE },
@@ -682,6 +710,90 @@ class PreDownloadWorkerTest {
                 last.getInt(PreDownloadOrchestrator.KEY_TOTAL, -1),
                 last.getInt(PreDownloadOrchestrator.KEY_DONE, -1),
             )
+        }
+
+    @Test
+    fun noContentTileWritesTransparentXyzCacheMarker() =
+        runTest {
+            val candidateDao = FakeCandidateDao(listOf(candidate(1L, 0.0, 0.0)))
+            val claimDao = FakeClaimDao()
+            val surveyDao = FakeSurveyDao(latestTaskCreated = null)
+            val tileStore = TileStore(Files.createTempDirectory("tiles").toFile())
+            val offlineBundleDao = FakeOfflineBundleDao()
+            val offlineBundleRepository =
+                OfflineBundleRepository(
+                    tileStore,
+                    FakeTileManifestDao(),
+                    offlineBundleDao,
+                    testDispatcher,
+                )
+
+            val stage4Service = mock(Stage4Service::class.java)
+            `when`(stage4Service.getClaims(SURVEY_ID.toString(), true))
+                .thenReturn(
+                    ListClaimsResponseDto(
+                        listOf(
+                            ClaimDto(
+                                inferenceResultId = 1L,
+                                userId = 2L,
+                                username = "me",
+                                claimedAt = "2026-01-01T00:00:00Z",
+                                isMe = true,
+                            ),
+                        ),
+                    ),
+                )
+            val claimRepository = ClaimRepository(stage4Service, claimDao, testDispatcher)
+            val stage4Repository = mock(Stage4Repository::class.java)
+            `when`(stage4Repository.fetchLatestTaskCreated(SURVEY_ID)).thenReturn(null)
+
+            val tileService = mock(TileService::class.java)
+            `when`(
+                tileService.getCandidateTile(
+                    anyLong(),
+                    anyLong(),
+                    anyInt(),
+                    anyInt(),
+                    anyInt(),
+                ),
+            ).thenReturn(Response.success<ResponseBody>(204, null))
+            `when`(tileService.getCandidateCrop(anyLong()))
+                .thenReturn(Response.error(500, "err".toResponseBody()))
+
+            val offlineManagerWrapper = mock(OfflineManagerWrapper::class.java)
+            doAnswer { invocation ->
+                val completionCb =
+                    invocation.getArgument<(Result<Unit>) -> Unit>(4)
+                completionCb(Result.success(Unit))
+            }.`when`(offlineManagerWrapper)
+                .splitAndDownload(any(), any(), any(), any(), any())
+
+            val filesDir = Files.createTempDirectory("crops").toFile()
+            val orchestrator =
+                PreDownloadOrchestrator(
+                    claimRepository = claimRepository,
+                    stage4Repository = stage4Repository,
+                    candidateDao = candidateDao,
+                    claimDao = claimDao,
+                    surveyDao = surveyDao,
+                    tileStore = tileStore,
+                    tileService = tileService,
+                    offlineManagerWrapper = offlineManagerWrapper,
+                    offlineBundleRepository = offlineBundleRepository,
+                    candidateImageRepository = candidateImageRepository,
+                    geotiffRadiusRepository = geotiffRadiusRepository,
+                    satelliteRegionStore = satelliteRegionStore,
+                    filesDir = filesDir,
+                    ioDispatcher = testDispatcher,
+                    freeBytes = { Long.MAX_VALUE },
+                )
+
+            val outcome = orchestrator.run(SURVEY_ID, BUFFER_METERS) {}
+
+            assertTrue(outcome is PreDownloadOutcome.Success)
+            val output = (outcome as PreDownloadOutcome.Success).outputData
+            assertTrue(output.getInt(PreDownloadOrchestrator.KEY_TILE_COUNT, 0) > 0)
+            assertTrue(tileStore.hasCandidate(SURVEY_ID, 1L))
         }
 
     @Test
@@ -777,6 +889,9 @@ class PreDownloadWorkerTest {
                     tileService = tileService,
                     offlineManagerWrapper = offlineManagerWrapper,
                     offlineBundleRepository = offlineBundleRepository,
+                    candidateImageRepository = candidateImageRepository,
+                    geotiffRadiusRepository = geotiffRadiusRepository,
+                    satelliteRegionStore = satelliteRegionStore,
                     filesDir = filesDir,
                     ioDispatcher = testDispatcher,
                     freeBytes = { Long.MAX_VALUE },
@@ -884,6 +999,9 @@ class PreDownloadWorkerTest {
                     tileService = tileService,
                     offlineManagerWrapper = offlineManagerWrapper,
                     offlineBundleRepository = offlineBundleRepository,
+                    candidateImageRepository = candidateImageRepository,
+                    geotiffRadiusRepository = geotiffRadiusRepository,
+                    satelliteRegionStore = satelliteRegionStore,
                     filesDir = filesDir,
                     ioDispatcher = testDispatcher,
                     freeBytes = { Long.MAX_VALUE },

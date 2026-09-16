@@ -1,5 +1,6 @@
 package au.edu.fireballs.stage4.sync
 
+import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import android.os.Message
@@ -11,13 +12,16 @@ import au.edu.fireballs.stage4.data.local.Stage4Database
 import au.edu.fireballs.stage4.data.local.SurveyEntity
 import au.edu.fireballs.stage4.data.remote.Stage4Service
 import au.edu.fireballs.stage4.data.remote.TileService
+import au.edu.fireballs.stage4.data.repository.CandidateImageRepository
 import au.edu.fireballs.stage4.data.repository.ClaimRepository
 import au.edu.fireballs.stage4.data.repository.Stage4Repository
+import au.edu.fireballs.stage4.data.tiles.GeotiffRadiusRepository
 import au.edu.fireballs.stage4.data.tiles.OfflineBundleRepository
 import au.edu.fireballs.stage4.data.tiles.OfflineManagerWrapper
 import au.edu.fireballs.stage4.data.tiles.OfflineRegionHandle
 import au.edu.fireballs.stage4.data.tiles.OfflineRegionSource
 import au.edu.fireballs.stage4.data.tiles.OfflineRegionWrapper
+import au.edu.fireballs.stage4.data.tiles.RoomSatelliteRegionStore
 import au.edu.fireballs.stage4.data.tiles.TileStore
 import com.mapbox.maps.AsyncOperationResultCallback
 import com.mapbox.maps.OfflineRegionDownloadState
@@ -107,6 +111,21 @@ class PreDownloadWorkerE2eTest {
                         mainHandler = immediateHandler(),
                     ),
                 )
+            val context = InstrumentationRegistry.getInstrumentation().targetContext
+            val candidateImageRepository =
+                CandidateImageRepository(
+                    context,
+                    SERVER_URL,
+                )
+            val geotiffRadiusRepository =
+                GeotiffRadiusRepository(
+                    context.getSharedPreferences(
+                        "e2e_geotiff_radius",
+                        Context.MODE_PRIVATE,
+                    ),
+                )
+            val satelliteRegionStore =
+                RoomSatelliteRegionStore(database.satelliteRegionDao())
             val orchestrator =
                 PreDownloadOrchestrator(
                     claimRepository = claimRepository,
@@ -118,6 +137,9 @@ class PreDownloadWorkerE2eTest {
                     tileService = tileService(),
                     offlineManagerWrapper = offlineManagerWrapper,
                     offlineBundleRepository = offlineBundleRepository,
+                    candidateImageRepository = candidateImageRepository,
+                    geotiffRadiusRepository = geotiffRadiusRepository,
+                    satelliteRegionStore = satelliteRegionStore,
                     filesDir = cropsDir,
                     ioDispatcher = ioDispatcher,
                     freeBytes = { Long.MAX_VALUE },
@@ -317,6 +339,7 @@ class PreDownloadWorkerE2eTest {
     }
 
     companion object {
+        private const val SERVER_URL = "https://example.test/"
         private const val SURVEY_ID = 7L
         private const val BUFFER_METERS = 100f
         private val CANDIDATE_IDS = listOf(1L, 2L, 3L, 4L, 5L)

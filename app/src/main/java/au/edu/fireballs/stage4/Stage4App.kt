@@ -4,6 +4,7 @@ import android.app.Application
 import android.util.Log
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
+import androidx.work.WorkManager
 import au.edu.fireballs.stage4.data.tiles.AuthenticatedTileHttpInterceptor
 import coil.Coil
 import coil.ImageLoader
@@ -30,6 +31,7 @@ class Stage4App :
 
     override fun onCreate() {
         super.onCreate()
+        WorkManager.initialize(this, workManagerConfiguration)
         if (BuildConfig.MAPBOX_TOKEN.isBlank()) {
             Log.e("Stage4App", "MAPBOX_TOKEN is blank; Mapbox cannot initialize")
         }

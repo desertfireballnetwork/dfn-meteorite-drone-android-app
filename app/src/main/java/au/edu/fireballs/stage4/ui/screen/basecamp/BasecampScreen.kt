@@ -407,7 +407,15 @@ private fun DownloadDialog(
                     }
                 }
 
-                is PreDownloadUiState.Error -> Text(text = state.message)
+                is PreDownloadUiState.Error -> {
+                    Column {
+                        Text(text = state.message)
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Button(onClick = onStart) {
+                            Text(text = "Retry")
+                        }
+                    }
+                }
                 is PreDownloadUiState.Cancelled -> Text(text = "Download cancelled")
             }
         },

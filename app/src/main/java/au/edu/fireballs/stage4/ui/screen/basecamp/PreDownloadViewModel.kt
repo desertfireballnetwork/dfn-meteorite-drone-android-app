@@ -9,6 +9,7 @@ import androidx.work.WorkInfo
 import au.edu.fireballs.stage4.data.repository.ClaimRepository
 import au.edu.fireballs.stage4.data.repository.Stage4Repository
 import au.edu.fireballs.stage4.data.tiles.BufferRadiusRepository
+import au.edu.fireballs.stage4.data.tiles.GeotiffRadiusRepository
 import au.edu.fireballs.stage4.sync.PreDownloadOrchestrator
 import au.edu.fireballs.stage4.sync.PreDownloadWorker
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -59,8 +60,9 @@ sealed interface PreDownloadEvent {
     ) : PreDownloadEvent
 }
 
-private const val TILES_BYTES_PER_CANDIDATE = 1_100_000L
-private const val SATELLITE_BYTES_PER_CANDIDATE = 500_000L
+private const val GEOTIFF_BYTES_PER_CANDIDATE = 32_000_000L
+private const val CROP_BYTES_PER_CANDIDATE = 1_000_000L
+private const val SATELLITE_BYTES_PER_CANDIDATE = 300_000L
 
 @HiltViewModel
 class PreDownloadViewModel
@@ -69,6 +71,7 @@ class PreDownloadViewModel
         private val claimRepository: ClaimRepository,
         private val stage4Repository: Stage4Repository,
         private val bufferRadiusRepository: BufferRadiusRepository,
+        private val geotiffRadiusRepository: GeotiffRadiusRepository,
         private val preDownloadWorkManager: PreDownloadWorkManager,
     ) : ViewModel() {
         private val _uiState = MutableStateFlow<PreDownloadUiState>(PreDownloadUiState.Idle)
@@ -100,6 +103,7 @@ class PreDownloadViewModel
             val currentSurveyId = surveyId
             if (currentSurveyId < 0L) return
             val bufferMeters = bufferRadiusRepository.getBufferRadiusMeters()
+            val geotiffRadiusMeters = geotiffRadiusRepository.getRadiusMeters()
             val request =
                 OneTimeWorkRequestBuilder<PreDownloadWorker>()
                     .setInputData(
@@ -107,7 +111,10 @@ class PreDownloadViewModel
                             .Builder()
                             .putLong(PreDownloadWorker.KEY_SURVEY_ID, currentSurveyId)
                             .putFloat(PreDownloadWorker.KEY_BUFFER_METERS, bufferMeters)
-                            .build(),
+                            .putFloat(
+                                PreDownloadWorker.KEY_GEOTIFF_RADIUS_METERS,
+                                geotiffRadiusMeters,
+                            ).build(),
                     ).build()
             preDownloadWorkManager.enqueueUniqueWork(
                 uniqueWorkName = uniqueWorkName(currentSurveyId),
@@ -201,9 +208,11 @@ class PreDownloadViewModel
         }
 
         private fun estimateSize(claimedCount: Int): Long {
-            val tiles = claimedCount.toLong() * TILES_BYTES_PER_CANDIDATE
-            val satellite = claimedCount.toLong() * SATELLITE_BYTES_PER_CANDIDATE
-            return tiles + satellite
+            val candidates = claimedCount.toLong()
+            val geotiff = candidates * GEOTIFF_BYTES_PER_CANDIDATE
+            val crops = candidates * CROP_BYTES_PER_CANDIDATE
+            val satellite = candidates * SATELLITE_BYTES_PER_CANDIDATE
+            return geotiff + crops + satellite
         }
 
         private fun uniqueWorkName(surveyId: Long): String =

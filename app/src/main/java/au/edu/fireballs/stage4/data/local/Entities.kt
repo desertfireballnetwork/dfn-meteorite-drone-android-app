@@ -146,6 +146,19 @@ data class TileManifestEntity(
     val bytes: Long = 0L,
 )
 
+@Entity(
+    tableName = "satellite_region",
+    indices = [
+        Index(value = ["surveyId", "signature"], unique = true),
+    ],
+)
+data class SatelliteRegionEntity(
+    @PrimaryKey(autoGenerate = true) val rowId: Long = 0L,
+    val surveyId: Long,
+    val signature: String,
+    val completed: Boolean,
+)
+
 @Entity(tableName = "sync_run")
 data class SyncRunEntity(
     @PrimaryKey val surveyId: Long,

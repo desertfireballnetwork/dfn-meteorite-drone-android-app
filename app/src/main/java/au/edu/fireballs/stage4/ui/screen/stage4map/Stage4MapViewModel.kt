@@ -86,6 +86,23 @@ sealed interface ConnectionBannerState {
     data object Downloading : ConnectionBannerState
 }
 
+internal fun filterCandidatesForNetwork(
+    state: Stage4State,
+    networkState: NetworkState,
+): Stage4State {
+    if (networkState == NetworkState.Online) {
+        return state
+    }
+    return state.copy(
+        unprocessedCandidates = state.unprocessedCandidates.filter(Stage4Candidate::isClaimed),
+        yesMeteorites = state.yesMeteorites.filter(Stage4Candidate::isClaimed),
+        noMeteorites = state.noMeteorites.filter(Stage4Candidate::isClaimed),
+    )
+}
+
+private val Stage4Candidate.isClaimed: Boolean
+    get() = claimedByMe || claimedByOther
+
 @HiltViewModel
 class Stage4MapViewModel
     @Inject
@@ -150,9 +167,18 @@ class Stage4MapViewModel
                                     )
                                 }
                             }
+                        val networkFilteredFlow =
+                            combine(
+                                loadedFlow,
+                                networkStateRepository.networkState,
+                            ) { loaded, network ->
+                                loaded?.let {
+                                    it.copy(state = filterCandidatesForNetwork(it.state, network))
+                                }
+                            }
 
                         combine(
-                            loadedFlow,
+                            networkFilteredFlow,
                             errorFlow,
                             authExpiredFlow,
                         ) { loaded, error, authExpired ->

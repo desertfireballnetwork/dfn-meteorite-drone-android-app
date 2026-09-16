@@ -80,7 +80,7 @@ class CandidateImageRepositoryTest {
 
     @Test
     fun getLocalCropImageFile_returnsNullWhenFileIsEmpty() {
-        val file = File(context.filesDir, "tiles/10/42.jpg")
+        val file = File(context.filesDir, "crops/10/42.jpg")
         file.parentFile?.mkdirs()
         file.writeBytes(ByteArray(0))
 
@@ -89,7 +89,7 @@ class CandidateImageRepositoryTest {
 
     @Test
     fun getLocalCropImageFile_returnsFileWhenPresentAndNonEmpty() {
-        val file = File(context.filesDir, "tiles/10/42.jpg")
+        val file = File(context.filesDir, "crops/10/42.jpg")
         file.parentFile?.mkdirs()
         file.writeBytes(byteArrayOf(1, 2, 3, 4))
 
@@ -110,7 +110,7 @@ class CandidateImageRepositoryTest {
 
     @Test
     fun buildCroppedImageRequest_prefersLocalFileWhenPresent() {
-        val file = File(context.filesDir, "tiles/10/42.jpg")
+        val file = File(context.filesDir, "crops/10/42.jpg")
         file.parentFile?.mkdirs()
         file.writeBytes(byteArrayOf(1, 2, 3, 4))
 
