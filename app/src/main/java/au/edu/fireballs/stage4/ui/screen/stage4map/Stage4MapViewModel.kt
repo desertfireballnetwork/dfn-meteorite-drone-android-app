@@ -29,22 +29,19 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
-import kotlin.math.abs
 import kotlin.math.cos
-import kotlin.math.pow
 
 private const val OFFLINE_CAMERA_ZOOM = 18.0
 private const val OVERLAY_MIN_ZOOM = 14.0
 private const val OVERLAY_MAX_COUNT = 30
-private const val OVERLAY_VIEWPORT_MARGIN = 1.5
-private const val VIEWPORT_WIDTH_PX = 1080.0
-private const val VIEWPORT_HEIGHT_PX = 2400.0
 
 data class LayerToggleState(
     val showYes: Boolean = true,
@@ -117,20 +114,9 @@ private fun computeOverlayCandidates(
     }
     val camLat = camera.latitude
     val camLon = camera.longitude
-    val latSpan =
-        OVERLAY_VIEWPORT_MARGIN *
-            (VIEWPORT_HEIGHT_PX / (256.0 * 2.0.pow(camera.zoom))) *
-            2.0
     val cosLat = cos(Math.toRadians(camLat)).coerceAtLeast(0.1)
-    val lonSpan = latSpan * (VIEWPORT_WIDTH_PX / VIEWPORT_HEIGHT_PX) / cosLat
-    val visible =
-        candidates.filter { candidate ->
-            val centroid = candidate.geoCentroid ?: return@filter false
-            abs(centroid.latitude - camLat) <= latSpan / 2.0 &&
-                abs(centroid.longitude - camLon) <= lonSpan / 2.0
-        }
     val ranked =
-        visible.sortedBy { candidate ->
+        candidates.sortedBy { candidate ->
             val centroid = candidate.geoCentroid ?: return@sortedBy Double.MAX_VALUE
             val dx = (centroid.longitude - camLon) * cosLat
             val dy = centroid.latitude - camLat
@@ -228,7 +214,7 @@ class Stage4MapViewModel
                     } else {
                         combine(
                             ownClaimsFlow,
-                            cameraStateFlow,
+                            cameraStateFlow.debounce(250).distinctUntilChanged(),
                             selectedCandidateFlow,
                             sourceStateFlow,
                         ) { claims, camera, selected, source ->
@@ -240,7 +226,7 @@ class Stage4MapViewModel
                             ) { candidateId ->
                                 candidateTileUrlPattern(id, candidateId)
                             }
-                        }
+                        }.distinctUntilChanged()
                     }
                 }.stateIn(
                     scope = viewModelScope,

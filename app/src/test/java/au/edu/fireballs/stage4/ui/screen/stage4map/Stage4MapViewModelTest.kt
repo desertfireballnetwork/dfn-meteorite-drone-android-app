@@ -997,20 +997,40 @@ class Stage4MapViewModelTest {
         }
 
     @Test
-    fun `overlay candidates exclude claimed candidate outside viewport`() =
+    fun `overlay membership is stable across deep zoom micro pans`() =
         runTest(testDispatcher) {
-            val nearby = overlayCandidate(1L, 0.0, 0.0)
-            val distant = overlayCandidate(2L, 5.0, 5.0)
-            prepareOverlayTest(listOf(nearby, distant), setOf(1L, 2L))
+            val candidates =
+                listOf(
+                    overlayCandidate(1L, -29.85, 124.799),
+                    overlayCandidate(2L, -29.85, 124.8),
+                    overlayCandidate(3L, -29.85, 124.801),
+                )
+            prepareOverlayTest(candidates, setOf(1L, 2L, 3L))
             val collectJob =
                 backgroundScope.launch(testDispatcher) {
                     viewModel.overlayCandidates.collect {}
                 }
 
-            viewModel.updateCamera(MapCameraTarget(0.0, 0.0, 16.0))
+            viewModel.updateCamera(MapCameraTarget(-29.85, 124.8, 20.0))
             advanceUntilIdle()
+            val zoomTwenty =
+                viewModel
+                    .overlayCandidates
+                    .value
+                    .map { it.first }
+                    .toSet()
 
-            assertEquals(listOf(1L), viewModel.overlayCandidates.value.map { it.first })
+            viewModel.updateCamera(MapCameraTarget(-29.85, 124.80001, 22.0))
+            advanceUntilIdle()
+            val zoomTwentyTwo =
+                viewModel
+                    .overlayCandidates
+                    .value
+                    .map { it.first }
+                    .toSet()
+
+            assertEquals(setOf(1L, 2L, 3L), zoomTwenty)
+            assertEquals(setOf(1L, 2L, 3L), zoomTwentyTwo)
             collectJob.cancel()
         }
 
