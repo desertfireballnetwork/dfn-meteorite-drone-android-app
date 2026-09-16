@@ -6,6 +6,7 @@ import androidx.work.OneTimeWorkRequest
 import androidx.work.Operation
 import androidx.work.WorkInfo
 import au.edu.fireballs.stage4.data.repository.ClaimRepository
+import au.edu.fireballs.stage4.data.repository.ClaimResult
 import au.edu.fireballs.stage4.data.repository.Stage4Repository
 import au.edu.fireballs.stage4.data.tiles.BufferRadiusRepository
 import au.edu.fireballs.stage4.sync.PreDownloadOrchestrator
@@ -45,6 +46,8 @@ class PreDownloadViewModelTest {
         Dispatchers.setMain(testDispatcher)
         claimRepository = mock<ClaimRepository>()
         runBlocking {
+            whenever(claimRepository.refreshClaimsToRoom(7L))
+                .thenReturn(ClaimResult.Refreshed(count = 1))
             whenever(claimRepository.countActiveClaimedCandidates(7L)).thenReturn(1)
         }
         stage4Repository = mock<Stage4Repository>()

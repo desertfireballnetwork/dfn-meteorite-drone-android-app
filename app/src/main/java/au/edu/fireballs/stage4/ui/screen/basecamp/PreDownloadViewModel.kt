@@ -85,6 +85,7 @@ class PreDownloadViewModel
             observeJob?.cancel()
             observeJob = null
             viewModelScope.launch {
+                claimRepository.refreshClaimsToRoom(surveyId)
                 val claimed = claimRepository.countActiveClaimedCandidates(surveyId)
                 _uiState.value =
                     PreDownloadUiState.Ready(
