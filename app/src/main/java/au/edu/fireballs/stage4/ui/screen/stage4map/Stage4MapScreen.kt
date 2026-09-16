@@ -47,7 +47,6 @@ import com.mapbox.maps.extension.compose.animation.viewport.rememberMapViewportS
 import kotlinx.coroutines.delay
 
 private const val LOCATION_MESSAGE_AUTO_DISMISS_MS = 4_000L
-private const val SELECTED_CANDIDATE_ZOOM = 20.0
 
 @Composable
 fun Stage4MapScreen(
@@ -95,25 +94,10 @@ fun Stage4MapScreen(
                 state.state.unprocessedCandidates +
                     state.state.yesMeteorites +
                     state.state.noMeteorites
-            val selectedCandidate =
-                selectedCandidateId?.let { id ->
-                    candidates.firstOrNull { it.inferenceResultId == id }
-                }
             val modalCandidate =
                 modalCandidateId?.let { id ->
                     candidates.firstOrNull { it.inferenceResultId == id }
                 }
-
-            LaunchedEffect(selectedCandidate?.inferenceResultId) {
-                selectedCandidate?.geoCentroid?.let { centroid ->
-                    mapViewportState.setCameraOptions(
-                        cameraOptions {
-                            center(Point.fromLngLat(centroid.longitude, centroid.latitude))
-                            zoom(SELECTED_CANDIDATE_ZOOM)
-                        },
-                    )
-                }
-            }
 
             LoadedMap(
                 loaded = state,
