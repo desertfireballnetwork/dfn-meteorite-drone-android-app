@@ -35,8 +35,16 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+import kotlin.math.abs
+import kotlin.math.cos
+import kotlin.math.pow
 
 private const val OFFLINE_CAMERA_ZOOM = 18.0
+private const val OVERLAY_MIN_ZOOM = 14.0
+private const val OVERLAY_MAX_COUNT = 30
+private const val OVERLAY_VIEWPORT_MARGIN = 1.5
+private const val VIEWPORT_WIDTH_PX = 1080.0
+private const val VIEWPORT_HEIGHT_PX = 2400.0
 
 data class LayerToggleState(
     val showYes: Boolean = true,
@@ -88,6 +96,49 @@ sealed interface ConnectionBannerState {
     data object Offline : ConnectionBannerState
 
     data object Downloading : ConnectionBannerState
+}
+
+private fun computeOverlayCandidates(
+    source: Stage4State?,
+    claims: Set<Long>,
+    camera: MapCameraTarget?,
+    selected: Long?,
+    urlFor: (Long) -> String,
+): List<Pair<Long, String>> {
+    if (source == null || camera == null || camera.zoom < OVERLAY_MIN_ZOOM) {
+        return emptyList()
+    }
+    val wanted = claims + (selected?.let { setOf(it) } ?: emptySet())
+    val candidates =
+        (source.unprocessedCandidates + source.yesMeteorites + source.noMeteorites)
+            .filter { it.inferenceResultId in wanted && it.geoCentroid != null }
+    if (candidates.isEmpty()) {
+        return emptyList()
+    }
+    val camLat = camera.latitude
+    val camLon = camera.longitude
+    val latSpan =
+        OVERLAY_VIEWPORT_MARGIN *
+            (VIEWPORT_HEIGHT_PX / (256.0 * 2.0.pow(camera.zoom))) *
+            2.0
+    val cosLat = cos(Math.toRadians(camLat)).coerceAtLeast(0.1)
+    val lonSpan = latSpan * (VIEWPORT_WIDTH_PX / VIEWPORT_HEIGHT_PX) / cosLat
+    val visible =
+        candidates.filter { candidate ->
+            val centroid = candidate.geoCentroid ?: return@filter false
+            abs(centroid.latitude - camLat) <= latSpan / 2.0 &&
+                abs(centroid.longitude - camLon) <= lonSpan / 2.0
+        }
+    val ranked =
+        visible.sortedBy { candidate ->
+            val centroid = candidate.geoCentroid ?: return@sortedBy Double.MAX_VALUE
+            val dx = (centroid.longitude - camLon) * cosLat
+            val dy = centroid.latitude - camLat
+            dx * dx + dy * dy
+        }
+    return ranked
+        .take(OVERLAY_MAX_COUNT)
+        .map { it.inferenceResultId to urlFor(it.inferenceResultId) }
 }
 
 private fun resolveOfflineCamera(
@@ -152,6 +203,8 @@ class Stage4MapViewModel
         private val authExpiredFlow = MutableStateFlow(false)
 
         private val surveyIdFlow = MutableStateFlow<Long?>(null)
+        private val cameraStateFlow = MutableStateFlow<MapCameraTarget?>(null)
+        private val selectedCandidateFlow = MutableStateFlow<Long?>(null)
         private val ownClaimsFlow: Flow<Set<Long>> =
             surveyIdFlow
                 .flatMapLatest { id ->
@@ -166,6 +219,34 @@ class Stage4MapViewModel
                         }
                     }
                 }
+
+        val overlayCandidates: StateFlow<List<Pair<Long, String>>> =
+            surveyIdFlow
+                .flatMapLatest { id ->
+                    if (id == null) {
+                        flowOf(emptyList())
+                    } else {
+                        combine(
+                            ownClaimsFlow,
+                            cameraStateFlow,
+                            selectedCandidateFlow,
+                            sourceStateFlow,
+                        ) { claims, camera, selected, source ->
+                            computeOverlayCandidates(
+                                source,
+                                claims,
+                                camera,
+                                selected,
+                            ) { candidateId ->
+                                candidateTileUrlPattern(id, candidateId)
+                            }
+                        }
+                    }
+                }.stateIn(
+                    scope = viewModelScope,
+                    started = SharingStarted.WhileSubscribed(5000),
+                    initialValue = emptyList(),
+                )
 
         @OptIn(ExperimentalCoroutinesApi::class)
         val hasOfflineBundle: StateFlow<Boolean> =
@@ -419,6 +500,14 @@ class Stage4MapViewModel
         fun retry() {
             val surveyId = surveyIdFlow.value ?: return
             openSurvey(surveyId)
+        }
+
+        fun updateCamera(target: MapCameraTarget?) {
+            cameraStateFlow.value = target
+        }
+
+        fun setSelectedCandidate(candidateId: Long?) {
+            selectedCandidateFlow.value = candidateId
         }
 
         fun candidateTileUrlPattern(

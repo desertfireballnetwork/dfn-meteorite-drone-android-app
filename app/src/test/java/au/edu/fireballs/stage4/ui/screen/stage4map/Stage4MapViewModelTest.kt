@@ -962,6 +962,99 @@ class Stage4MapViewModelTest {
         }
 
     @Test
+    fun `overlay candidates are empty below zoom floor`() =
+        runTest(testDispatcher) {
+            val candidate = overlayCandidate(1L, 0.0, 0.0)
+            prepareOverlayTest(listOf(candidate), setOf(1L))
+            val collectJob =
+                backgroundScope.launch(testDispatcher) {
+                    viewModel.overlayCandidates.collect {}
+                }
+
+            viewModel.updateCamera(MapCameraTarget(0.0, 0.0, 13.0))
+            advanceUntilIdle()
+
+            assertTrue(viewModel.overlayCandidates.value.isEmpty())
+            collectJob.cancel()
+        }
+
+    @Test
+    fun `overlay candidates include claimed and exclude unclaimed`() =
+        runTest(testDispatcher) {
+            val claimed = overlayCandidate(1L, 0.0, 0.0)
+            val unclaimed = overlayCandidate(2L, 0.0, 0.0)
+            prepareOverlayTest(listOf(claimed, unclaimed), setOf(1L))
+            val collectJob =
+                backgroundScope.launch(testDispatcher) {
+                    viewModel.overlayCandidates.collect {}
+                }
+
+            viewModel.updateCamera(MapCameraTarget(0.0, 0.0, 16.0))
+            advanceUntilIdle()
+
+            assertEquals(listOf(1L), viewModel.overlayCandidates.value.map { it.first })
+            collectJob.cancel()
+        }
+
+    @Test
+    fun `overlay candidates exclude claimed candidate outside viewport`() =
+        runTest(testDispatcher) {
+            val nearby = overlayCandidate(1L, 0.0, 0.0)
+            val distant = overlayCandidate(2L, 5.0, 5.0)
+            prepareOverlayTest(listOf(nearby, distant), setOf(1L, 2L))
+            val collectJob =
+                backgroundScope.launch(testDispatcher) {
+                    viewModel.overlayCandidates.collect {}
+                }
+
+            viewModel.updateCamera(MapCameraTarget(0.0, 0.0, 16.0))
+            advanceUntilIdle()
+
+            assertEquals(listOf(1L), viewModel.overlayCandidates.value.map { it.first })
+            collectJob.cancel()
+        }
+
+    @Test
+    fun `overlay candidates cap nearest claimed candidates at thirty`() =
+        runTest(testDispatcher) {
+            val candidates =
+                (1L..31L).map { id ->
+                    overlayCandidate(id, 0.0, id.toDouble() * 0.000001)
+                }
+            prepareOverlayTest(candidates, candidates.map { it.inferenceResultId }.toSet())
+            val collectJob =
+                backgroundScope.launch(testDispatcher) {
+                    viewModel.overlayCandidates.collect {}
+                }
+
+            viewModel.updateCamera(MapCameraTarget(0.0, 0.0, 16.0))
+            advanceUntilIdle()
+
+            val ids = viewModel.overlayCandidates.value.map { it.first }
+            assertEquals(30, ids.size)
+            assertFalse(31L in ids)
+            collectJob.cancel()
+        }
+
+    @Test
+    fun `overlay candidates include selected candidate without claim`() =
+        runTest(testDispatcher) {
+            val candidate = overlayCandidate(7L, 0.0, 0.0)
+            prepareOverlayTest(listOf(candidate), emptySet())
+            val collectJob =
+                backgroundScope.launch(testDispatcher) {
+                    viewModel.overlayCandidates.collect {}
+                }
+
+            viewModel.setSelectedCandidate(7L)
+            viewModel.updateCamera(MapCameraTarget(0.0, 0.0, 16.0))
+            advanceUntilIdle()
+
+            assertEquals(listOf(7L), viewModel.overlayCandidates.value.map { it.first })
+            collectJob.cancel()
+        }
+
+    @Test
     fun `hasOfflineBundle reflects bundle presence for the opened survey`() =
         runTest(testDispatcher) {
             val bundleFlow = MutableStateFlow<OfflineBundleEntity?>(null)
@@ -1007,4 +1100,59 @@ class Stage4MapViewModelTest {
 
             collectJob.cancel()
         }
+
+    private suspend fun prepareOverlayTest(
+        candidates: List<Stage4Candidate>,
+        claimedIds: Set<Long>,
+    ) {
+        claimsFlow.value =
+            claimedIds.map { id ->
+                ClaimEntity(id, 7L, 1L, "me", "", isMine = true, isActive = true)
+            }
+        whenever(candidateImageRepository.getCandidateTileUrlPattern(any(), any()))
+            .thenAnswer { invocation ->
+                val surveyId = invocation.getArgument<Long>(0)
+                val candidateId = invocation.getArgument<Long>(1)
+                "https://tiles/$surveyId/$candidateId/{z}/{x}/{y}"
+            }
+        whenever(repository.getCandidatesState(7L))
+            .thenReturn(
+                Stage4FetchResult.Success(
+                    dummyState(7L).copy(unprocessedCandidates = candidates),
+                ),
+            )
+        viewModel =
+            Stage4MapViewModel(
+                repository,
+                claimDao,
+                localDecisionDao,
+                offlineBundleDao,
+                candidateImageRepository,
+                tileStore,
+                tileHttpInterceptor,
+                syncWorkManager,
+                networkStateRepository,
+                preDownloadWorkManager,
+            )
+        viewModel.openSurvey(7L)
+    }
+
+    private fun overlayCandidate(
+        id: Long,
+        latitude: Double,
+        longitude: Double,
+    ): Stage4Candidate =
+        Stage4Candidate(
+            inferenceResultId = id,
+            imageId = id,
+            imageFilename = "$id.png",
+            imageDims = ImageDims(100, 100),
+            geoCentroid = GeoCoordinate(latitude, longitude),
+            geoArea = null,
+            box = BoundingBox(0, 0, 10, 10),
+            confidence = 0.9,
+            sizeM = null,
+            claimedByMe = false,
+            claimedByOther = false,
+        )
 }

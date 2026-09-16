@@ -4,12 +4,14 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import au.edu.fireballs.stage4.domain.model.MapCameraTarget
 import au.edu.fireballs.stage4.domain.model.Stage4Candidate
 import au.edu.fireballs.stage4.domain.model.Stage4State
 import au.edu.fireballs.stage4.domain.model.UserLocation
 import au.edu.fireballs.stage4.ui.screen.stage4map.marker.CandidateMarkers
 import com.mapbox.maps.CameraBoundsOptions
 import com.mapbox.maps.MapView
+import com.mapbox.maps.extension.compose.DisposableMapEffect
 import com.mapbox.maps.extension.compose.MapEffect
 import com.mapbox.maps.extension.compose.MapboxMap
 import com.mapbox.maps.extension.compose.animation.viewport.MapViewportState
@@ -30,8 +32,8 @@ internal fun MapHost(
     layerToggleState: LayerToggleState,
     onMarkerClick: (Stage4Candidate) -> Unit,
     onUserLocationClick: (UserLocation) -> Unit,
-    candidateId: Long? = null,
-    tileUrlPattern: String? = null,
+    overlayCandidates: List<Pair<Long, String>> = emptyList(),
+    onCameraChange: (MapCameraTarget) -> Unit = {},
 ) {
     val styleState =
         rememberStyleState {
@@ -55,6 +57,20 @@ internal fun MapHost(
             locationPermissionGranted = locationPermissionGranted,
             showAccuracyRing = state.showGeolocationAccuracyCircle,
         )
+        DisposableMapEffect(Unit) { mapView ->
+            val subscription =
+                mapView.mapboxMap.subscribeCameraChanged {
+                    val camera = mapView.mapboxMap.cameraState
+                    onCameraChange(
+                        MapCameraTarget(
+                            latitude = camera.center.latitude(),
+                            longitude = camera.center.longitude(),
+                            zoom = camera.zoom,
+                        ),
+                    )
+                }
+            onDispose { subscription.cancel() }
+        }
 
         SurveyedAreaOverlay(
             polygons = state.surveyedAreas,
@@ -63,11 +79,13 @@ internal fun MapHost(
         )
         BaseMarker(base = state.base)
 
-        CustomRasterOverlay(
-            surveyId = state.survey.id,
-            candidateId = candidateId,
-            tileUrlPattern = tileUrlPattern,
-        )
+        overlayCandidates.forEach { (candidateId, pattern) ->
+            CustomRasterOverlay(
+                surveyId = state.survey.id,
+                candidateId = candidateId,
+                tileUrlPattern = pattern,
+            )
+        }
         CandidateMarkers(
             state = state,
             toggleState = layerToggleState,
