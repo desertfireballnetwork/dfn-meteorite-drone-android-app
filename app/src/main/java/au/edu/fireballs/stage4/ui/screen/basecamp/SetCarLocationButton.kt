@@ -4,24 +4,32 @@ import android.Manifest
 import android.content.Context
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.DirectionsCar
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TooltipBox
+import androidx.compose.material3.TooltipDefaults
+import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import au.edu.fireballs.stage4.ui.screen.stage4map.isLocationPermissionGranted
 import au.edu.fireballs.stage4.ui.screen.stage4map.locationServicesEnabled
@@ -42,6 +50,7 @@ private val LOCATION_PERMISSIONS =
 internal fun fineLocationGranted(granted: Map<String, Boolean>): Boolean =
     granted[Manifest.permission.ACCESS_FINE_LOCATION] == true
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SetCarLocationButton(
     showSuccess: Boolean,
@@ -51,6 +60,7 @@ fun SetCarLocationButton(
 ) {
     val context = LocalContext.current
     var acquiring by remember { mutableStateOf(false) }
+    var showConfirmation by rememberSaveable { mutableStateOf(false) }
     val tokenSource = remember { CancellationTokenSource() }
 
     DisposableEffect(Unit) {
@@ -74,46 +84,90 @@ fun SetCarLocationButton(
             }
         }
 
+    val requestCurrentLocation = {
+        if (!isLocationPermissionGranted(context)) {
+            permissionLauncher.launch(LOCATION_PERMISSIONS)
+        } else {
+            acquireLocation(
+                context = context,
+                tokenSource = tokenSource,
+                onSetLocation = onSetLocation,
+                onMessage = onMessage,
+                onAcquiring = { acquiring = it },
+            )
+        }
+    }
     val busy = acquiring || submitting
 
-    FilledTonalButton(
-        onClick = {
-            if (!isLocationPermissionGranted(context)) {
-                permissionLauncher.launch(LOCATION_PERMISSIONS)
-            } else {
-                acquireLocation(
-                    context = context,
-                    tokenSource = tokenSource,
-                    onSetLocation = onSetLocation,
-                    onMessage = onMessage,
-                    onAcquiring = { acquiring = it },
-                )
+    TooltipBox(
+        positionProvider = TooltipDefaults.rememberTooltipPositionProvider(),
+        tooltip = {
+            PlainTooltip {
+                Text(text = "Set car location")
             }
         },
-        enabled = !busy,
+        state = rememberTooltipState(),
     ) {
-        when {
-            busy ->
-                CircularProgressIndicator(modifier = Modifier.size(SPINNER_SIZE_DP.dp))
+        IconButton(
+            onClick = { showConfirmation = true },
+            enabled = !busy,
+        ) {
+            when {
+                busy -> {
+                    CircularProgressIndicator(
+                        modifier =
+                            Modifier
+                                .size(SPINNER_SIZE_DP.dp)
+                                .semantics {
+                                    contentDescription = "Setting car location"
+                                },
+                    )
+                }
 
-            showSuccess -> {
-                Icon(
-                    imageVector = Icons.Default.Check,
-                    contentDescription = null,
-                )
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(text = "Car location set")
-            }
+                showSuccess -> {
+                    Icon(
+                        imageVector = Icons.Default.Check,
+                        contentDescription = "Car location set",
+                    )
+                }
 
-            else -> {
-                Icon(
-                    imageVector = Icons.Default.LocationOn,
-                    contentDescription = null,
-                )
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(text = "Set my location as car location")
+                else -> {
+                    Icon(
+                        imageVector = Icons.Filled.DirectionsCar,
+                        contentDescription = "Set car location",
+                    )
+                }
             }
         }
+    }
+
+    if (showConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showConfirmation = false },
+            title = { Text(text = "Set car location?") },
+            text = {
+                Text(
+                    text =
+                        "Use this device's current location as the car location " +
+                            "for this survey?",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showConfirmation = false
+                        requestCurrentLocation()
+                    },
+                ) {
+                    Text(text = "Set location")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showConfirmation = false }) {
+                    Text(text = "Cancel")
+                }
+            },
+        )
     }
 }
 

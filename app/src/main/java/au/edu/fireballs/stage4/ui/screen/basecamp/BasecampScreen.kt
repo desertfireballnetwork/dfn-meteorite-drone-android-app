@@ -1,24 +1,31 @@
 package au.edu.fireballs.stage4.ui.screen.basecamp
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Polyline
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -27,7 +34,9 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconToggleButton
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
@@ -46,6 +55,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleResumeEffect
@@ -94,6 +106,7 @@ private const val POLYGON_STROKE_WIDTH = 4.0
 private const val VERTEX_RADIUS = 8.0
 private const val VERTEX_STROKE_WIDTH = 3.0
 private const val CLAIM_LIST_HEIGHT = 240
+private const val CLAIM_LIST_HEADER_HEIGHT = 28
 private const val CAR_LOCATION_SUCCESS_MS = 2_000L
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -101,7 +114,6 @@ private const val CAR_LOCATION_SUCCESS_MS = 2_000L
 fun BasecampScreen(
     surveyId: Long,
     onAuthExpired: () -> Unit,
-    onNavigateToSettings: () -> Unit = {},
     viewModel: BasecampViewModel = hiltViewModel(),
     preDownloadViewModel: PreDownloadViewModel = hiltViewModel(),
 ) {
@@ -151,9 +163,15 @@ fun BasecampScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(text = "Basecamp") },
-                actions = {
+            Column {
+                TopAppBar(
+                    title = { Text(text = "Basecamp") },
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Start,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     when (val state = uiState) {
                         is BasecampUiState.Loaded -> {
                             BasecampToolbarActions(
@@ -169,23 +187,28 @@ fun BasecampScreen(
                                         viewModel.startPolygon()
                                     }
                                 },
-                                onToggleMine = { viewModel.setMineFilter(!state.mineOnly) },
+                                onToggleMine = {
+                                    viewModel.setMineFilter(!state.mineOnly)
+                                },
                                 onRefresh = viewModel::refresh,
                                 onDownload = { showDownloadDialog = true },
-                                onSettings = onNavigateToSettings,
                                 onSetLocation = viewModel::setCarLocation,
                                 onMessage = { message ->
-                                    scope.launch { snackbarHostState.showSnackbar(message) }
+                                    scope.launch {
+                                        snackbarHostState.showSnackbar(message)
+                                    }
                                 },
                             )
                         }
 
                         else -> Unit
                     }
-                },
-            )
+                }
+            }
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
+        contentWindowInsets =
+            WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal),
     ) { paddingValues ->
         Box(
             modifier =
@@ -244,52 +267,66 @@ private fun BasecampToolbarActions(
     onToggleMine: () -> Unit,
     onRefresh: () -> Unit,
     onDownload: () -> Unit,
-    onSettings: () -> Unit,
     onSetLocation: (Double, Double) -> Unit,
     onMessage: (String) -> Unit,
 ) {
-    FilterChip(
-        selected = drawing,
-        onClick = onTogglePolygon,
-        label = { Text(text = if (drawing) "Drawing" else "Polygon") },
-        leadingIcon = {
-            Icon(
-                imageVector = Icons.Default.Polyline,
-                contentDescription = null,
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconToggleButton(
+                checked = drawing,
+                onCheckedChange = { onTogglePolygon() },
+                modifier =
+                    Modifier.semantics {
+                        contentDescription =
+                            if (drawing) {
+                                "Stop drawing polygon"
+                            } else {
+                                "Draw claim polygon"
+                            }
+                    },
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Polyline,
+                    contentDescription = null,
+                    tint =
+                        if (drawing) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            LocalContentColor.current
+                        },
+                )
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            FilterChip(
+                selected = mineOnly,
+                onClick = onToggleMine,
+                label = { Text(text = "Mine") },
             )
-        },
-    )
-    Spacer(modifier = Modifier.width(8.dp))
-    FilterChip(
-        selected = mineOnly,
-        onClick = onToggleMine,
-        label = { Text(text = "Mine") },
-    )
-    Spacer(modifier = Modifier.width(8.dp))
-    IconButton(onClick = onRefresh, enabled = !isRefreshing) {
-        Icon(
-            imageVector = Icons.Default.Refresh,
-            contentDescription = "Refresh",
+            Spacer(modifier = Modifier.width(8.dp))
+            IconButton(onClick = onRefresh, enabled = !isRefreshing) {
+                Icon(
+                    imageVector = Icons.Default.Refresh,
+                    contentDescription = "Refresh",
+                )
+            }
+            IconButton(onClick = onDownload) {
+                Icon(
+                    imageVector = Icons.Default.Download,
+                    contentDescription = "Download for offline",
+                )
+            }
+        }
+        SetCarLocationButton(
+            showSuccess = showSuccess,
+            submitting = submitting,
+            onSetLocation = onSetLocation,
+            onMessage = onMessage,
         )
     }
-    IconButton(onClick = onDownload) {
-        Icon(
-            imageVector = Icons.Default.Download,
-            contentDescription = "Download for offline",
-        )
-    }
-    IconButton(onClick = onSettings) {
-        Icon(
-            imageVector = Icons.Default.Settings,
-            contentDescription = "Settings",
-        )
-    }
-    SetCarLocationButton(
-        showSuccess = showSuccess,
-        submitting = submitting,
-        onSetLocation = onSetLocation,
-        onMessage = onMessage,
-    )
 }
 
 @Composable
@@ -628,41 +665,77 @@ private fun ClaimListPanel(
     snackbarHostState: SnackbarHostState,
     scope: kotlinx.coroutines.CoroutineScope,
 ) {
-    Column(
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .height(CLAIM_LIST_HEIGHT.dp),
-    ) {
-        Text(
-            text = "Claims (${claims.size})",
-            style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-        )
-        if (claims.isEmpty()) {
+    var expanded by rememberSaveable { mutableStateOf(true) }
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .height(CLAIM_LIST_HEADER_HEIGHT.dp)
+                    .padding(start = 16.dp, end = 8.dp)
+                    .pointerInput(expanded) {
+                        detectTapGestures { expanded = !expanded }
+                    },
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             Text(
-                text = "No claims",
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                text = "Claims (${claims.size})",
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.titleMedium,
             )
-        } else {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
+            Icon(
+                imageVector =
+                    if (expanded) {
+                        Icons.Default.ExpandMore
+                    } else {
+                        Icons.Default.ExpandLess
+                    },
+                contentDescription =
+                    if (expanded) {
+                        "Collapse claims"
+                    } else {
+                        "Expand claims"
+                    },
+                modifier = Modifier.size(20.dp),
+            )
+        }
+        if (expanded) {
+            Box(
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .height((CLAIM_LIST_HEIGHT - CLAIM_LIST_HEADER_HEIGHT).dp),
             ) {
-                items(claims, key = { it.inferenceResultId }) { claim ->
-                    ClaimRow(
-                        claim = claim,
-                        onRelease = {
-                            scope.launch {
-                                snackbarHostState.showSnackbar(
-                                    "Releasing candidate ${claim.inferenceResultId}",
-                                )
-                            }
-                            onReleaseClaim(claim.inferenceResultId)
-                        },
+                if (claims.isEmpty()) {
+                    Text(
+                        text = "No claims",
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier =
+                            Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                     )
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding =
+                            PaddingValues(horizontal = 16.dp, vertical = 4.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        items(claims, key = { it.inferenceResultId }) { claim ->
+                            ClaimRow(
+                                claim = claim,
+                                onRelease = {
+                                    scope.launch {
+                                        snackbarHostState.showSnackbar(
+                                            "Releasing candidate " +
+                                                claim.inferenceResultId,
+                                        )
+                                    }
+                                    onReleaseClaim(claim.inferenceResultId)
+                                },
+                            )
+                        }
+                    }
                 }
             }
         }

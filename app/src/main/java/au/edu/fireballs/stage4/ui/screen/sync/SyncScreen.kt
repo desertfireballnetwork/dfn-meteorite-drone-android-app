@@ -16,11 +16,14 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -50,6 +53,7 @@ private data class FailedRow(
     val kind: RowKind,
 )
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SyncScreen(
     uiState: SyncUiState,
@@ -59,17 +63,45 @@ fun SyncScreen(
     onSignIn: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    when (uiState) {
-        SyncUiState.SessionExpired -> SessionExpiredContent(onSignIn, modifier)
-        SyncUiState.Idle -> IdleContent(onSyncNow, modifier)
-        SyncUiState.Resuming -> ResumingContent(modifier)
-        SyncUiState.Complete -> CompleteContent(onSyncNow, modifier)
-        is SyncUiState.Pending ->
-            PendingContent(uiState.summary, onSyncNow, onDeleteDecision, onDeletePhoto, modifier)
-        is SyncUiState.Running ->
-            RunningContent(uiState, onSyncNow, onDeleteDecision, onDeletePhoto, modifier)
-        is SyncUiState.Failed ->
-            FailedContent(uiState.summary, onSyncNow, onDeleteDecision, onDeletePhoto, modifier)
+    Scaffold(
+        modifier = modifier,
+        topBar = {
+            TopAppBar(
+                title = { Text(text = "Sync") },
+            )
+        },
+    ) { paddingValues ->
+        val contentModifier = Modifier.padding(paddingValues)
+        when (uiState) {
+            SyncUiState.SessionExpired -> SessionExpiredContent(onSignIn, contentModifier)
+            SyncUiState.Idle -> IdleContent(onSyncNow, contentModifier)
+            SyncUiState.Resuming -> ResumingContent(contentModifier)
+            SyncUiState.Complete -> CompleteContent(onSyncNow, contentModifier)
+            is SyncUiState.Pending ->
+                PendingContent(
+                    uiState.summary,
+                    onSyncNow,
+                    onDeleteDecision,
+                    onDeletePhoto,
+                    contentModifier,
+                )
+            is SyncUiState.Running ->
+                RunningContent(
+                    uiState,
+                    onSyncNow,
+                    onDeleteDecision,
+                    onDeletePhoto,
+                    contentModifier,
+                )
+            is SyncUiState.Failed ->
+                FailedContent(
+                    uiState.summary,
+                    onSyncNow,
+                    onDeleteDecision,
+                    onDeletePhoto,
+                    contentModifier,
+                )
+        }
     }
 }
 
@@ -85,7 +117,6 @@ private fun IdleContent(
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp),
     ) {
-        Header()
         Spacer(Modifier.height(24.dp))
         Text(
             text = "Everything is up to date",
@@ -111,7 +142,6 @@ private fun PendingContent(
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp),
     ) {
-        Header()
         Spacer(Modifier.height(16.dp))
         PendingCounts(summary)
         Spacer(Modifier.height(16.dp))
@@ -135,7 +165,6 @@ private fun RunningContent(
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp),
     ) {
-        Header()
         Spacer(Modifier.height(16.dp))
         PendingCounts(state.summary)
         Spacer(Modifier.height(16.dp))
@@ -174,7 +203,6 @@ private fun FailedContent(
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp),
     ) {
-        Header()
         Spacer(Modifier.height(16.dp))
         PendingCounts(summary)
         Spacer(Modifier.height(16.dp))
@@ -214,7 +242,6 @@ private fun CompleteContent(
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp),
     ) {
-        Header()
         Spacer(Modifier.height(24.dp))
         Text(
             text = "Sync complete",
@@ -247,15 +274,6 @@ private fun SessionExpiredContent(
             Text("Sign in")
         }
     }
-}
-
-@Composable
-private fun Header() {
-    Text(
-        text = "Sync",
-        style = MaterialTheme.typography.headlineMedium,
-        fontWeight = FontWeight.Bold,
-    )
 }
 
 @Composable

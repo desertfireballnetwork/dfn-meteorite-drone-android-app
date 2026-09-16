@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import au.edu.fireballs.stage4.data.repository.ClaimRepository
@@ -143,7 +144,6 @@ class BasecampScreenTest {
                 BasecampScreen(
                     surveyId = 7L,
                     onAuthExpired = {},
-                    onNavigateToSettings = {},
                     viewModel = viewModel,
                     preDownloadViewModel = preDownloadViewModel,
                 )
@@ -195,6 +195,20 @@ class BasecampScreenTest {
         )
 
         composeRule.onNodeWithText("No claims").assertExists()
+    }
+
+    @Test
+    fun claimsPanelCollapsesAndExpands() {
+        openLoaded(
+            fixture = state(candidate(1L, GeoCoordinate(0.0, 0.0))),
+            claims = listOf(claim(1L, isMe = true)),
+        )
+
+        composeRule.onNodeWithText("Candidate #1").assertExists()
+        composeRule.onNodeWithContentDescription("Collapse claims").performClick()
+        composeRule.onNodeWithText("Candidate #1").assertDoesNotExist()
+        composeRule.onNodeWithContentDescription("Expand claims").performClick()
+        composeRule.onNodeWithText("Candidate #1").assertExists()
     }
 
     @Test
