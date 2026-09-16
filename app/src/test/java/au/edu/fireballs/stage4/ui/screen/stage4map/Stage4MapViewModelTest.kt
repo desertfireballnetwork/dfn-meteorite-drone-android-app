@@ -4,8 +4,10 @@ import androidx.work.Data
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkInfo
 import androidx.work.workDataOf
+import au.edu.fireballs.stage4.data.local.ClaimEntity
 import au.edu.fireballs.stage4.data.local.LocalDecisionEntity
 import au.edu.fireballs.stage4.data.local.OfflineBundleEntity
+import au.edu.fireballs.stage4.data.local.dao.ClaimDao
 import au.edu.fireballs.stage4.data.local.dao.LocalDecisionDao
 import au.edu.fireballs.stage4.data.local.dao.OfflineBundleDao
 import au.edu.fireballs.stage4.data.repository.CandidateImageRepository
@@ -44,6 +46,7 @@ import org.junit.Before
 import org.junit.Test
 import org.mockito.kotlin.any
 import org.mockito.kotlin.argumentCaptor
+import org.mockito.kotlin.eq
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.times
 import org.mockito.kotlin.verify
@@ -54,9 +57,11 @@ import java.io.File
 class Stage4MapViewModelTest {
     private val testDispatcher = StandardTestDispatcher()
     private val repository: Stage4Repository = mock()
+    private val claimDao: ClaimDao = mock()
     private val localDecisionDao: LocalDecisionDao = mock()
     private val offlineBundleDao: OfflineBundleDao = mock()
     private val candidateImageRepository: CandidateImageRepository = mock()
+    private val claimsFlow = MutableStateFlow<List<ClaimEntity>>(emptyList())
     private val pendingDecisionsFlow = MutableStateFlow<List<LocalDecisionEntity>>(emptyList())
     private val tileStore = TileStore(File.createTempFile("vm-tiles", "").parentFile)
     private val tileHttpInterceptor: AuthenticatedTileHttpInterceptor = mock()
@@ -69,7 +74,10 @@ class Stage4MapViewModelTest {
     @Before
     fun setUp() {
         Dispatchers.setMain(testDispatcher)
+        claimsFlow.value = emptyList()
         pendingDecisionsFlow.value = emptyList()
+        whenever(claimDao.getClaims(any(), eq(true)))
+            .thenReturn(claimsFlow)
         whenever(localDecisionDao.observeDecisionsForSurvey(any()))
             .thenReturn(pendingDecisionsFlow)
         whenever(offlineBundleDao.observeLatestBundleForSurvey(any()))
@@ -107,6 +115,7 @@ class Stage4MapViewModelTest {
             viewModel =
                 Stage4MapViewModel(
                     repository,
+                    claimDao,
                     localDecisionDao,
                     offlineBundleDao,
                     candidateImageRepository,
@@ -130,6 +139,7 @@ class Stage4MapViewModelTest {
             viewModel =
                 Stage4MapViewModel(
                     repository,
+                    claimDao,
                     localDecisionDao,
                     offlineBundleDao,
                     candidateImageRepository,
@@ -156,6 +166,83 @@ class Stage4MapViewModelTest {
         }
 
     @Test
+    fun `offline bundle camera targets centroid of own claimed candidates at zoom 18`() =
+        runTest(testDispatcher) {
+            val bundleFlow =
+                MutableStateFlow<OfflineBundleEntity?>(
+                    OfflineBundleEntity(
+                        surveyId = 7L,
+                        created = "2026-09-16T00:00:00Z",
+                        totalBytes = 1L,
+                        tileCount = 1,
+                        satelliteRegionCount = 1,
+                        candidateCount = 2,
+                        bufferMeters = 100f,
+                    ),
+                )
+            val first =
+                Stage4Candidate(
+                    inferenceResultId = 11L,
+                    imageId = 11L,
+                    imageFilename = "11.png",
+                    imageDims = ImageDims(100, 100),
+                    geoCentroid = GeoCoordinate(-29.8526, 124.8098),
+                    geoArea = null,
+                    box = BoundingBox(0, 0, 10, 10),
+                    confidence = 0.9,
+                    sizeM = null,
+                    claimedByMe = false,
+                    claimedByOther = false,
+                )
+            val second =
+                first.copy(
+                    inferenceResultId = 12L,
+                    geoCentroid = GeoCoordinate(-29.8528, 124.8108),
+                )
+            val fixture =
+                dummyState(7L).copy(unprocessedCandidates = listOf(first, second))
+            claimsFlow.value =
+                listOf(
+                    ClaimEntity(11L, 7L, 1L, "me", "", isMine = true, isActive = true),
+                    ClaimEntity(12L, 7L, 1L, "me", "", isMine = true, isActive = true),
+                )
+            networkStateFlow.value = NetworkState.Offline
+            whenever(offlineBundleDao.observeLatestBundleForSurvey(any()))
+                .thenReturn(bundleFlow)
+            whenever(repository.getCandidatesState(7L))
+                .thenReturn(Stage4FetchResult.Success(fixture, isOffline = true))
+
+            viewModel =
+                Stage4MapViewModel(
+                    repository,
+                    claimDao,
+                    localDecisionDao,
+                    offlineBundleDao,
+                    candidateImageRepository,
+                    tileStore,
+                    tileHttpInterceptor,
+                    syncWorkManager,
+                    networkStateRepository,
+                    preDownloadWorkManager,
+                )
+            val collectJob =
+                backgroundScope.launch(testDispatcher) {
+                    viewModel.uiState.collect {}
+                }
+
+            viewModel.openSurvey(7L)
+            advanceUntilIdle()
+
+            val loaded = viewModel.uiState.value as Stage4MapUiState.Loaded
+            assertEquals(
+                MapCameraTarget(-29.8527, 124.8103, 18.0),
+                loaded.cameraTarget,
+            )
+
+            collectJob.cancel()
+        }
+
+    @Test
     fun `openSurvey success updates state to Loaded with camera target at base zoom 13`() =
         runTest(testDispatcher) {
             val base = GeoCoordinate(latitude = -29.467, longitude = 115.342)
@@ -166,6 +253,7 @@ class Stage4MapViewModelTest {
             viewModel =
                 Stage4MapViewModel(
                     repository,
+                    claimDao,
                     localDecisionDao,
                     offlineBundleDao,
                     candidateImageRepository,
@@ -205,6 +293,7 @@ class Stage4MapViewModelTest {
             viewModel =
                 Stage4MapViewModel(
                     repository,
+                    claimDao,
                     localDecisionDao,
                     offlineBundleDao,
                     candidateImageRepository,
@@ -238,6 +327,7 @@ class Stage4MapViewModelTest {
             viewModel =
                 Stage4MapViewModel(
                     repository,
+                    claimDao,
                     localDecisionDao,
                     offlineBundleDao,
                     candidateImageRepository,
@@ -274,6 +364,7 @@ class Stage4MapViewModelTest {
             viewModel =
                 Stage4MapViewModel(
                     repository,
+                    claimDao,
                     localDecisionDao,
                     offlineBundleDao,
                     candidateImageRepository,
@@ -310,6 +401,7 @@ class Stage4MapViewModelTest {
             viewModel =
                 Stage4MapViewModel(
                     repository,
+                    claimDao,
                     localDecisionDao,
                     offlineBundleDao,
                     candidateImageRepository,
@@ -342,6 +434,7 @@ class Stage4MapViewModelTest {
             viewModel =
                 Stage4MapViewModel(
                     repository,
+                    claimDao,
                     localDecisionDao,
                     offlineBundleDao,
                     candidateImageRepository,
@@ -380,6 +473,7 @@ class Stage4MapViewModelTest {
             viewModel =
                 Stage4MapViewModel(
                     repository,
+                    claimDao,
                     localDecisionDao,
                     offlineBundleDao,
                     candidateImageRepository,
@@ -419,6 +513,7 @@ class Stage4MapViewModelTest {
             viewModel =
                 Stage4MapViewModel(
                     repository,
+                    claimDao,
                     localDecisionDao,
                     offlineBundleDao,
                     candidateImageRepository,
@@ -461,6 +556,7 @@ class Stage4MapViewModelTest {
             viewModel =
                 Stage4MapViewModel(
                     repository,
+                    claimDao,
                     localDecisionDao,
                     offlineBundleDao,
                     candidateImageRepository,
@@ -502,6 +598,7 @@ class Stage4MapViewModelTest {
             viewModel =
                 Stage4MapViewModel(
                     repository,
+                    claimDao,
                     localDecisionDao,
                     offlineBundleDao,
                     candidateImageRepository,
@@ -550,6 +647,7 @@ class Stage4MapViewModelTest {
             viewModel =
                 Stage4MapViewModel(
                     repository,
+                    claimDao,
                     localDecisionDao,
                     offlineBundleDao,
                     candidateImageRepository,
@@ -597,6 +695,7 @@ class Stage4MapViewModelTest {
             viewModel =
                 Stage4MapViewModel(
                     repository,
+                    claimDao,
                     localDecisionDao,
                     offlineBundleDao,
                     candidateImageRepository,
@@ -638,6 +737,7 @@ class Stage4MapViewModelTest {
             viewModel =
                 Stage4MapViewModel(
                     repository,
+                    claimDao,
                     localDecisionDao,
                     offlineBundleDao,
                     candidateImageRepository,
@@ -708,6 +808,7 @@ class Stage4MapViewModelTest {
             viewModel =
                 Stage4MapViewModel(
                     repository,
+                    claimDao,
                     localDecisionDao,
                     offlineBundleDao,
                     candidateImageRepository,
@@ -748,6 +849,7 @@ class Stage4MapViewModelTest {
             viewModel =
                 Stage4MapViewModel(
                     repository,
+                    claimDao,
                     localDecisionDao,
                     offlineBundleDao,
                     candidateImageRepository,
@@ -786,6 +888,7 @@ class Stage4MapViewModelTest {
             viewModel =
                 Stage4MapViewModel(
                     repository,
+                    claimDao,
                     localDecisionDao,
                     offlineBundleDao,
                     candidateImageRepository,
@@ -830,6 +933,7 @@ class Stage4MapViewModelTest {
             viewModel =
                 Stage4MapViewModel(
                     repository,
+                    claimDao,
                     localDecisionDao,
                     offlineBundleDao,
                     candidateImageRepository,
@@ -869,6 +973,7 @@ class Stage4MapViewModelTest {
             viewModel =
                 Stage4MapViewModel(
                     repository,
+                    claimDao,
                     localDecisionDao,
                     offlineBundleDao,
                     candidateImageRepository,
