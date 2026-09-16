@@ -308,7 +308,7 @@ class AuthenticatedTileHttpInterceptor
 
         companion object {
             private const val CANDIDATE_TILE_PATH = "image_geotiff_candidate_tile"
-            private const val MIN_TILE_ZOOM = 18
+            private const val MIN_TILE_ZOOM = 20
             private const val MAX_TILE_ZOOM = 22
             private const val READ_BUFFER_BYTES = 8 * 1024
             private val PNG_SIGNATURE =

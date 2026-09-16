@@ -667,7 +667,7 @@ class PreDownloadOrchestrator(
 
         private const val SATELLITE_MIN_ZOOM = 18
         private const val SATELLITE_MAX_ZOOM = 22
-        private const val TILE_MIN_ZOOM = 18
+        private const val TILE_MIN_ZOOM = 20
         private const val TILE_MAX_ZOOM = 22
         private const val TILE_CONCURRENCY = 6
         private const val MAX_TILE_ATTEMPTS = 3

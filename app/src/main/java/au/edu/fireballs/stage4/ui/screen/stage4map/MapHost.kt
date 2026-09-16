@@ -2,7 +2,6 @@ package au.edu.fireballs.stage4.ui.screen.stage4map
 
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.key
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import au.edu.fireballs.stage4.domain.model.Stage4Candidate
@@ -39,47 +38,45 @@ internal fun MapHost(
             projection = Projection.GLOBE
         }
 
-    key(candidateId) {
-        MapboxMap(
-            modifier =
-                Modifier
-                    .fillMaxSize()
-                    .testTag("map-host-root"),
-            mapViewportState = mapViewportState,
-            style = {
-                MapStyle(
-                    style = BASE_STYLE_URI,
-                    styleState = styleState,
-                )
-            },
-        ) {
-            MapHostEffects(
-                locationPermissionGranted = locationPermissionGranted,
-                showAccuracyRing = state.showGeolocationAccuracyCircle,
+    MapboxMap(
+        modifier =
+            Modifier
+                .fillMaxSize()
+                .testTag("map-host-root"),
+        mapViewportState = mapViewportState,
+        style = {
+            MapStyle(
+                style = BASE_STYLE_URI,
+                styleState = styleState,
             )
+        },
+    ) {
+        MapHostEffects(
+            locationPermissionGranted = locationPermissionGranted,
+            showAccuracyRing = state.showGeolocationAccuracyCircle,
+        )
 
-            SurveyedAreaOverlay(
-                polygons = state.surveyedAreas,
-                tilesetId = state.survey.tilesetId,
-                visible = layerToggleState.showSurveyedAreas,
-            )
-            BaseMarker(base = state.base)
+        SurveyedAreaOverlay(
+            polygons = state.surveyedAreas,
+            tilesetId = state.survey.tilesetId,
+            visible = layerToggleState.showSurveyedAreas,
+        )
+        BaseMarker(base = state.base)
 
-            CandidateMarkers(
-                state = state,
-                toggleState = layerToggleState,
-                onMarkerClick = onMarkerClick,
-            )
-            UserLocationMarkers(
-                userLocations = state.userLocations,
-                onUserLocationClick = onUserLocationClick,
-            )
-            CustomRasterOverlay(
-                surveyId = state.survey.id,
-                candidateId = candidateId,
-                tileUrlPattern = tileUrlPattern,
-            )
-        }
+        CandidateMarkers(
+            state = state,
+            toggleState = layerToggleState,
+            onMarkerClick = onMarkerClick,
+        )
+        UserLocationMarkers(
+            userLocations = state.userLocations,
+            onUserLocationClick = onUserLocationClick,
+        )
+        CustomRasterOverlay(
+            surveyId = state.survey.id,
+            candidateId = candidateId,
+            tileUrlPattern = tileUrlPattern,
+        )
     }
 }
 

@@ -69,7 +69,7 @@ class AuthenticatedTileHttpInterceptorTest {
 
     @Test
     fun outOfRangeZoomIsPassedThroughUnchanged() {
-        val url = server.url("/image_geotiff_candidate_tile/1/2/17/100/50/").toString()
+        val url = server.url("/image_geotiff_candidate_tile/1/2/19/100/50/").toString()
         val result = onRequest(url)
         assertTrue(result.isHttpRequest())
         assertEquals(url, result.getHttpRequest().getUrl())
