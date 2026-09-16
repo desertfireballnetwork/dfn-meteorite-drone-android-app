@@ -8,6 +8,7 @@ import au.edu.fireballs.stage4.data.local.dao.ClaimDao
 import au.edu.fireballs.stage4.data.local.dao.LocalDecisionDao
 import au.edu.fireballs.stage4.data.local.dao.OfflineBundleDao
 import au.edu.fireballs.stage4.data.local.dao.PendingPhotoUploadDao
+import au.edu.fireballs.stage4.data.local.dao.SatelliteRegionDao
 import au.edu.fireballs.stage4.data.local.dao.SurveyDao
 import au.edu.fireballs.stage4.data.local.dao.SyncRunDao
 import au.edu.fireballs.stage4.data.local.dao.TileManifestDao
@@ -36,6 +37,7 @@ object DatabaseModule {
                 Stage4Database.MIGRATION_2_3,
                 Stage4Database.MIGRATION_3_4,
                 Stage4Database.MIGRATION_4_5,
+                Stage4Database.MIGRATION_5_6,
             ).build()
 
     @Provides
@@ -59,6 +61,9 @@ object DatabaseModule {
 
     @Provides
     fun provideTileManifestDao(db: Stage4Database): TileManifestDao = db.tileManifestDao()
+
+    @Provides
+    fun provideSatelliteRegionDao(db: Stage4Database): SatelliteRegionDao = db.satelliteRegionDao()
 
     @Provides
     fun provideSyncRunDao(db: Stage4Database): SyncRunDao = db.syncRunDao()

@@ -152,7 +152,7 @@ class TileStore(
         }
 
     companion object {
-        const val MAX_TILE_BYTES = 1_048_576
+        const val MAX_TILE_BYTES = 16 * 1024 * 1024
         const val DEFAULT_QUOTA_BYTES = 512L * 1024L * 1024L
         private const val MAX_TILE_ZOOM = 30
     }

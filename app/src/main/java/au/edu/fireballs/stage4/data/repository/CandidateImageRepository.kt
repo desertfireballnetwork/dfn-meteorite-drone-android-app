@@ -30,7 +30,7 @@ class CandidateImageRepository
             surveyId: Long,
             inferenceResultId: Long,
         ): File? {
-            val file = File(context.filesDir, "tiles/$surveyId/$inferenceResultId.jpg")
+            val file = File(context.filesDir, "crops/$surveyId/$inferenceResultId.jpg")
             return if (file.exists() && file.length() > 0L) file else null
         }
 

@@ -4,8 +4,11 @@ import android.content.Context
 import android.net.ConnectivityManager
 import au.edu.fireballs.stage4.data.tiles.AuthenticatedTileHttpInterceptor
 import au.edu.fireballs.stage4.data.tiles.BufferRadiusRepository
+import au.edu.fireballs.stage4.data.tiles.GeotiffRadiusRepository
 import au.edu.fireballs.stage4.data.tiles.OfflineManagerWrapper
 import au.edu.fireballs.stage4.data.tiles.OfflineRegionWrapper
+import au.edu.fireballs.stage4.data.tiles.RoomSatelliteRegionStore
+import au.edu.fireballs.stage4.data.tiles.SatelliteRegionStore
 import au.edu.fireballs.stage4.data.tiles.TileStore
 import dagger.Module
 import dagger.Provides
@@ -58,6 +61,19 @@ object TileModule {
         BufferRadiusRepository(
             context.getSharedPreferences(BUFFER_SETTINGS, Context.MODE_PRIVATE),
         )
+
+    @Provides
+    @Singleton
+    fun provideGeotiffRadiusRepository(
+        @ApplicationContext context: Context,
+    ): GeotiffRadiusRepository =
+        GeotiffRadiusRepository(
+            context.getSharedPreferences(BUFFER_SETTINGS, Context.MODE_PRIVATE),
+        )
+
+    @Provides
+    @Singleton
+    fun provideSatelliteRegionStore(store: RoomSatelliteRegionStore): SatelliteRegionStore = store
 
     @Provides
     @Singleton

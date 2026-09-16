@@ -9,6 +9,7 @@ import au.edu.fireballs.stage4.data.repository.ClaimRepository
 import au.edu.fireballs.stage4.data.repository.ClaimResult
 import au.edu.fireballs.stage4.data.repository.Stage4Repository
 import au.edu.fireballs.stage4.data.tiles.BufferRadiusRepository
+import au.edu.fireballs.stage4.data.tiles.GeotiffRadiusRepository
 import au.edu.fireballs.stage4.sync.PreDownloadOrchestrator
 import au.edu.fireballs.stage4.sync.PreDownloadWorker
 import kotlinx.coroutines.Dispatchers
@@ -38,6 +39,7 @@ class PreDownloadViewModelTest {
     private lateinit var claimRepository: ClaimRepository
     private lateinit var stage4Repository: Stage4Repository
     private lateinit var bufferRadiusRepository: BufferRadiusRepository
+    private lateinit var geotiffRadiusRepository: GeotiffRadiusRepository
     private lateinit var workManager: FakePreDownloadWorkManager
     private lateinit var viewModel: PreDownloadViewModel
 
@@ -57,12 +59,15 @@ class PreDownloadViewModelTest {
         }
         bufferRadiusRepository = mock<BufferRadiusRepository>()
         whenever(bufferRadiusRepository.getBufferRadiusMeters()).thenReturn(100.0f)
+        geotiffRadiusRepository = mock<GeotiffRadiusRepository>()
+        whenever(geotiffRadiusRepository.getRadiusMeters()).thenReturn(15.0f)
         workManager = FakePreDownloadWorkManager()
         viewModel =
             PreDownloadViewModel(
                 claimRepository,
                 stage4Repository,
                 bufferRadiusRepository,
+                geotiffRadiusRepository,
                 workManager,
             )
     }
@@ -80,7 +85,7 @@ class PreDownloadViewModelTest {
 
             val ready = viewModel.uiState.value as PreDownloadUiState.Ready
             assertEquals(1, ready.claimedCandidateCount)
-            assertEquals(1_600_000L, ready.estimatedSizeBytes)
+            assertEquals(33_300_000L, ready.estimatedSizeBytes)
             assertFalse(ready.isStale)
         }
 

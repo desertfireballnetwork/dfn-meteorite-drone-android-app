@@ -9,6 +9,7 @@ import au.edu.fireballs.stage4.data.local.dao.ClaimDao
 import au.edu.fireballs.stage4.data.local.dao.LocalDecisionDao
 import au.edu.fireballs.stage4.data.local.dao.OfflineBundleDao
 import au.edu.fireballs.stage4.data.local.dao.PendingPhotoUploadDao
+import au.edu.fireballs.stage4.data.local.dao.SatelliteRegionDao
 import au.edu.fireballs.stage4.data.local.dao.SurveyDao
 import au.edu.fireballs.stage4.data.local.dao.SyncRunDao
 import au.edu.fireballs.stage4.data.local.dao.TileManifestDao
@@ -23,8 +24,9 @@ import au.edu.fireballs.stage4.data.local.dao.TileManifestDao
         OfflineBundleEntity::class,
         TileManifestEntity::class,
         SyncRunEntity::class,
+        SatelliteRegionEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = true,
 )
 abstract class Stage4Database : RoomDatabase() {
@@ -43,6 +45,8 @@ abstract class Stage4Database : RoomDatabase() {
     abstract fun tileManifestDao(): TileManifestDao
 
     abstract fun syncRunDao(): SyncRunDao
+
+    abstract fun satelliteRegionDao(): SatelliteRegionDao
 
     companion object {
         val MIGRATION_1_2 =
@@ -137,6 +141,28 @@ abstract class Stage4Database : RoomDatabase() {
                             total INTEGER NOT NULL,
                             done INTEGER NOT NULL
                         )
+                        """.trimIndent(),
+                    )
+                }
+            }
+        val MIGRATION_5_6 =
+            object : Migration(5, 6) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    db.execSQL(
+                        """
+                        CREATE TABLE IF NOT EXISTS satellite_region (
+                            rowId INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                            surveyId INTEGER NOT NULL,
+                            signature TEXT NOT NULL,
+                            completed INTEGER NOT NULL
+                        )
+                        """.trimIndent(),
+                    )
+                    db.execSQL(
+                        """
+                        CREATE UNIQUE INDEX IF NOT EXISTS
+                        index_satellite_region_surveyId_signature
+                        ON satellite_region(surveyId, signature)
                         """.trimIndent(),
                     )
                 }
