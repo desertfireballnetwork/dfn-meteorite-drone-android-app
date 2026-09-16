@@ -46,6 +46,7 @@ import com.mapbox.maps.extension.compose.animation.viewport.rememberMapViewportS
 import kotlinx.coroutines.delay
 
 private const val LOCATION_MESSAGE_AUTO_DISMISS_MS = 4_000L
+private const val SELECTED_CANDIDATE_ZOOM = 20.0
 
 @Composable
 fun Stage4MapScreen(
@@ -85,16 +86,32 @@ fun Stage4MapScreen(
 
         is Stage4MapUiState.Loaded -> {
             var selectedCandidateId by rememberSaveable { mutableStateOf<Long?>(null) }
+            var modalCandidateId by rememberSaveable { mutableStateOf<Long?>(null) }
             var selectedUser by remember { mutableStateOf<UserLocation?>(null) }
 
+            val candidates =
+                state.state.unprocessedCandidates +
+                    state.state.yesMeteorites +
+                    state.state.noMeteorites
             val selectedCandidate =
                 selectedCandidateId?.let { id ->
-                    (
-                        state.state.unprocessedCandidates +
-                            state.state.yesMeteorites +
-                            state.state.noMeteorites
-                    ).firstOrNull { it.inferenceResultId == id }
+                    candidates.firstOrNull { it.inferenceResultId == id }
                 }
+            val modalCandidate =
+                modalCandidateId?.let { id ->
+                    candidates.firstOrNull { it.inferenceResultId == id }
+                }
+
+            LaunchedEffect(selectedCandidate?.inferenceResultId) {
+                selectedCandidate?.geoCentroid?.let { centroid ->
+                    mapViewportState.setCameraOptions(
+                        cameraOptions {
+                            center(Point.fromLngLat(centroid.longitude, centroid.latitude))
+                            zoom(SELECTED_CANDIDATE_ZOOM)
+                        },
+                    )
+                }
+            }
 
             LoadedMap(
                 loaded = state,
@@ -117,6 +134,7 @@ fun Stage4MapScreen(
                 onMarkerClick = {
                     if (shouldAllowCandidateSelection(hasOfflineBundle, networkState)) {
                         selectedCandidateId = it.inferenceResultId
+                        modalCandidateId = it.inferenceResultId
                     }
                 },
                 onUserLocationClick = { selectedUser = it },
@@ -124,12 +142,12 @@ fun Stage4MapScreen(
                 onOpenDownloads = onOpenDownloads,
             )
 
-            selectedCandidate?.let { candidate ->
+            modalCandidate?.let { candidate ->
                 CandidateModal(
                     candidate = candidate,
                     surveyId = state.state.survey.id,
                     detectionTags = state.state.detectionTags,
-                    onClose = { selectedCandidateId = null },
+                    onClose = { modalCandidateId = null },
                     onAuthExpired = onAuthExpired,
                 )
             }

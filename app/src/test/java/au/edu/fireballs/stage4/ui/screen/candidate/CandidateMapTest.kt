@@ -45,11 +45,11 @@ class CandidateMapTest {
     fun tileSourceParameters_matchSpecification() {
         assertEquals("candidate_raster_tiles", CandidateMapDefaults.SOURCE_KEY)
         assertEquals("candidate-tiles", CandidateMapDefaults.LAYER_ID)
-        assertEquals(128L, CandidateMapDefaults.TILE_SIZE)
-        assertEquals(20L, CandidateMapDefaults.MIN_ZOOM)
+        assertEquals(2048L, CandidateMapDefaults.TILE_SIZE)
+        assertEquals(18L, CandidateMapDefaults.MIN_ZOOM)
         assertEquals(22L, CandidateMapDefaults.MAX_ZOOM)
         assertEquals(24.0, CandidateMapDefaults.CANDIDATE_ZOOM, 0.001)
-        assertEquals(25.0, CandidateMapDefaults.MAX_CAMERA_ZOOM, 0.001)
+        assertEquals(24.0, CandidateMapDefaults.MAX_CAMERA_ZOOM, 0.001)
         assertEquals("candidate-map-root", CandidateMapDefaults.ROOT_TAG)
         assertEquals("candidate-map-marker", CandidateMapDefaults.MARKER_TAG)
     }

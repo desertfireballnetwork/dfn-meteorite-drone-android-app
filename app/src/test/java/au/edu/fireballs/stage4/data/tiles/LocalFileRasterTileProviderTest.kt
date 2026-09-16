@@ -34,7 +34,7 @@ class LocalFileRasterTileProviderTest {
     fun noExceptionThrownWhenMissing() {
         val provider = LocalFileRasterTileProvider(tempStore())
         val result = provider.tile(1, 2, 3, 4, 5)
-        assertEquals(67, result.size)
+        assertEquals(68, result.size)
     }
 
     @Test

@@ -9,7 +9,7 @@ import com.mapbox.maps.extension.compose.style.sources.generated.SchemeValue
 import com.mapbox.maps.extension.compose.style.sources.generated.rememberRasterSourceState
 
 private const val TILE_SIZE = 2048L
-private const val MIN_ZOOM = 20L
+private const val MIN_ZOOM = 18L
 private const val MAX_ZOOM = 22L
 
 @Composable

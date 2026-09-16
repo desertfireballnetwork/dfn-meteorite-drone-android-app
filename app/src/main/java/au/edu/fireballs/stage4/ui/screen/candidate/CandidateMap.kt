@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalInspectionMode
@@ -71,6 +72,17 @@ fun CandidateMap(
         rememberStyleState {
             projection = Projection.GLOBE
         }
+
+    LaunchedEffect(candidate.inferenceResultId, centroid) {
+        centroid?.let { coord ->
+            mapViewportState.setCameraOptions(
+                cameraOptions {
+                    center(Point.fromLngLat(coord.longitude, coord.latitude))
+                    zoom(CandidateMapDefaults.CANDIDATE_ZOOM)
+                },
+            )
+        }
+    }
 
     MapboxMap(
         modifier =
