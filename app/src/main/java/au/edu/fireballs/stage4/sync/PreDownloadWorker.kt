@@ -11,6 +11,7 @@ import au.edu.fireballs.stage4.data.remote.TileService
 import au.edu.fireballs.stage4.data.repository.CandidateImageRepository
 import au.edu.fireballs.stage4.data.repository.ClaimRepository
 import au.edu.fireballs.stage4.data.repository.Stage4Repository
+import au.edu.fireballs.stage4.data.repository.StorageCoordinator
 import au.edu.fireballs.stage4.data.tiles.BufferRadiusRepository
 import au.edu.fireballs.stage4.data.tiles.GeotiffRadiusRepository
 import au.edu.fireballs.stage4.data.tiles.LowZoomTileCompositor
@@ -42,6 +43,7 @@ class PreDownloadWorker
         private val candidateImageRepository: CandidateImageRepository,
         private val geotiffRadiusRepository: GeotiffRadiusRepository,
         private val satelliteRegionStore: SatelliteRegionStore,
+        private val storageCoordinator: StorageCoordinator,
         @IoDispatcher private val ioDispatcher: CoroutineDispatcher,
     ) : CoroutineWorker(appContext, params) {
         override suspend fun doWork(): Result {
@@ -76,6 +78,7 @@ class PreDownloadWorker
                     geotiffRadiusRepository = geotiffRadiusRepository,
                     satelliteRegionStore = satelliteRegionStore,
                     filesDir = applicationContext.filesDir,
+                    storageCoordinator = storageCoordinator,
                     ioDispatcher = ioDispatcher,
                 )
             return when (

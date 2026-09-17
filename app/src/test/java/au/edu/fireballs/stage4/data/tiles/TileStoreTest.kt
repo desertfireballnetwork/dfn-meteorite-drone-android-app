@@ -1,5 +1,6 @@
 package au.edu.fireballs.stage4.data.tiles
 
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -118,6 +119,33 @@ class TileStoreTest {
         store.write(1, 2, 3, 4, 6, byteArrayOf(1, 2, 3, 4))
         assertTrue(store.contains(1, 2, 3, 4, 6))
     }
+
+    @Test
+    fun measuredUsageKeepsPersistedAndTemporaryFilesNonOverlapping() =
+        runTest {
+            val base = Files.createTempDirectory("tiles-usage").toFile()
+            val store = TileStore(base)
+            store.write(1, 2, 3, 4, 5, ByteArray(7))
+            val temporary = base.resolve("1/2/3/4/orphan.png.tmp")
+            temporary.writeBytes(ByteArray(11))
+
+            val usage = store.measuredUsage()
+
+            assertTrue(usage.geotiffBytes == 7L)
+            assertTrue(usage.ownedTempCacheBytes == 11L)
+        }
+
+    @Test
+    fun measuredUsageForMissingRootReturnsZeros() =
+        runTest {
+            val parent = Files.createTempDirectory("tiles-missing").toFile()
+            val store = TileStore(parent.resolve("missing"))
+
+            val usage = store.measuredUsage()
+
+            assertTrue(usage.geotiffBytes == 0L)
+            assertTrue(usage.ownedTempCacheBytes == 0L)
+        }
 
     @Test
     fun replacingTileAccountsOnlyForSizeDelta() {
