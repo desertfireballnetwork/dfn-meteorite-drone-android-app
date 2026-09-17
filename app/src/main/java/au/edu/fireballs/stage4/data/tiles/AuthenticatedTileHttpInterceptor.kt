@@ -19,11 +19,9 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlinx.coroutines.withContext
 import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.HttpUrl
@@ -95,20 +93,15 @@ class AuthenticatedTileHttpInterceptor
             val job =
                 scope.launch {
                     val response =
-                        withContext(NonCancellable) {
-                            try {
-                                fetchCandidateTile(request, tile)
-                            } catch (e: CancellationException) {
-                                imageResponse(
-                                    request,
-                                    LocalFileRasterTileProvider.TRANSPARENT_PNG,
-                                )
-                            } catch (e: Exception) {
-                                imageResponse(
-                                    request,
-                                    LocalFileRasterTileProvider.TRANSPARENT_PNG,
-                                )
-                            }
+                        try {
+                            fetchCandidateTile(request, tile)
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            imageResponse(
+                                request,
+                                LocalFileRasterTileProvider.TRANSPARENT_PNG,
+                            )
                         }
                     continuation.run(HttpRequestOrResponse(response))
                 }
@@ -274,7 +267,13 @@ class AuthenticatedTileHttpInterceptor
                             e: IOException,
                         ) {
                             if (continuation.isActive) {
-                                continuation.resumeWithException(e)
+                                if (call.isCanceled()) {
+                                    continuation.resumeWithException(
+                                        CancellationException("Call cancelled"),
+                                    )
+                                } else {
+                                    continuation.resumeWithException(e)
+                                }
                             }
                         }
 

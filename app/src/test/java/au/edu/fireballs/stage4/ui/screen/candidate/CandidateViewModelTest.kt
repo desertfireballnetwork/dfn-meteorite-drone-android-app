@@ -351,10 +351,10 @@ class CandidateViewModelTest {
             advanceUntilIdle()
 
             viewModel.clearVerdict()
+            awaitVerdict(null)
 
             val row = db.localDecisionDao().getVerdict(42L).first { it == null }
             assertNull(row)
-            assertNull(viewModel.verdict.value)
             assertNull(viewModel.detectionTagId.value)
         }
 

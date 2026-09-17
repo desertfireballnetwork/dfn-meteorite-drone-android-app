@@ -13,7 +13,7 @@ import au.edu.fireballs.stage4.data.remote.EvidenceService
 import io.mockk.coEvery
 import io.mockk.mockk
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -86,7 +86,7 @@ class EvidencePhotoRepositoryTest {
     @Test
     fun saveLocally_writesFileAndInsertsRow() =
         runTest(testDispatcher) {
-            val uri = writeSourceBitmap(4000, 3000)
+            val uri = writeSourceBitmap(100, 100)
 
             val entity = repository.saveLocally(uri, surveyId = 10L, inferenceResultId = 42L)
 
@@ -105,7 +105,7 @@ class EvidencePhotoRepositoryTest {
     @Test
     fun saveLocally_boundsLongEdgeTo2048() =
         runTest(testDispatcher) {
-            val uri = writeSourceBitmap(6000, 4000)
+            val uri = writeSourceBitmap(3000, 2000)
 
             val entity = repository.saveLocally(uri, surveyId = 10L, inferenceResultId = 42L)
 
@@ -121,16 +121,31 @@ class EvidencePhotoRepositoryTest {
     @Test
     fun saveLocally_cancelledLeavesNoOrphan() =
         runTest(testDispatcher) {
-            val uri = writeSourceBitmap(6000, 6000)
+            val uri = writeSourceBitmap(100, 100)
+            val blockingDao =
+                mockk<PendingPhotoUploadDao> {
+                    coEvery { insert(any()) } coAnswers {
+                        delay(Long.MAX_VALUE)
+                        1L
+                    }
+                }
+            val repo =
+                EvidencePhotoRepository(
+                    context,
+                    blockingDao,
+                    evidenceService,
+                    testDispatcher,
+                )
 
             val job =
                 launch(testDispatcher) {
-                    repository.saveLocally(uri, surveyId = 10L, inferenceResultId = 42L)
+                    repo.saveLocally(uri, surveyId = 10L, inferenceResultId = 42L)
                 }
-            job.cancelAndJoin()
+            testDispatcher.scheduler.runCurrent()
+            job.cancel()
+            testDispatcher.scheduler.runCurrent()
+            job.join()
 
-            val rows = dao.getLocalPhotosForCandidate(42L).first()
-            assertTrue(rows.isEmpty())
             assertTrue(orphanJpgs().isEmpty())
         }
 
