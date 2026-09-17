@@ -154,6 +154,19 @@ class OfflineRegionWrapperTest {
         assertEquals(listOf(10L), counts)
     }
 
+    @Test
+    fun inventoryListsRegionsOnceAndReturnsUnsupportedBytesAsNull() {
+        source.regions = listOf(region, mock(OfflineRegionHandle::class.java))
+        val inventories = mutableListOf<Result<OfflineRegionInventory>>()
+
+        wrapper.inventory { inventories.add(it) }
+        idleMain()
+
+        assertEquals(1, source.getRegionsCalls)
+        assertEquals(2, inventories.single().getOrThrow().regionCount)
+        assertEquals(null, inventories.single().getOrThrow().measuredBytes)
+    }
+
     private fun bbox(): Bbox = Bbox(-1.0, -1.0, 1.0, 1.0)
 
     private fun completeStatus(): OfflineRegionStatus =
@@ -201,6 +214,8 @@ class OfflineRegionWrapperTest {
 
     private class FakeSource : OfflineRegionSource {
         lateinit var createCallback: (Result<OfflineRegionHandle>) -> Unit
+        var regions: List<OfflineRegionHandle> = emptyList()
+        var getRegionsCalls = 0
 
         override fun createOfflineRegion(
             definition: OfflineRegionTilePyramidDefinition,
@@ -210,7 +225,8 @@ class OfflineRegionWrapperTest {
         }
 
         override fun getOfflineRegions(callback: (Result<List<OfflineRegionHandle>>) -> Unit) {
-            callback(Result.success(emptyList()))
+            getRegionsCalls++
+            callback(Result.success(regions))
         }
     }
 }

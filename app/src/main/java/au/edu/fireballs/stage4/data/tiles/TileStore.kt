@@ -1,7 +1,20 @@
 package au.edu.fireballs.stage4.data.tiles
 
 import java.io.File
+import java.io.IOException
 import java.io.InputStream
+import java.nio.file.AccessDeniedException
+import java.nio.file.FileVisitResult
+import java.nio.file.Files
+import java.nio.file.NoSuchFileException
+import java.nio.file.Path
+import java.nio.file.SimpleFileVisitor
+import java.nio.file.attribute.BasicFileAttributes
+
+data class TileStoreMeasuredUsage(
+    val geotiffBytes: Long,
+    val ownedTempCacheBytes: Long,
+)
 
 class TileStore(
     private val baseDir: File,
@@ -116,6 +129,11 @@ class TileStore(
 
     fun remainingQuotaBytes(): Long = quotaBytes - totalBytes
 
+    suspend fun measuredUsage(): TileStoreMeasuredUsage =
+        synchronized(lock) {
+            measureOwnedUsage(baseDir)
+        }
+
     fun surveyTilesDirectory(surveyId: Long): File {
         require(surveyId >= 0L) { "Survey id must be non-negative" }
         return File(baseDir, surveyId.toString())
@@ -165,10 +183,50 @@ class TileStore(
     ): File = File(baseDir, "$surveyId/$candidateId/$z/$x/$y.png")
 
     private fun computeTotalBytes(root: File): Long =
-        root
-            .walkTopDown()
-            .filter { it.isFile }
-            .sumOf { it.length() }
+        measureOwnedUsage(root).let { usage ->
+            Math.addExact(usage.geotiffBytes, usage.ownedTempCacheBytes)
+        }
+
+    private fun measureOwnedUsage(root: File): TileStoreMeasuredUsage {
+        val path = root.toPath()
+        if (!Files.exists(path, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+            return TileStoreMeasuredUsage(0L, 0L)
+        }
+        var persisted = 0L
+        var temporary = 0L
+        Files.walkFileTree(
+            path,
+            object : SimpleFileVisitor<Path>() {
+                override fun visitFile(
+                    file: Path,
+                    attrs: BasicFileAttributes,
+                ): FileVisitResult {
+                    if (attrs.isRegularFile) {
+                        if (file.fileName.toString().endsWith(TEMP_SUFFIX)) {
+                            temporary = Math.addExact(temporary, attrs.size())
+                        } else {
+                            persisted = Math.addExact(persisted, attrs.size())
+                        }
+                    }
+                    return FileVisitResult.CONTINUE
+                }
+
+                override fun visitFileFailed(
+                    file: Path,
+                    error: IOException,
+                ): FileVisitResult =
+                    if (error is NoSuchFileException || error is AccessDeniedException) {
+                        FileVisitResult.CONTINUE
+                    } else {
+                        throw error
+                    }
+            },
+        )
+        return TileStoreMeasuredUsage(
+            geotiffBytes = persisted,
+            ownedTempCacheBytes = temporary,
+        )
+    }
 
     private fun dirTotalSize(dir: File): Long =
         if (dir.isDirectory) {
@@ -181,5 +239,6 @@ class TileStore(
         const val MAX_TILE_BYTES = 16 * 1024 * 1024
         const val DEFAULT_QUOTA_BYTES = 512L * 1024L * 1024L
         private const val MAX_TILE_ZOOM = 30
+        private const val TEMP_SUFFIX = ".tmp"
     }
 }

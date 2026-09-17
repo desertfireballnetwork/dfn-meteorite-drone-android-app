@@ -12,6 +12,7 @@ import au.edu.fireballs.stage4.data.repository.CandidateImageRepository
 import au.edu.fireballs.stage4.data.repository.ClaimRepository
 import au.edu.fireballs.stage4.data.repository.ClaimResult
 import au.edu.fireballs.stage4.data.repository.Stage4Repository
+import au.edu.fireballs.stage4.data.repository.StorageCoordinator
 import au.edu.fireballs.stage4.data.tiles.Bbox
 import au.edu.fireballs.stage4.data.tiles.GeotiffRadiusRepository
 import au.edu.fireballs.stage4.data.tiles.LocalFileRasterTileProvider
@@ -72,6 +73,7 @@ class PreDownloadOrchestrator(
     private val geotiffRadiusRepository: GeotiffRadiusRepository,
     private val satelliteRegionStore: SatelliteRegionStore,
     private val filesDir: File,
+    private val storageCoordinator: StorageCoordinator? = null,
     @IoDispatcher private val ioDispatcher: CoroutineDispatcher,
     private val freeBytes: () -> Long = { StatFs(filesDir.absolutePath).availableBytes },
 ) {
@@ -93,6 +95,22 @@ class PreDownloadOrchestrator(
 
     @Suppress("TooGenericExceptionCaught")
     suspend fun run(
+        surveyId: Long,
+        bufferMeters: Float,
+        progress: suspend (Data) -> Unit,
+    ): PreDownloadOutcome {
+        val coordinator = storageCoordinator
+        return if (coordinator == null) {
+            runDownload(surveyId, bufferMeters, progress)
+        } else {
+            coordinator.withDownloadLease {
+                runDownload(surveyId, bufferMeters, progress)
+            }
+        }
+    }
+
+    @Suppress("TooGenericExceptionCaught")
+    private suspend fun runDownload(
         surveyId: Long,
         bufferMeters: Float,
         progress: suspend (Data) -> Unit,

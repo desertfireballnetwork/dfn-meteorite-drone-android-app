@@ -13,6 +13,11 @@ import com.mapbox.maps.OfflineRegionTilePyramidDefinition
 import java.util.concurrent.CancellationException
 import java.util.concurrent.atomic.AtomicBoolean
 
+data class OfflineRegionInventory(
+    val regionCount: Int,
+    val measuredBytes: Long?,
+)
+
 class OfflineRegionWrapper(
     private val source: OfflineRegionSource = MapboxOfflineRegionSource(),
     private val mainHandler: Handler = Handler(Looper.getMainLooper()),
@@ -161,6 +166,21 @@ class OfflineRegionWrapper(
     fun listRegions(callback: (Result<List<OfflineRegionHandle>>) -> Unit) {
         source.getOfflineRegions { result ->
             mainHandler.post { callback(result) }
+        }
+    }
+
+    fun inventory(callback: (Result<OfflineRegionInventory>) -> Unit) {
+        source.getOfflineRegions { result ->
+            mainHandler.post {
+                callback(
+                    result.map { regions ->
+                        OfflineRegionInventory(
+                            regionCount = regions.size,
+                            measuredBytes = null,
+                        )
+                    },
+                )
+            }
         }
     }
 
