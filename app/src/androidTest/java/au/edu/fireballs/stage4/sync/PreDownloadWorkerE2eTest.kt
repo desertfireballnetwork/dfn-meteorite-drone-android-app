@@ -144,7 +144,6 @@ class PreDownloadWorkerE2eTest {
                     satelliteRegionStore = satelliteRegionStore,
                     filesDir = cropsDir,
                     ioDispatcher = ioDispatcher,
-                    freeBytes = { Long.MAX_VALUE },
                 )
 
             val outcome = orchestrator.run(SURVEY_ID, BUFFER_METERS) {}

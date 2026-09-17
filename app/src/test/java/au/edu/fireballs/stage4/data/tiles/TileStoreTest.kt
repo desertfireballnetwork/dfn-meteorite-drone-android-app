@@ -104,20 +104,20 @@ class TileStoreTest {
     }
 
     @Test
-    fun aggregateQuotaRejectsExcessWrites() {
-        val base = Files.createTempDirectory("tiles-quota").toFile()
-        val store = TileStore(base, quotaBytes = 10)
+    fun writesAreNotRejectedByAggregateUsage() {
+        val base = Files.createTempDirectory("tiles-usage-limit").toFile()
+        val store = TileStore(base)
 
-        store.write(1, 2, 3, 4, 5, byteArrayOf(1, 2, 3, 4, 5, 6, 7))
+        store.write(1, 2, 3, 4, 5, ByteArray(1_000_000))
+        store.write(1, 2, 3, 4, 6, ByteArray(1_000_000))
+        store.write(1, 2, 3, 4, 7, ByteArray(1_000_000))
 
-        assertThrows(IllegalStateException::class.java) {
-            store.write(1, 2, 3, 4, 6, byteArrayOf(1, 2, 3, 4))
-        }
-        assertFalse(store.contains(1, 2, 3, 4, 6))
+        assertTrue(store.contains(1, 2, 3, 4, 5))
+        assertTrue(store.contains(1, 2, 3, 4, 6))
+        assertTrue(store.contains(1, 2, 3, 4, 7))
 
         store.deleteSurveyTiles(1)
-        store.write(1, 2, 3, 4, 6, byteArrayOf(1, 2, 3, 4))
-        assertTrue(store.contains(1, 2, 3, 4, 6))
+        assertFalse(store.contains(1, 2, 3, 4, 5))
     }
 
     @Test
@@ -150,7 +150,7 @@ class TileStoreTest {
     @Test
     fun replacingTileAccountsOnlyForSizeDelta() {
         val base = Files.createTempDirectory("tiles-replace").toFile()
-        val store = TileStore(base, quotaBytes = 10)
+        val store = TileStore(base)
 
         store.write(1, 2, 3, 4, 5, byteArrayOf(1, 2, 3, 4, 5, 6, 7))
         store.write(1, 2, 3, 4, 5, byteArrayOf(1, 2, 3, 4))

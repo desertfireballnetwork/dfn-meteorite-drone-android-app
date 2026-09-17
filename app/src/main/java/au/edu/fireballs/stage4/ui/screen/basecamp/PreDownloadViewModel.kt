@@ -7,6 +7,9 @@ import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkInfo
 import au.edu.fireballs.stage4.data.repository.ClaimRepository
+import au.edu.fireballs.stage4.data.repository.PreDownloadPreflightResult
+import au.edu.fireballs.stage4.data.repository.PreDownloadSpaceEstimate
+import au.edu.fireballs.stage4.data.repository.PreDownloadStoragePreflight
 import au.edu.fireballs.stage4.data.repository.Stage4Repository
 import au.edu.fireballs.stage4.data.tiles.BufferRadiusRepository
 import au.edu.fireballs.stage4.data.tiles.GeotiffRadiusRepository
@@ -28,7 +31,17 @@ sealed interface PreDownloadUiState {
 
     data class Ready(
         val claimedCandidateCount: Int,
-        val estimatedSizeBytes: Long,
+        val geotiffPresentCount: Int,
+        val geotiffMissingCount: Int,
+        val cropPresentCount: Int,
+        val cropMissingCount: Int,
+        val satellitePresentCount: Int,
+        val satelliteMissingCount: Int,
+        val estimatedIncrementalBytes: Long,
+        val availableBytes: Long,
+        val reserveBytes: Long,
+        val expectedRemainingBytes: Long,
+        val canStart: Boolean,
         val isStale: Boolean = false,
     ) : PreDownloadUiState
 
@@ -60,10 +73,6 @@ sealed interface PreDownloadEvent {
     ) : PreDownloadEvent
 }
 
-private const val GEOTIFF_BYTES_PER_CANDIDATE = 32_000_000L
-private const val CROP_BYTES_PER_CANDIDATE = 1_000_000L
-private const val SATELLITE_BYTES_PER_CANDIDATE = 300_000L
-
 @HiltViewModel
 class PreDownloadViewModel
     @Inject
@@ -72,6 +81,7 @@ class PreDownloadViewModel
         private val stage4Repository: Stage4Repository,
         private val bufferRadiusRepository: BufferRadiusRepository,
         private val geotiffRadiusRepository: GeotiffRadiusRepository,
+        private val preflight: PreDownloadStoragePreflight,
         private val preDownloadWorkManager: PreDownloadWorkManager,
     ) : ViewModel() {
         private val _uiState = MutableStateFlow<PreDownloadUiState>(PreDownloadUiState.Idle)
@@ -90,12 +100,33 @@ class PreDownloadViewModel
             viewModelScope.launch {
                 claimRepository.refreshClaimsToRoom(surveyId)
                 val claimed = claimRepository.countActiveClaimedCandidates(surveyId)
-                _uiState.value =
-                    PreDownloadUiState.Ready(
-                        claimedCandidateCount = claimed,
-                        estimatedSizeBytes = estimateSize(claimed),
-                        isStale = isLocalDataStale(surveyId),
+                val result =
+                    preflight.evaluate(
+                        surveyId,
+                        bufferRadiusRepository.getBufferRadiusMeters().toDouble(),
+                        geotiffRadiusRepository.getRadiusMeters().toDouble(),
                     )
+                _uiState.value =
+                    when (result) {
+                        is PreDownloadPreflightResult.Allowed ->
+                            result.estimate.toReadyState(
+                                claimedCandidateCount = claimed,
+                                canStart = true,
+                                isStale = isLocalDataStale(surveyId),
+                            )
+
+                        is PreDownloadPreflightResult.InsufficientDeviceSpace ->
+                            result.estimate.toReadyState(
+                                claimedCandidateCount = claimed,
+                                canStart = false,
+                                isStale = isLocalDataStale(surveyId),
+                            )
+
+                        PreDownloadPreflightResult.StorageOperationActive ->
+                            PreDownloadUiState.Error(
+                                "Another storage operation is already running",
+                            )
+                    }
             }
         }
 
@@ -180,9 +211,49 @@ class PreDownloadViewModel
                 }
 
                 WorkInfo.State.FAILED -> {
+                    val output = info.outputData
+                    val code = output.getString(PreDownloadOrchestrator.KEY_ERROR_CODE)
                     val message =
-                        info.outputData.getString(PreDownloadOrchestrator.KEY_ERROR)
-                            ?: "Download failed"
+                        when (code) {
+                            PreDownloadOrchestrator.CODE_INSUFFICIENT_DEVICE_SPACE -> {
+                                val required =
+                                    formatBytes(
+                                        output.getLong(
+                                            PreDownloadOrchestrator.KEY_REQUIRED_BYTES,
+                                            0,
+                                        ),
+                                    )
+                                val available =
+                                    formatBytes(
+                                        output.getLong(
+                                            PreDownloadOrchestrator.KEY_AVAILABLE_BYTES,
+                                            0,
+                                        ),
+                                    )
+                                val reserve =
+                                    formatBytes(
+                                        output.getLong(
+                                            PreDownloadOrchestrator.KEY_RESERVE_BYTES,
+                                            0,
+                                        ),
+                                    )
+                                "Not enough device space to prepare this survey offline. " +
+                                    "Needs about $required, $available available, " +
+                                    "$reserve must remain free."
+                            }
+
+                            PreDownloadOrchestrator.CODE_STORAGE_FULL_WHILE_WRITING ->
+                                "Device storage became full during download. " +
+                                    "Free some space, then retry."
+
+                            PreDownloadOrchestrator.CODE_STORAGE_OPERATION_ACTIVE ->
+                                "Another storage operation is already running. " +
+                                    "Let it finish, then retry."
+
+                            else ->
+                                output.getString(PreDownloadOrchestrator.KEY_ERROR)
+                                    ?: "Download failed"
+                        }
                     _uiState.value = PreDownloadUiState.Error(message)
                     observeJob?.cancel()
                     observeJob = null
@@ -207,12 +278,40 @@ class PreDownloadViewModel
             return fresh != local
         }
 
-        private fun estimateSize(claimedCount: Int): Long {
-            val candidates = claimedCount.toLong()
-            val geotiff = candidates * GEOTIFF_BYTES_PER_CANDIDATE
-            val crops = candidates * CROP_BYTES_PER_CANDIDATE
-            val satellite = candidates * SATELLITE_BYTES_PER_CANDIDATE
-            return geotiff + crops + satellite
+        private fun PreDownloadSpaceEstimate.toReadyState(
+            claimedCandidateCount: Int,
+            canStart: Boolean,
+            isStale: Boolean,
+        ): PreDownloadUiState.Ready =
+            PreDownloadUiState.Ready(
+                claimedCandidateCount = claimedCandidateCount,
+                geotiffPresentCount = inventory.geotiffPresentCount,
+                geotiffMissingCount = inventory.geotiffMissingCount,
+                cropPresentCount = inventory.cropPresentCount,
+                cropMissingCount = inventory.cropMissingCount,
+                satellitePresentCount = inventory.satellitePresentCount,
+                satelliteMissingCount = inventory.satelliteMissingCount,
+                estimatedIncrementalBytes = incrementalRequiredBytes,
+                availableBytes = availableBytes,
+                reserveBytes = reserveBytes,
+                expectedRemainingBytes = expectedRemainingBytes,
+                canStart = canStart,
+                isStale = isStale,
+            )
+
+        private fun formatBytes(bytes: Long): String {
+            val units = listOf("B", "KB", "MB", "GB", "TB")
+            var value = bytes.toDouble()
+            var unit = 0
+            while (value >= 1024 && unit < units.lastIndex) {
+                value /= 1024
+                unit++
+            }
+            return if (unit == 0) {
+                "$bytes ${units[unit]}"
+            } else {
+                "%.1f %s".format(value, units[unit])
+            }
         }
 
         private fun uniqueWorkName(surveyId: Long): String =
