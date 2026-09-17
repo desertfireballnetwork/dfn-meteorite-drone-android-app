@@ -190,8 +190,12 @@ class SyncOrchestratorTest {
             val second = async(dispatcher) { orchestrator.run(SURVEY_ID) {} }
             runCurrent()
             releaseUpload.complete(Unit)
-            awaitAll(first, second)
+            val outcomes = awaitAll(first, second)
 
+            assertEquals(
+                listOf(SyncOutcome.Success, SyncOutcome.Success),
+                outcomes,
+            )
             coVerify(exactly = 1) { syncRepository.uploadPhoto(photo, SURVEY_ID) }
         }
 
