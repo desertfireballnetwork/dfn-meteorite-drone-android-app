@@ -17,6 +17,7 @@ import au.edu.fireballs.stage4.data.remote.dto.ClaimDto
 import au.edu.fireballs.stage4.data.remote.dto.ListClaimsResponseDto
 import au.edu.fireballs.stage4.data.repository.CandidateImageRepository
 import au.edu.fireballs.stage4.data.repository.ClaimRepository
+import au.edu.fireballs.stage4.data.repository.ClaimResult
 import au.edu.fireballs.stage4.data.repository.PreDownloadInventory
 import au.edu.fireballs.stage4.data.repository.PreDownloadPreflightResult
 import au.edu.fireballs.stage4.data.repository.PreDownloadSpaceCalculator
@@ -58,6 +59,8 @@ import org.mockito.Mockito.verify
 import org.mockito.Mockito.verifyNoInteractions
 import org.mockito.Mockito.`when`
 import org.mockito.kotlin.any
+import org.mockito.kotlin.eq
+import org.mockito.kotlin.whenever
 import retrofit2.Response
 import java.io.File
 import java.io.IOException
@@ -425,7 +428,7 @@ class PreDownloadWorkerTest {
                     0L,
                     0L,
                 )
-            `when`(preflight.evaluate(any(), any(), any()))
+            `when`(preflight.evaluate(any(), any(), any(), any()))
                 .thenReturn(PreDownloadPreflightResult.InsufficientDeviceSpace(estimate))
 
             val filesDir = Files.createTempDirectory("crops").toFile()
@@ -579,9 +582,12 @@ class PreDownloadWorkerTest {
             val storageCoordinator = mock(StorageCoordinator::class.java)
             `when`(storageCoordinator.state)
                 .thenReturn(MutableStateFlow(StorageMutationState.Downloading))
+            val claimRepository = mock(ClaimRepository::class.java)
+            `when`(claimRepository.refreshClaimsToRoom(SURVEY_ID))
+                .thenReturn(ClaimResult.Refreshed(count = 0))
             val orchestrator =
                 PreDownloadOrchestrator(
-                    claimRepository = mock(ClaimRepository::class.java),
+                    claimRepository = claimRepository,
                     stage4Repository = mock(Stage4Repository::class.java),
                     candidateDao = FakeCandidateDao(),
                     claimDao = FakeClaimDao(),
@@ -607,6 +613,89 @@ class PreDownloadWorkerTest {
                 PreDownloadOrchestrator.CODE_STORAGE_OPERATION_ACTIVE,
                 output.getString(PreDownloadOrchestrator.KEY_ERROR_CODE),
             )
+        }
+
+    @Test
+    fun staleReplacementAdmitsFullPlanAndRejectsBeforeDownload() =
+        runTest {
+            val candidateDao = FakeCandidateDao(listOf(candidate(1L, 0.0, 0.0)))
+            val claimDao = FakeClaimDao()
+            val surveyDao = FakeSurveyDao(latestTaskCreated = "local")
+            val tileStore = TileStore(Files.createTempDirectory("tiles").toFile())
+            val offlineBundleDao = FakeOfflineBundleDao()
+            val offlineBundleRepository =
+                OfflineBundleRepository(
+                    tileStore,
+                    FakeTileManifestDao(),
+                    offlineBundleDao,
+                    testDispatcher,
+                )
+            val stage4Service = mock(Stage4Service::class.java)
+            `when`(stage4Service.getClaims(SURVEY_ID.toString(), true))
+                .thenReturn(
+                    ListClaimsResponseDto(
+                        listOf(
+                            ClaimDto(
+                                inferenceResultId = 1L,
+                                userId = 2L,
+                                username = "me",
+                                isMe = true,
+                            ),
+                        ),
+                    ),
+                )
+            val claimRepository =
+                ClaimRepository(
+                    stage4Service,
+                    claimDao,
+                    testDispatcher,
+                )
+            val stage4Repository = mock(Stage4Repository::class.java)
+            `when`(stage4Repository.fetchLatestTaskCreated(SURVEY_ID))
+                .thenReturn("server")
+            val tileService = mock(TileService::class.java)
+            val offlineManagerWrapper = mock(OfflineManagerWrapper::class.java)
+            val preflight = mock(PreDownloadStoragePreflight::class.java)
+            val estimate =
+                PreDownloadSpaceCalculator.calculate(
+                    PreDownloadInventory(0, 10, 0, 1, 0, 1),
+                    0L,
+                    0L,
+                )
+            whenever(preflight.evaluate(any(), any(), any(), eq(true)))
+                .thenReturn(PreDownloadPreflightResult.InsufficientDeviceSpace(estimate))
+            val orchestrator =
+                PreDownloadOrchestrator(
+                    claimRepository = claimRepository,
+                    stage4Repository = stage4Repository,
+                    candidateDao = candidateDao,
+                    claimDao = claimDao,
+                    surveyDao = surveyDao,
+                    tileStore = tileStore,
+                    lowZoomCompositor = noOpCompositor,
+                    tileService = tileService,
+                    offlineManagerWrapper = offlineManagerWrapper,
+                    offlineBundleRepository = offlineBundleRepository,
+                    candidateImageRepository = candidateImageRepository,
+                    geotiffRadiusRepository = geotiffRadiusRepository,
+                    satelliteRegionStore = satelliteRegionStore,
+                    filesDir = Files.createTempDirectory("crops").toFile(),
+                    preflight = preflight,
+                    ioDispatcher = testDispatcher,
+                )
+
+            val outcome = orchestrator.run(SURVEY_ID, BUFFER_METERS) {}
+
+            assertTrue("Expected failure but got $outcome", outcome is PreDownloadOutcome.Failure)
+            val output = (outcome as PreDownloadOutcome.Failure).outputData
+            assertEquals(
+                PreDownloadOrchestrator.CODE_INSUFFICIENT_DEVICE_SPACE,
+                output.getString(PreDownloadOrchestrator.KEY_ERROR_CODE),
+            )
+            verify(preflight).evaluate(any(), any(), any(), eq(true))
+            verifyNoInteractions(tileService)
+            verifyNoInteractions(offlineManagerWrapper)
+            assertTrue(offlineBundleDao.inserted.isEmpty())
         }
 
     @Test

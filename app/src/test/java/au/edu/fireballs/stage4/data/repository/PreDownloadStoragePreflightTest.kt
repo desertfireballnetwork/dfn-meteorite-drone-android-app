@@ -42,7 +42,7 @@ class PreDownloadStoragePreflightTest {
             stubCandidates(emptyList())
             stubSnapshot(10L * GIB, 20L * GIB)
 
-            val result = service.evaluate(SURVEY_ID, 100.0, 10.0)
+            val result = service.evaluate(SURVEY_ID, 100.0, 10.0, false)
 
             assertTrue(result is PreDownloadPreflightResult.Allowed)
             val estimate = result.estimate()
@@ -82,7 +82,7 @@ class PreDownloadStoragePreflightTest {
                 .thenReturn(false)
             stubSnapshot(0L, 20L * GIB)
 
-            val result = service.evaluate(SURVEY_ID, 100.0, 10.0)
+            val result = service.evaluate(SURVEY_ID, 100.0, 10.0, false)
 
             assertTrue(result is PreDownloadPreflightResult.InsufficientDeviceSpace)
             val inventory = result.estimate().inventory
@@ -98,6 +98,37 @@ class PreDownloadStoragePreflightTest {
         }
 
     @Test
+    fun replacementRequiredCountsPresentContentAsMissing() =
+        runTest {
+            val candidates = listOf(candidate(1L), candidate(2L, lon = 145.01))
+            stubCandidates(candidates)
+            whenever(tileStore.contains(eq(SURVEY_ID), eq(1L), any(), any(), any()))
+                .thenReturn(true)
+            whenever(
+                candidateImageRepository.getLocalCropImageFile(SURVEY_ID, 1L),
+            ).thenReturn(File("crop"))
+            whenever(satelliteRegionStore.contains(eq(SURVEY_ID), any()))
+                .thenReturn(true)
+            stubSnapshot(10L * GIB, 20L * GIB)
+
+            val result =
+                service.evaluate(
+                    SURVEY_ID,
+                    100.0,
+                    10.0,
+                    replacementRequired = true,
+                )
+
+            val inventory = result.estimate().inventory
+            val totalTiles = candidates.sumOf { entity -> tileCount(entity) }
+            assertEquals(0, inventory.geotiffPresentCount)
+            assertEquals(totalTiles, inventory.geotiffMissingCount)
+            assertEquals(0, inventory.cropPresentCount)
+            assertEquals(candidates.size, inventory.cropMissingCount)
+            assertEquals(0, inventory.satellitePresentCount)
+            assertEquals(candidates.size, inventory.satelliteMissingCount)
+        }
+
     fun `fully present inventory has no missing items`() =
         runTest {
             val candidates = listOf(candidate(1L))
@@ -111,7 +142,7 @@ class PreDownloadStoragePreflightTest {
                 .thenReturn(true)
             stubSnapshot(10L * GIB, 20L * GIB)
 
-            val result = service.evaluate(SURVEY_ID, 100.0, 10.0)
+            val result = service.evaluate(SURVEY_ID, 100.0, 10.0, false)
 
             assertTrue(result is PreDownloadPreflightResult.Allowed)
             val inventory = result.estimate().inventory
@@ -138,8 +169,8 @@ class PreDownloadStoragePreflightTest {
                 .thenReturn(false)
             stubSnapshot(10L * GIB, 20L * GIB)
 
-            val first = service.evaluate(SURVEY_ID, 100.0, 10.0)
-            val second = service.evaluate(SURVEY_ID, 100.0, 10.0)
+            val first = service.evaluate(SURVEY_ID, 100.0, 10.0, false)
+            val second = service.evaluate(SURVEY_ID, 100.0, 10.0, false)
             val firstEstimate = first.estimate()
             val secondEstimate = second.estimate()
 

@@ -69,7 +69,7 @@ class PreDownloadViewModelTest {
         whenever(geotiffRadiusRepository.getRadiusMeters()).thenReturn(15.0f)
         preflight = mock<PreDownloadStoragePreflight>()
         runBlocking {
-            whenever(preflight.evaluate(any(), any(), any()))
+            whenever(preflight.evaluate(any(), any(), any(), any()))
                 .thenReturn(
                     PreDownloadPreflightResult.Allowed(
                         PreDownloadSpaceCalculator.calculate(
@@ -124,7 +124,7 @@ class PreDownloadViewModelTest {
                     4_000_000L,
                     100_000_000L,
                 )
-            whenever(preflight.evaluate(any(), any(), any()))
+            whenever(preflight.evaluate(any(), any(), any(), any()))
                 .thenReturn(PreDownloadPreflightResult.InsufficientDeviceSpace(estimate))
 
             viewModel.openSurvey(7L)

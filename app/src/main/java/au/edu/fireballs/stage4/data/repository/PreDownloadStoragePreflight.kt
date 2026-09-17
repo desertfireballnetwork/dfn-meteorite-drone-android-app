@@ -23,6 +23,7 @@ class PreDownloadStoragePreflight
             surveyId: Long,
             bufferRadiusMeters: Double,
             geotiffRadiusMeters: Double,
+            replacementRequired: Boolean,
         ): PreDownloadPreflightResult {
             val activeMine =
                 claimDao
@@ -100,13 +101,30 @@ class PreDownloadStoragePreflight
 
             val inventory =
                 PreDownloadInventory(
-                    geotiffPresentCount = geotiffPresentCount,
-                    geotiffMissingCount = geotiffMissingCount,
-                    cropPresentCount = cropPresentCount,
-                    cropMissingCount = candidates.size - cropPresentCount,
-                    satellitePresentCount = satellitePresentCount,
+                    geotiffPresentCount =
+                        if (replacementRequired) 0 else geotiffPresentCount,
+                    geotiffMissingCount =
+                        if (replacementRequired) {
+                            geotiffPresentCount + geotiffMissingCount
+                        } else {
+                            geotiffMissingCount
+                        },
+                    cropPresentCount =
+                        if (replacementRequired) 0 else cropPresentCount,
+                    cropMissingCount =
+                        if (replacementRequired) {
+                            candidates.size
+                        } else {
+                            candidates.size - cropPresentCount
+                        },
+                    satellitePresentCount =
+                        if (replacementRequired) 0 else satellitePresentCount,
                     satelliteMissingCount =
-                        satelliteTargets.size - satellitePresentCount,
+                        if (replacementRequired) {
+                            satelliteTargets.size
+                        } else {
+                            satelliteTargets.size - satellitePresentCount
+                        },
                 )
             val snapshot = storageCoordinator.snapshot()
             return PreDownloadSpaceCalculator.evaluate(

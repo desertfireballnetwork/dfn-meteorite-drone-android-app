@@ -94,11 +94,23 @@ class PreDownloadOrchestrator(
         bufferMeters: Float,
         progress: suspend (Data) -> Unit,
     ): PreDownloadOutcome {
+        val locallyCachedTask = surveyDao.getById(surveyId)?.latestTaskCreated
+        val refresh = claimRepository.refreshClaimsToRoom(surveyId)
+        if (refresh !is ClaimResult.Refreshed) {
+            return failure("Failed to refresh claims")
+        }
+        val serverTask = stage4Repository.fetchLatestTaskCreated(surveyId)
+        val replacementRequired =
+            locallyCachedTask != null &&
+                serverTask != null &&
+                locallyCachedTask != serverTask
+
         val admission =
             preflight?.evaluate(
                 surveyId,
                 bufferMeters.toDouble(),
                 geotiffRadiusRepository.getRadiusMeters().toDouble(),
+                replacementRequired,
             )
         when (admission) {
             is PreDownloadPreflightResult.InsufficientDeviceSpace ->
@@ -127,10 +139,10 @@ class PreDownloadOrchestrator(
         }
         return try {
             if (coordinator == null) {
-                runDownload(surveyId, bufferMeters, progress)
+                runDownload(surveyId, bufferMeters, replacementRequired, progress)
             } else {
                 coordinator.withDownloadLease {
-                    runDownload(surveyId, bufferMeters, progress)
+                    runDownload(surveyId, bufferMeters, replacementRequired, progress)
                 }
             }
         } catch (e: StorageFullException) {
@@ -145,20 +157,9 @@ class PreDownloadOrchestrator(
     private suspend fun runDownload(
         surveyId: Long,
         bufferMeters: Float,
+        forceRefresh: Boolean,
         progress: suspend (Data) -> Unit,
     ): PreDownloadOutcome {
-        val locallyCachedTask = surveyDao.getById(surveyId)?.latestTaskCreated
-
-        val refresh = claimRepository.refreshClaimsToRoom(surveyId)
-        if (refresh !is ClaimResult.Refreshed) {
-            return failure("Failed to refresh claims")
-        }
-
-        val serverTask = stage4Repository.fetchLatestTaskCreated(surveyId)
-        val forceRefresh =
-            locallyCachedTask != null &&
-                serverTask != null &&
-                locallyCachedTask != serverTask
         if (forceRefresh) {
             cleanupSurvey(surveyId)
         }

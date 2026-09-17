@@ -100,11 +100,13 @@ class PreDownloadViewModel
             viewModelScope.launch {
                 claimRepository.refreshClaimsToRoom(surveyId)
                 val claimed = claimRepository.countActiveClaimedCandidates(surveyId)
+                val isStale = isLocalDataStale(surveyId)
                 val result =
                     preflight.evaluate(
                         surveyId,
                         bufferRadiusRepository.getBufferRadiusMeters().toDouble(),
                         geotiffRadiusRepository.getRadiusMeters().toDouble(),
+                        isStale,
                     )
                 _uiState.value =
                     when (result) {
@@ -112,14 +114,14 @@ class PreDownloadViewModel
                             result.estimate.toReadyState(
                                 claimedCandidateCount = claimed,
                                 canStart = true,
-                                isStale = isLocalDataStale(surveyId),
+                                isStale = isStale,
                             )
 
                         is PreDownloadPreflightResult.InsufficientDeviceSpace ->
                             result.estimate.toReadyState(
                                 claimedCandidateCount = claimed,
                                 canStart = false,
-                                isStale = isLocalDataStale(surveyId),
+                                isStale = isStale,
                             )
 
                         PreDownloadPreflightResult.StorageOperationActive ->
