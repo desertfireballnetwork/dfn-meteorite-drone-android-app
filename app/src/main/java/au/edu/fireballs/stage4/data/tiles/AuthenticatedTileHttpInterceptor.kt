@@ -267,7 +267,13 @@ class AuthenticatedTileHttpInterceptor
                             e: IOException,
                         ) {
                             if (continuation.isActive) {
-                                continuation.resumeWithException(e)
+                                if (call.isCanceled()) {
+                                    continuation.resumeWithException(
+                                        CancellationException("Call cancelled"),
+                                    )
+                                } else {
+                                    continuation.resumeWithException(e)
+                                }
                             }
                         }
 

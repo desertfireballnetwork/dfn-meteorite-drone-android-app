@@ -12,6 +12,7 @@ import com.mapbox.common.NetworkRestriction
 import com.mapbox.common.SdkInformation
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -25,6 +26,7 @@ import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -577,6 +579,7 @@ class AuthenticatedTileHttpInterceptorTest {
     }
 
     @Test
+    @Suppress("SwallowedException")
     fun cancellationCancelsUnderlyingOkHttpCall() =
         runBlocking {
             val capturedCalls = mutableListOf<Call>()
@@ -589,6 +592,7 @@ class AuthenticatedTileHttpInterceptorTest {
                     }.build()
             server.enqueue(
                 MockResponse()
+                    .setHeadersDelay(2, TimeUnit.SECONDS)
                     .setBodyDelay(2, TimeUnit.SECONDS)
                     .setHeader("Content-Type", "image/png")
                     .setBody("tile"),
@@ -613,8 +617,14 @@ class AuthenticatedTileHttpInterceptorTest {
             }
             cancellableInterceptor.cancel(url)
             assertTrue(capturedCalls.first().isCanceled())
-            val result = withTimeout(1_000) { continuation.result.await() }
-            assertTrue(result.isHttpResponse())
+            val continuationDelivered =
+                try {
+                    withTimeout(1_000) { continuation.result.await() }
+                    true
+                } catch (e: TimeoutCancellationException) {
+                    false
+                }
+            assertFalse("Expected no continuation delivery after cancel", continuationDelivered)
         }
 
     @Test
