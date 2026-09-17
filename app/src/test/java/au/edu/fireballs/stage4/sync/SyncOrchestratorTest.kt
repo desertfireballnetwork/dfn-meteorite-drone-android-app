@@ -14,10 +14,18 @@ import au.edu.fireballs.stage4.data.remote.AccountManager
 import au.edu.fireballs.stage4.data.repository.PhotoUploadResult
 import au.edu.fireballs.stage4.data.repository.SyncRepository
 import au.edu.fireballs.stage4.data.repository.VerdictPostResult
+import io.mockk.coEvery
+import io.mockk.coVerify
+import io.mockk.mockk
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -145,6 +153,50 @@ class SyncOrchestratorTest {
             verify(syncRepository, never()).uploadPhoto(pendingPhoto(2L), SURVEY_ID)
             verify(syncRepository).postVerdict(decision(1L), SURVEY_ID)
             verify(syncRepository, never()).postVerdict(decision(2L), SURVEY_ID)
+        }
+
+    @Test
+    fun `concurrent runs upload one pending photo once`() =
+        runTest {
+            val dispatcher = StandardTestDispatcher(testScheduler)
+            val accountManager = mock(AccountManager::class.java)
+            `when`(accountManager.isSignedIn()).thenReturn(true)
+            val syncRepository = mockk<SyncRepository>()
+            val photo = pendingPhoto(1L)
+            val photoDao = FakePendingPhotoUploadDao(listOf(photo))
+            val enteredUpload = CompletableDeferred<Unit>()
+            val releaseUpload = CompletableDeferred<Unit>()
+            coEvery { syncRepository.uploadPhoto(photo, SURVEY_ID) } coAnswers {
+                enteredUpload.complete(Unit)
+                releaseUpload.await()
+                photoDao.markUploaded(photo.rowId, 99L)
+                PhotoUploadResult.Success
+            }
+            val orchestrator =
+                SyncOrchestrator(
+                    accountManager,
+                    syncRepository,
+                    FakeCandidateDao(listOf(candidate(1L))),
+                    FakeClaimDao(listOf(claim(1L))),
+                    photoDao,
+                    FakeLocalDecisionDao(),
+                    FakeSyncRunDao(),
+                    dispatcher,
+                )
+
+            val first = async(dispatcher) { orchestrator.run(SURVEY_ID) {} }
+            runCurrent()
+            enteredUpload.await()
+            val second = async(dispatcher) { orchestrator.run(SURVEY_ID) {} }
+            runCurrent()
+            releaseUpload.complete(Unit)
+            val outcomes = awaitAll(first, second)
+
+            assertEquals(
+                listOf(SyncOutcome.Success, SyncOutcome.Success),
+                outcomes,
+            )
+            coVerify(exactly = 1) { syncRepository.uploadPhoto(photo, SURVEY_ID) }
         }
 
     @Test
@@ -641,7 +693,8 @@ class SyncOrchestratorTest {
             unuploaded = unuploaded.filterNot { it.rowId == rowId }
         }
 
-        override suspend fun getUnuploaded(): List<PendingPhotoUploadEntity> = unuploaded
+        override suspend fun getUnuploaded(): List<PendingPhotoUploadEntity> =
+            unuploaded.filter { !it.uploaded }
 
         override fun getLocalPhotosForCandidate(
             inferenceResultId: Long,

@@ -15,8 +15,11 @@ import au.edu.fireballs.stage4.data.repository.VerdictPostResult
 import au.edu.fireballs.stage4.di.IoDispatcher
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
+import javax.inject.Singleton
 
 sealed interface SyncOutcome {
     data object Success : SyncOutcome
@@ -30,6 +33,7 @@ sealed interface SyncOutcome {
     ) : SyncOutcome
 }
 
+@Singleton
 class SyncOrchestrator
     @Inject
     constructor(
@@ -42,30 +46,35 @@ class SyncOrchestrator
         private val syncRunDao: SyncRunDao,
         @IoDispatcher private val ioDispatcher: CoroutineDispatcher,
     ) {
+        private val runMutex = Mutex()
+
         suspend fun run(
             surveyId: Long,
             progress: suspend (Data) -> Unit,
         ): SyncOutcome =
-            withContext(ioDispatcher) {
-                try {
-                    if (!accountManager.isSignedIn()) {
-                        SyncOutcome.AuthExpired
-                    } else {
-                        val eligible = buildEligibleIds(surveyId)
-                        val photoOutcome = uploadPendingPhotos(surveyId, eligible, progress)
-                        if (photoOutcome != null) {
-                            photoOutcome
+            runMutex.withLock {
+                withContext(ioDispatcher) {
+                    try {
+                        if (!accountManager.isSignedIn()) {
+                            SyncOutcome.AuthExpired
                         } else {
-                            val verdictOutcome = postPendingVerdicts(surveyId, eligible, progress)
-                            if (verdictOutcome != null) {
-                                verdictOutcome
+                            val eligible = buildEligibleIds(surveyId)
+                            val photoOutcome = uploadPendingPhotos(surveyId, eligible, progress)
+                            if (photoOutcome != null) {
+                                photoOutcome
                             } else {
-                                SyncOutcome.Success
+                                val verdictOutcome =
+                                    postPendingVerdicts(surveyId, eligible, progress)
+                                if (verdictOutcome != null) {
+                                    verdictOutcome
+                                } else {
+                                    SyncOutcome.Success
+                                }
                             }
                         }
+                    } finally {
+                        syncRunDao.clear(surveyId)
                     }
-                } finally {
-                    syncRunDao.clear(surveyId)
                 }
             }
 
