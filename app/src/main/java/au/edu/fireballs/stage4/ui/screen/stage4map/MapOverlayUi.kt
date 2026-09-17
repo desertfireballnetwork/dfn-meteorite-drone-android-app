@@ -123,7 +123,7 @@ private fun SyncButton(
             }
 
         SyncStatus.Syncing ->
-            FilledTonalIconButton(onClick = onSync) {
+            FilledTonalIconButton(onClick = onSync, enabled = false) {
                 CircularProgressIndicator(
                     modifier = Modifier.size(18.dp),
                     strokeWidth = 2.dp,
