@@ -35,7 +35,14 @@ data class StorageUsageSnapshot(
     val ownedTempCacheBytes: Long,
     val mapboxRegionCount: Int,
     val mapboxBytes: Long?,
-)
+) {
+    val knownCachedDownloadBytes: Long
+        get() =
+            Math.addExact(
+                Math.addExact(geotiffBytes, candidateCropBytes),
+                mapboxBytes ?: 0L,
+            )
+}
 
 internal data class VolumeStats(
     val availableBytes: Long,

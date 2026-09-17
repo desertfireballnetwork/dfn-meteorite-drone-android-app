@@ -22,6 +22,51 @@ import org.mockito.kotlin.mock
 import java.nio.file.Files
 
 class StorageCoordinatorTest {
+    @Test
+    fun knownCachedDownloadBytesIncludesGeotiffsAndCrops() {
+        val snapshot = storageUsageSnapshot(geotiffBytes = 12L, candidateCropBytes = 8L)
+
+        assertEquals(20L, snapshot.knownCachedDownloadBytes)
+    }
+
+    @Test
+    fun knownCachedDownloadBytesIncludesMeasuredMapboxBytes() {
+        val snapshot = storageUsageSnapshot(mapboxBytes = 7L)
+
+        assertEquals(7L, snapshot.knownCachedDownloadBytes)
+    }
+
+    @Test
+    fun knownCachedDownloadBytesDoesNotInventUnavailableMapboxBytes() {
+        val snapshot = storageUsageSnapshot(mapboxBytes = null)
+
+        assertEquals(0L, snapshot.knownCachedDownloadBytes)
+    }
+
+    @Test
+    fun knownCachedDownloadBytesExcludesEvidenceAndOwnedTemporaryCache() {
+        val snapshot = storageUsageSnapshot(evidenceBytes = 13L, ownedTempCacheBytes = 17L)
+
+        assertEquals(0L, snapshot.knownCachedDownloadBytes)
+    }
+
+    private fun storageUsageSnapshot(
+        geotiffBytes: Long = 0L,
+        candidateCropBytes: Long = 0L,
+        evidenceBytes: Long = 0L,
+        ownedTempCacheBytes: Long = 0L,
+        mapboxBytes: Long? = null,
+    ) = StorageUsageSnapshot(
+        availableVolumeBytes = 0L,
+        totalVolumeBytes = 0L,
+        geotiffBytes = geotiffBytes,
+        candidateCropBytes = candidateCropBytes,
+        evidenceBytes = evidenceBytes,
+        ownedTempCacheBytes = ownedTempCacheBytes,
+        mapboxRegionCount = 0,
+        mapboxBytes = mapboxBytes,
+    )
+
     private val dispatcher = UnconfinedTestDispatcher()
     private val root = Files.createTempDirectory("storage-coordinator").toFile()
     private val tileRoot = root.resolve("tiles")
