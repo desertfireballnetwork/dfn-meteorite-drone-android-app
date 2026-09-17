@@ -342,13 +342,47 @@ private fun DownloadDialog(
                 is PreDownloadUiState.Idle -> Text(text = "Preparing download…")
                 is PreDownloadUiState.Ready -> {
                     Column {
+                        Text(text = "Claimed candidates: ${state.claimedCandidateCount}")
                         Text(
-                            text = "Claimed candidates: ${state.claimedCandidateCount}",
+                            text =
+                                "Geotiff tiles: ${state.geotiffPresentCount} present, " +
+                                    "${state.geotiffMissingCount} missing",
                         )
-                        Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "Estimated size: ${formatBytes(state.estimatedSizeBytes)}",
+                            text =
+                                "Crops: ${state.cropPresentCount} present, " +
+                                    "${state.cropMissingCount} missing",
                         )
+                        Text(
+                            text =
+                                "Satellite regions: ${state.satellitePresentCount} present, " +
+                                    "${state.satelliteMissingCount} missing",
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text =
+                                "Estimated download: " +
+                                    "${formatBytes(state.estimatedIncrementalBytes)} (estimate)",
+                        )
+                        Text(text = "Available: ${formatBytes(state.availableBytes)}")
+                        Text(text = "Reserve to keep free: ${formatBytes(state.reserveBytes)}")
+                        Text(
+                            text =
+                                "Expected free after download: " +
+                                    formatBytes(state.expectedRemainingBytes),
+                        )
+                        if (!state.canStart) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text =
+                                    "Not enough device space. Download requires " +
+                                        "${formatBytes(state.estimatedIncrementalBytes)}, " +
+                                        "${formatBytes(state.availableBytes)} is available, and " +
+                                        "${formatBytes(state.reserveBytes)} must remain free.",
+                                color = MaterialTheme.colorScheme.error,
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                        }
                         if (state.isStale) {
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
@@ -358,7 +392,10 @@ private fun DownloadDialog(
                             )
                         }
                         Spacer(modifier = Modifier.height(16.dp))
-                        Button(onClick = onStart) {
+                        Button(
+                            onClick = onStart,
+                            enabled = state.canStart,
+                        ) {
                             Text(text = if (state.isStale) "Re-download" else "Download")
                         }
                     }

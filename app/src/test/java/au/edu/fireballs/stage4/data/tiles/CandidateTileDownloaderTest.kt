@@ -145,10 +145,7 @@ class CandidateTileDownloaderTest {
                     .setResponseCode(200),
             )
             val fullStore =
-                TileStore(
-                    Files.createTempDirectory("full").toFile(),
-                    quotaBytes = 1,
-                )
+                TileStore(Files.createTempFile("full", "").toFile())
             val downloaderWithFullStore =
                 CandidateTileDownloader(
                     Retrofit

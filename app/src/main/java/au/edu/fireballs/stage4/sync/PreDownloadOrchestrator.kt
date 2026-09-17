@@ -1,6 +1,5 @@
 package au.edu.fireballs.stage4.sync
 
-import android.os.StatFs
 import androidx.work.Data
 import androidx.work.workDataOf
 import au.edu.fireballs.stage4.data.local.OfflineBundleEntity
@@ -11,8 +10,14 @@ import au.edu.fireballs.stage4.data.remote.TileService
 import au.edu.fireballs.stage4.data.repository.CandidateImageRepository
 import au.edu.fireballs.stage4.data.repository.ClaimRepository
 import au.edu.fireballs.stage4.data.repository.ClaimResult
+import au.edu.fireballs.stage4.data.repository.PreDownloadPreflightResult
+import au.edu.fireballs.stage4.data.repository.PreDownloadSpaceEstimate
+import au.edu.fireballs.stage4.data.repository.PreDownloadStoragePreflight
+import au.edu.fireballs.stage4.data.repository.PreDownloadTargetCandidate
+import au.edu.fireballs.stage4.data.repository.PreDownloadTargetPlanner
 import au.edu.fireballs.stage4.data.repository.Stage4Repository
 import au.edu.fireballs.stage4.data.repository.StorageCoordinator
+import au.edu.fireballs.stage4.data.repository.StorageMutationState
 import au.edu.fireballs.stage4.data.tiles.Bbox
 import au.edu.fireballs.stage4.data.tiles.GeotiffRadiusRepository
 import au.edu.fireballs.stage4.data.tiles.LocalFileRasterTileProvider
@@ -42,10 +47,6 @@ import java.net.HttpURLConnection
 import java.time.Instant
 import java.util.concurrent.CancellationException
 import kotlin.coroutines.resume
-import kotlin.math.asin
-import kotlin.math.cos
-import kotlin.math.sin
-import kotlin.math.sqrt
 
 sealed interface PreDownloadOutcome {
     data class Success(
@@ -75,16 +76,10 @@ class PreDownloadOrchestrator(
     private val filesDir: File,
     private val storageCoordinator: StorageCoordinator? = null,
     @IoDispatcher private val ioDispatcher: CoroutineDispatcher,
-    private val freeBytes: () -> Long = { StatFs(filesDir.absolutePath).availableBytes },
+    private val preflight: PreDownloadStoragePreflight? = null,
 ) {
-    private data class CandidatePoint(
-        val inferenceResultId: Long,
-        val lat: Double,
-        val lon: Double,
-    )
-
     private data class CandidateTiles(
-        val candidate: CandidatePoint,
+        val candidate: PreDownloadTargetCandidate,
         val tiles: List<TileCoord>,
     )
 
@@ -93,40 +88,78 @@ class PreDownloadOrchestrator(
         val signature: String,
     )
 
-    @Suppress("TooGenericExceptionCaught")
+    @Suppress("TooGenericExceptionCaught", "SwallowedException")
     suspend fun run(
         surveyId: Long,
         bufferMeters: Float,
         progress: suspend (Data) -> Unit,
     ): PreDownloadOutcome {
-        val coordinator = storageCoordinator
-        return if (coordinator == null) {
-            runDownload(surveyId, bufferMeters, progress)
-        } else {
-            coordinator.withDownloadLease {
-                runDownload(surveyId, bufferMeters, progress)
-            }
-        }
-    }
-
-    @Suppress("TooGenericExceptionCaught")
-    private suspend fun runDownload(
-        surveyId: Long,
-        bufferMeters: Float,
-        progress: suspend (Data) -> Unit,
-    ): PreDownloadOutcome {
         val locallyCachedTask = surveyDao.getById(surveyId)?.latestTaskCreated
-
         val refresh = claimRepository.refreshClaimsToRoom(surveyId)
         if (refresh !is ClaimResult.Refreshed) {
             return failure("Failed to refresh claims")
         }
-
         val serverTask = stage4Repository.fetchLatestTaskCreated(surveyId)
-        val forceRefresh =
+        val replacementRequired =
             locallyCachedTask != null &&
                 serverTask != null &&
                 locallyCachedTask != serverTask
+
+        val admission =
+            preflight?.evaluate(
+                surveyId,
+                bufferMeters.toDouble(),
+                geotiffRadiusRepository.getRadiusMeters().toDouble(),
+                replacementRequired,
+            )
+        when (admission) {
+            is PreDownloadPreflightResult.InsufficientDeviceSpace ->
+                return failureWithEstimate(
+                    CODE_INSUFFICIENT_DEVICE_SPACE,
+                    "Not enough device space to prepare this survey offline",
+                    admission.estimate,
+                )
+
+            PreDownloadPreflightResult.StorageOperationActive ->
+                return failureWithCode(
+                    CODE_STORAGE_OPERATION_ACTIVE,
+                    "Another storage operation is already running",
+                )
+
+            else -> Unit
+        }
+        val coordinator = storageCoordinator
+        if (coordinator != null &&
+            coordinator.state.value != StorageMutationState.Idle
+        ) {
+            return failureWithCode(
+                CODE_STORAGE_OPERATION_ACTIVE,
+                "Another storage operation is already running",
+            )
+        }
+        return try {
+            if (coordinator == null) {
+                runDownload(surveyId, bufferMeters, replacementRequired, progress)
+            } else {
+                coordinator.withDownloadLease {
+                    runDownload(surveyId, bufferMeters, replacementRequired, progress)
+                }
+            }
+        } catch (e: StorageFullException) {
+            failureWithCode(
+                CODE_STORAGE_FULL_WHILE_WRITING,
+                "Device storage became full during download",
+            )
+        }
+    }
+
+    @Suppress("TooGenericExceptionCaught", "SwallowedException")
+    private suspend fun runDownload(
+        surveyId: Long,
+        bufferMeters: Float,
+        forceRefresh: Boolean,
+        progress: suspend (Data) -> Unit,
+    ): PreDownloadOutcome {
         if (forceRefresh) {
             cleanupSurvey(surveyId)
         }
@@ -134,7 +167,7 @@ class PreDownloadOrchestrator(
         val candidates = buildCandidates(surveyId)
         val satelliteRadius = bufferMeters.toDouble()
         val geotiffRadius = geotiffRadiusRepository.getRadiusMeters().toDouble()
-        val clusters = cluster(candidates, satelliteRadius)
+        val clusters = PreDownloadTargetPlanner.cluster(candidates, satelliteRadius)
         val satelliteWork =
             buildSatelliteWork(
                 surveyId = surveyId,
@@ -144,7 +177,11 @@ class PreDownloadOrchestrator(
             )
         val candidateTiles =
             candidates.mapNotNull { candidate ->
-                val allTiles = tilesForCandidate(candidate, geotiffRadius)
+                val allTiles =
+                    PreDownloadTargetPlanner.tilesForCandidate(
+                        candidate,
+                        geotiffRadius,
+                    )
                 val missingTiles =
                     if (
                         forceRefresh ||
@@ -179,13 +216,6 @@ class PreDownloadOrchestrator(
         val cropTotal = missingCrops.size
         val total = satelliteTotal + tileTotal + cropTotal
 
-        if (estimateRequiredBytes(tileTotal, cropTotal, satelliteTotal) > freeBytes()) {
-            return failure("Insufficient storage")
-        }
-        if (estimatedTileBytes(tileTotal) > tileStore.remainingQuotaBytes()) {
-            return failure("Insufficient storage")
-        }
-
         return try {
             acquireSurvey(
                 surveyId = surveyId,
@@ -211,10 +241,10 @@ class PreDownloadOrchestrator(
 
     private suspend fun acquireSurvey(
         surveyId: Long,
-        candidates: List<CandidatePoint>,
+        candidates: List<PreDownloadTargetCandidate>,
         satelliteWork: List<SatelliteWork>,
         candidateTiles: List<CandidateTiles>,
-        missingCrops: List<CandidatePoint>,
+        missingCrops: List<PreDownloadTargetCandidate>,
         satelliteTotal: Int,
         tileTotal: Int,
         total: Int,
@@ -291,7 +321,7 @@ class PreDownloadOrchestrator(
         satelliteRegionStore.deleteForSurvey(surveyId)
     }
 
-    private suspend fun buildCandidates(surveyId: Long): List<CandidatePoint> {
+    private suspend fun buildCandidates(surveyId: Long): List<PreDownloadTargetCandidate> {
         val candidates = candidateDao.getCandidatesForSurvey(surveyId)
         val mineActive =
             claimDao
@@ -308,125 +338,29 @@ class PreDownloadOrchestrator(
                 if (lat == null || lon == null) {
                     null
                 } else {
-                    CandidatePoint(candidate.inferenceResultId, lat, lon)
+                    PreDownloadTargetCandidate(candidate.inferenceResultId, lat, lon)
                 }
             }
-    }
-
-    private fun cluster(
-        candidates: List<CandidatePoint>,
-        bufferRadius: Double,
-    ): List<List<CandidatePoint>> {
-        val parent = IntArray(candidates.size) { it }
-
-        fun find(index: Int): Int {
-            var root = index
-            while (parent[root] != root) {
-                root = parent[root]
-            }
-            var current = index
-            while (parent[current] != current) {
-                val next = parent[current]
-                parent[current] = root
-                current = next
-            }
-            return root
-        }
-
-        fun union(
-            a: Int,
-            b: Int,
-        ) {
-            val rootA = find(a)
-            val rootB = find(b)
-            if (rootA != rootB) {
-                parent[rootB] = rootA
-            }
-        }
-
-        for (i in candidates.indices) {
-            for (j in i + 1 until candidates.size) {
-                if (distanceMeters(candidates[i], candidates[j]) < 2.0 * bufferRadius) {
-                    union(i, j)
-                }
-            }
-        }
-        val groups = mutableMapOf<Int, MutableList<CandidatePoint>>()
-        candidates.forEachIndexed { index, point ->
-            groups.getOrPut(find(index)) { mutableListOf() }.add(point)
-        }
-        return groups.values.toList()
-    }
-
-    private fun distanceMeters(
-        a: CandidatePoint,
-        b: CandidatePoint,
-    ): Double {
-        val lat1 = Math.toRadians(a.lat)
-        val lat2 = Math.toRadians(b.lat)
-        val dLat = lat2 - lat1
-        val dLon = Math.toRadians(b.lon - a.lon)
-        val h =
-            sin(dLat / 2.0) * sin(dLat / 2.0) +
-                cos(lat1) * cos(lat2) * sin(dLon / 2.0) * sin(dLon / 2.0)
-        return 2.0 * EARTH_RADIUS_METERS * asin(sqrt(h))
-    }
-
-    private fun unionBbox(
-        cluster: List<CandidatePoint>,
-        bufferRadius: Double,
-    ): Bbox {
-        var minLat = Double.POSITIVE_INFINITY
-        var minLon = Double.POSITIVE_INFINITY
-        var maxLat = Double.NEGATIVE_INFINITY
-        var maxLon = Double.NEGATIVE_INFINITY
-        cluster.forEach { candidate ->
-            val bbox = TileMath.bufferBbox(candidate.lat, candidate.lon, bufferRadius)
-            minLat = minOf(minLat, bbox.minLat)
-            minLon = minOf(minLon, bbox.minLon)
-            maxLat = maxOf(maxLat, bbox.maxLat)
-            maxLon = maxOf(maxLon, bbox.maxLon)
-        }
-        return Bbox(minLat, minLon, maxLat, maxLon)
     }
 
     private suspend fun buildSatelliteWork(
         surveyId: Long,
-        clusters: List<List<CandidatePoint>>,
+        clusters: List<List<PreDownloadTargetCandidate>>,
         bufferRadius: Double,
         forceRefresh: Boolean,
     ): List<SatelliteWork> {
         val work = mutableListOf<SatelliteWork>()
-        for (cluster in clusters) {
-            val bbox = unionBbox(cluster, bufferRadius)
-            val signature = satelliteSignature(cluster, bbox)
-            if (forceRefresh || !satelliteRegionStore.contains(surveyId, signature)) {
-                work += SatelliteWork(bbox, signature)
+        val targets = PreDownloadTargetPlanner.satelliteTargets(clusters, bufferRadius)
+        for (target in targets) {
+            if (
+                forceRefresh ||
+                !satelliteRegionStore.contains(surveyId, target.signature)
+            ) {
+                work += SatelliteWork(target.bbox, target.signature)
             }
         }
         return work
     }
-
-    private fun satelliteSignature(
-        cluster: List<CandidatePoint>,
-        bbox: Bbox,
-    ): String =
-        buildString {
-            append("sat:")
-            append(cluster.map { it.inferenceResultId }.sorted().joinToString(","))
-            append(':')
-            append(bbox.minLat.toBits())
-            append(',')
-            append(bbox.minLon.toBits())
-            append(',')
-            append(bbox.maxLat.toBits())
-            append(',')
-            append(bbox.maxLon.toBits())
-            append(':')
-            append(SATELLITE_MIN_ZOOM)
-            append('-')
-            append(SATELLITE_MAX_ZOOM)
-        }
 
     private suspend fun downloadSatellite(
         surveyId: Long,
@@ -441,8 +375,8 @@ class PreDownloadOrchestrator(
                     val scope = CoroutineScope(cont.context)
                     offlineManagerWrapper.splitAndDownload(
                         clusterBboxes = listOf(region.bbox),
-                        minZoom = SATELLITE_MIN_ZOOM,
-                        maxZoom = SATELLITE_MAX_ZOOM,
+                        minZoom = PreDownloadTargetPlanner.SATELLITE_MIN_ZOOM,
+                        maxZoom = PreDownloadTargetPlanner.SATELLITE_MAX_ZOOM,
                         progressCb = { p ->
                             scope.launch {
                                 progress(
@@ -462,6 +396,10 @@ class PreDownloadOrchestrator(
                     )
                 }
             if (result.isFailure) {
+                val error = result.exceptionOrNull()
+                if (error != null && error.isStorageFull()) {
+                    throw StorageFullException(error)
+                }
                 return false
             }
             satelliteRegionStore.markCompleted(surveyId, region.signature)
@@ -522,7 +460,7 @@ class PreDownloadOrchestrator(
 
     private suspend fun precomputeLowZoomTiles(
         surveyId: Long,
-        candidates: List<CandidatePoint>,
+        candidates: List<PreDownloadTargetCandidate>,
     ): Int =
         withContext(ioDispatcher) {
             val minZoom = LowZoomTileCompositor.MIN_ZOOM
@@ -610,6 +548,9 @@ class PreDownloadOrchestrator(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
+            if (e.isStorageFull()) {
+                throw StorageFullException(e)
+            }
             false
         }
 
@@ -636,7 +577,7 @@ class PreDownloadOrchestrator(
 
     private suspend fun downloadCrops(
         surveyId: Long,
-        candidates: List<CandidatePoint>,
+        candidates: List<PreDownloadTargetCandidate>,
         offset: Int,
         total: Int,
         progress: suspend (Data) -> Unit,
@@ -695,43 +636,11 @@ class PreDownloadOrchestrator(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
+            if (e.isStorageFull()) {
+                throw StorageFullException(e)
+            }
             false
         }
-
-    private fun tilesForCandidate(
-        candidate: CandidatePoint,
-        bufferRadius: Double,
-    ): List<TileCoord> {
-        val bbox = TileMath.bufferBbox(candidate.lat, candidate.lon, bufferRadius)
-        return buildList {
-            for (z in TILE_MIN_ZOOM..TILE_MAX_ZOOM) {
-                addAll(
-                    TileMath.tilesForBbox(
-                        bbox.minLat,
-                        bbox.minLon,
-                        bbox.maxLat,
-                        bbox.maxLon,
-                        z,
-                    ),
-                )
-            }
-        }
-    }
-
-    private fun estimateRequiredBytes(
-        tileCount: Int,
-        cropCount: Int,
-        satelliteRegionCount: Int,
-    ): Long {
-        val requiredMb =
-            tileCount * MB_PER_GEOTIFF_TILE +
-                cropCount * MB_PER_CROP +
-                satelliteRegionCount * MB_PER_SATELLITE_REGION
-        return (requiredMb * BYTES_PER_MB).toLong()
-    }
-
-    private fun estimatedTileBytes(tileCount: Int): Long =
-        (tileCount * MB_PER_GEOTIFF_TILE * BYTES_PER_MB).toLong()
 
     private fun computeTotalBytes(surveyId: Long): Long {
         val tilesDir = tileStore.surveyTilesDirectory(surveyId)
@@ -746,10 +655,45 @@ class PreDownloadOrchestrator(
             0L
         }
 
+    private fun failureWithCode(
+        code: String,
+        message: String,
+    ): PreDownloadOutcome.Failure =
+        PreDownloadOutcome.Failure(
+            Data
+                .Builder()
+                .putString(KEY_ERROR, message)
+                .putString(KEY_ERROR_CODE, code)
+                .build(),
+        )
+
+    private fun failureWithEstimate(
+        code: String,
+        message: String,
+        estimate: PreDownloadSpaceEstimate,
+    ): PreDownloadOutcome.Failure =
+        PreDownloadOutcome.Failure(
+            Data
+                .Builder()
+                .putString(KEY_ERROR, message)
+                .putString(KEY_ERROR_CODE, code)
+                .putLong(KEY_REQUIRED_BYTES, estimate.incrementalRequiredBytes)
+                .putLong(KEY_AVAILABLE_BYTES, estimate.availableBytes)
+                .putLong(KEY_RESERVE_BYTES, estimate.reserveBytes)
+                .build(),
+        )
+
     private fun failure(message: String): PreDownloadOutcome.Failure =
         PreDownloadOutcome.Failure(Data.Builder().putString(KEY_ERROR, message).build())
 
     companion object {
+        const val KEY_ERROR_CODE = "errorCode"
+        const val KEY_REQUIRED_BYTES = "requiredBytes"
+        const val KEY_AVAILABLE_BYTES = "availableBytes"
+        const val KEY_RESERVE_BYTES = "reserveBytes"
+        const val CODE_INSUFFICIENT_DEVICE_SPACE = "INSUFFICIENT_DEVICE_SPACE"
+        const val CODE_STORAGE_OPERATION_ACTIVE = "STORAGE_OPERATION_ACTIVE"
+        const val CODE_STORAGE_FULL_WHILE_WRITING = "STORAGE_FULL_WHILE_WRITING"
         const val KEY_BUNDLE_ID = "bundleId"
         const val KEY_TILE_COUNT = "tileCount"
         const val KEY_CROP_COUNT = "cropCount"
@@ -764,20 +708,29 @@ class PreDownloadOrchestrator(
         const val PHASE_TILES = "tiles"
         const val PHASE_CROPS = "crops"
 
-        private const val SATELLITE_MIN_ZOOM = 18
-        private const val SATELLITE_MAX_ZOOM = 22
-        private const val TILE_MIN_ZOOM = 20
-        private const val TILE_MAX_ZOOM = 22
         private const val TILE_CONCURRENCY = 6
         private const val MAX_TILE_ATTEMPTS = 3
         private const val READ_BUFFER_BYTES = 8 * 1024
         private const val MAX_TILE_BYTES = 16 * 1024 * 1024
         private const val MAX_CROP_BYTES = 2_097_152
-        private const val EARTH_RADIUS_METERS = 6_371_000.0
-        private const val MB_PER_GEOTIFF_TILE = 2.0
-        private const val MB_PER_CROP = 1.0
-        private const val MB_PER_SATELLITE_REGION = 50.0
-        private const val BYTES_PER_MB = 1024.0 * 1024.0
         private const val CROP_DIR = "crops"
     }
+}
+
+private class StorageFullException(
+    cause: Throwable,
+) : Exception(cause)
+
+private fun Throwable.isStorageFull(): Boolean {
+    var current: Throwable? = this
+    while (current != null) {
+        val message = current.message?.lowercase()
+        if (message != null &&
+            (message.contains("enospc") || message.contains("no space left"))
+        ) {
+            return true
+        }
+        current = current.cause
+    }
+    return false
 }

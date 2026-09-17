@@ -18,10 +18,8 @@ data class TileStoreMeasuredUsage(
 
 class TileStore(
     private val baseDir: File,
-    private val quotaBytes: Long = DEFAULT_QUOTA_BYTES,
 ) {
     private val lock = Any()
-    private var totalBytes: Long = computeTotalBytes(baseDir)
 
     fun contains(
         surveyId: Long,
@@ -101,9 +99,6 @@ class TileStore(
         require(bytes.size <= MAX_TILE_BYTES) { "Tile exceeds maximum encoded size" }
         synchronized(lock) {
             val file = tileFile(surveyId, candidateId, z, x, y)
-            val previousSize = if (file.isFile) file.length() else 0L
-            val updatedTotal = totalBytes - previousSize + bytes.size
-            check(updatedTotal <= quotaBytes) { "Tile storage quota exceeded" }
             check(file.parentFile?.mkdirs() != false || file.parentFile?.isDirectory == true) {
                 "Failed to create tile directory"
             }
@@ -123,11 +118,8 @@ class TileStore(
                     java.nio.file.StandardCopyOption.REPLACE_EXISTING,
                 )
             }
-            totalBytes = updatedTotal
         }
     }
-
-    fun remainingQuotaBytes(): Long = quotaBytes - totalBytes
 
     suspend fun measuredUsage(): TileStoreMeasuredUsage =
         synchronized(lock) {
@@ -148,16 +140,13 @@ class TileStore(
         require(surveyId >= 0L) { "Survey id must be non-negative" }
         synchronized(lock) {
             val dir = surveyTilesDirectory(surveyId)
-            val removed = dirTotalSize(dir)
             dir.deleteRecursively()
-            totalBytes = (totalBytes - removed).coerceAtLeast(0L)
         }
     }
 
     fun deleteAll() {
         synchronized(lock) {
             baseDir.deleteRecursively()
-            totalBytes = 0L
         }
     }
 
@@ -181,11 +170,6 @@ class TileStore(
         x: Int,
         y: Int,
     ): File = File(baseDir, "$surveyId/$candidateId/$z/$x/$y.png")
-
-    private fun computeTotalBytes(root: File): Long =
-        measureOwnedUsage(root).let { usage ->
-            Math.addExact(usage.geotiffBytes, usage.ownedTempCacheBytes)
-        }
 
     private fun measureOwnedUsage(root: File): TileStoreMeasuredUsage {
         val path = root.toPath()
@@ -228,16 +212,8 @@ class TileStore(
         )
     }
 
-    private fun dirTotalSize(dir: File): Long =
-        if (dir.isDirectory) {
-            dir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
-        } else {
-            0L
-        }
-
     companion object {
         const val MAX_TILE_BYTES = 16 * 1024 * 1024
-        const val DEFAULT_QUOTA_BYTES = 512L * 1024L * 1024L
         private const val MAX_TILE_ZOOM = 30
         private const val TEMP_SUFFIX = ".tmp"
     }

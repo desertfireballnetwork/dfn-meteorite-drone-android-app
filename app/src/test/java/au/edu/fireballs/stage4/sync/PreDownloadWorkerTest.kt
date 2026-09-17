@@ -17,7 +17,14 @@ import au.edu.fireballs.stage4.data.remote.dto.ClaimDto
 import au.edu.fireballs.stage4.data.remote.dto.ListClaimsResponseDto
 import au.edu.fireballs.stage4.data.repository.CandidateImageRepository
 import au.edu.fireballs.stage4.data.repository.ClaimRepository
+import au.edu.fireballs.stage4.data.repository.ClaimResult
+import au.edu.fireballs.stage4.data.repository.PreDownloadInventory
+import au.edu.fireballs.stage4.data.repository.PreDownloadPreflightResult
+import au.edu.fireballs.stage4.data.repository.PreDownloadSpaceCalculator
+import au.edu.fireballs.stage4.data.repository.PreDownloadStoragePreflight
 import au.edu.fireballs.stage4.data.repository.Stage4Repository
+import au.edu.fireballs.stage4.data.repository.StorageCoordinator
+import au.edu.fireballs.stage4.data.repository.StorageMutationState
 import au.edu.fireballs.stage4.data.tiles.Bbox
 import au.edu.fireballs.stage4.data.tiles.GeotiffRadiusRepository
 import au.edu.fireballs.stage4.data.tiles.LocalFileRasterTileProvider
@@ -27,8 +34,10 @@ import au.edu.fireballs.stage4.data.tiles.OfflineBundleRepository
 import au.edu.fireballs.stage4.data.tiles.OfflineManagerWrapper
 import au.edu.fireballs.stage4.data.tiles.TileCoord
 import au.edu.fireballs.stage4.data.tiles.TileStore
+import au.edu.fireballs.stage4.data.tiles.TileStoreMeasuredUsage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import okhttp3.MediaType
@@ -50,8 +59,11 @@ import org.mockito.Mockito.verify
 import org.mockito.Mockito.verifyNoInteractions
 import org.mockito.Mockito.`when`
 import org.mockito.kotlin.any
+import org.mockito.kotlin.eq
+import org.mockito.kotlin.whenever
 import retrofit2.Response
 import java.io.File
+import java.io.IOException
 import java.nio.file.Files
 
 class PreDownloadWorkerTest {
@@ -209,7 +221,6 @@ class PreDownloadWorkerTest {
                     satelliteRegionStore = satelliteRegionStore,
                     filesDir = filesDir,
                     ioDispatcher = testDispatcher,
-                    freeBytes = { Long.MAX_VALUE },
                 )
 
             val outcome = orchestrator.run(SURVEY_ID, BUFFER_METERS) {}
@@ -353,7 +364,6 @@ class PreDownloadWorkerTest {
                     satelliteRegionStore = satelliteRegionStore,
                     filesDir = filesDir,
                     ioDispatcher = testDispatcher,
-                    freeBytes = { Long.MAX_VALUE },
                 )
 
             val outcome = orchestrator.run(SURVEY_ID, BUFFER_METERS) {}
@@ -369,84 +379,7 @@ class PreDownloadWorkerTest {
         }
 
     @Test
-    fun tileStoreQuotaExceededReturnsFailure() =
-        runTest {
-            val candidateDao = FakeCandidateDao(listOf(candidate(1L, 0.0, 0.0)))
-            val claimDao = FakeClaimDao()
-            val surveyDao = FakeSurveyDao(latestTaskCreated = null)
-            val tileStore = TileStore(Files.createTempDirectory("tiles").toFile(), quotaBytes = 1L)
-            val offlineBundleDao = FakeOfflineBundleDao()
-            val offlineBundleRepository =
-                OfflineBundleRepository(
-                    tileStore,
-                    FakeTileManifestDao(),
-                    offlineBundleDao,
-                    testDispatcher,
-                )
-
-            val stage4Service = mock(Stage4Service::class.java)
-            `when`(stage4Service.getClaims(SURVEY_ID.toString(), true))
-                .thenReturn(
-                    ListClaimsResponseDto(
-                        listOf(
-                            ClaimDto(
-                                inferenceResultId = 1L,
-                                userId = 2L,
-                                username = "me",
-                                isMe = true,
-                            ),
-                        ),
-                    ),
-                )
-            val claimRepository =
-                ClaimRepository(
-                    stage4Service,
-                    claimDao,
-                    testDispatcher,
-                )
-
-            val stage4Repository = mock(Stage4Repository::class.java)
-            `when`(stage4Repository.fetchLatestTaskCreated(SURVEY_ID)).thenReturn(null)
-
-            val tileService = mock(TileService::class.java)
-            val offlineManagerWrapper = mock(OfflineManagerWrapper::class.java)
-
-            val filesDir = Files.createTempDirectory("crops").toFile()
-            val orchestrator =
-                PreDownloadOrchestrator(
-                    claimRepository = claimRepository,
-                    stage4Repository = stage4Repository,
-                    candidateDao = candidateDao,
-                    claimDao = claimDao,
-                    surveyDao = surveyDao,
-                    tileStore = tileStore,
-                    lowZoomCompositor = noOpCompositor,
-                    tileService = tileService,
-                    offlineManagerWrapper = offlineManagerWrapper,
-                    offlineBundleRepository = offlineBundleRepository,
-                    candidateImageRepository = candidateImageRepository,
-                    geotiffRadiusRepository = geotiffRadiusRepository,
-                    satelliteRegionStore = satelliteRegionStore,
-                    filesDir = filesDir,
-                    ioDispatcher = testDispatcher,
-                    freeBytes = { Long.MAX_VALUE },
-                )
-
-            val outcome = orchestrator.run(SURVEY_ID, BUFFER_METERS) {}
-
-            assertTrue("Expected failure but got $outcome", outcome is PreDownloadOutcome.Failure)
-            val output = (outcome as PreDownloadOutcome.Failure).outputData
-            assertEquals(
-                "Insufficient storage",
-                output.getString(PreDownloadOrchestrator.KEY_ERROR),
-            )
-            verifyNoInteractions(offlineManagerWrapper)
-            verifyNoInteractions(tileService)
-            assertTrue(offlineBundleDao.inserted.isEmpty())
-        }
-
-    @Test
-    fun insufficientStorageReturnsFailure() =
+    fun insufficientPreflightReturnsFailure() =
         runTest {
             val candidateDao = FakeCandidateDao(listOf(candidate(1L, 0.0, 0.0)))
             val claimDao = FakeClaimDao()
@@ -488,6 +421,16 @@ class PreDownloadWorkerTest {
             val tileService = mock(TileService::class.java)
             val offlineManagerWrapper = mock(OfflineManagerWrapper::class.java)
 
+            val preflight = mock(PreDownloadStoragePreflight::class.java)
+            val estimate =
+                PreDownloadSpaceCalculator.calculate(
+                    PreDownloadInventory(0, 0, 0, 0, 0, 0),
+                    0L,
+                    0L,
+                )
+            `when`(preflight.evaluate(any(), any(), any(), any()))
+                .thenReturn(PreDownloadPreflightResult.InsufficientDeviceSpace(estimate))
+
             val filesDir = Files.createTempDirectory("crops").toFile()
             val orchestrator =
                 PreDownloadOrchestrator(
@@ -505,8 +448,8 @@ class PreDownloadWorkerTest {
                     geotiffRadiusRepository = geotiffRadiusRepository,
                     satelliteRegionStore = satelliteRegionStore,
                     filesDir = filesDir,
+                    preflight = preflight,
                     ioDispatcher = testDispatcher,
-                    freeBytes = { 1L },
                 )
 
             val outcome = orchestrator.run(SURVEY_ID, BUFFER_METERS) {}
@@ -514,11 +457,244 @@ class PreDownloadWorkerTest {
             assertTrue("Expected failure but got $outcome", outcome is PreDownloadOutcome.Failure)
             val output = (outcome as PreDownloadOutcome.Failure).outputData
             assertEquals(
-                "Insufficient storage",
-                output.getString(PreDownloadOrchestrator.KEY_ERROR),
+                PreDownloadOrchestrator.CODE_INSUFFICIENT_DEVICE_SPACE,
+                output.getString(PreDownloadOrchestrator.KEY_ERROR_CODE),
             )
             verifyNoInteractions(offlineManagerWrapper)
             verifyNoInteractions(tileService)
+            assertTrue(offlineBundleDao.inserted.isEmpty())
+        }
+
+    @Test
+    fun storageFullDuringTileWriteMapsToDistinctCode() =
+        runTest {
+            val candidateDao = FakeCandidateDao(listOf(candidate(1L, 0.0, 0.0)))
+            val claimDao = FakeClaimDao()
+            val surveyDao = FakeSurveyDao(latestTaskCreated = null)
+            val tileStore = mock(TileStore::class.java)
+            val tilesDir = Files.createTempDirectory("tiles").toFile()
+            `when`(tileStore.contains(anyLong(), anyLong(), anyInt(), anyInt(), anyInt()))
+                .thenReturn(false)
+            `when`(tileStore.hasCandidate(anyLong(), anyLong())).thenReturn(false)
+            `when`(tileStore.surveyTilesDirectory(anyLong())).thenReturn(tilesDir)
+            `when`(tileStore.measuredUsage()).thenReturn(TileStoreMeasuredUsage(0L, 0L))
+            doAnswer {
+                throw IOException("No space left on device (ENOSPC)")
+            }.`when`(tileStore)
+                .write(anyLong(), anyLong(), anyInt(), anyInt(), anyInt(), any())
+
+            val offlineBundleDao = FakeOfflineBundleDao()
+            val offlineBundleRepository =
+                OfflineBundleRepository(
+                    tileStore,
+                    FakeTileManifestDao(),
+                    offlineBundleDao,
+                    testDispatcher,
+                )
+            val stage4Service = mock(Stage4Service::class.java)
+            `when`(stage4Service.getClaims(SURVEY_ID.toString(), true))
+                .thenReturn(
+                    ListClaimsResponseDto(
+                        listOf(
+                            ClaimDto(
+                                inferenceResultId = 1L,
+                                userId = 2L,
+                                username = "me",
+                                isMe = true,
+                            ),
+                        ),
+                    ),
+                )
+            val claimRepository = ClaimRepository(stage4Service, claimDao, testDispatcher)
+            val stage4Repository = mock(Stage4Repository::class.java)
+            `when`(stage4Repository.fetchLatestTaskCreated(SURVEY_ID)).thenReturn(null)
+
+            val tileService = mock(TileService::class.java)
+            `when`(
+                tileService.getCandidateTile(
+                    anyLong(),
+                    anyLong(),
+                    anyInt(),
+                    anyInt(),
+                    anyInt(),
+                ),
+            ).thenReturn(
+                Response.success(
+                    byteArrayOf(1, 2, 3).toResponseBody("image/png".toMediaType()),
+                ),
+            )
+            val offlineManagerWrapper = mock(OfflineManagerWrapper::class.java)
+            doAnswer { invocation ->
+                invocation.getArgument<(Result<Unit>) -> Unit>(4)(Result.success(Unit))
+            }.`when`(offlineManagerWrapper)
+                .splitAndDownload(any(), any(), any(), any(), any())
+
+            val orchestrator =
+                PreDownloadOrchestrator(
+                    claimRepository = claimRepository,
+                    stage4Repository = stage4Repository,
+                    candidateDao = candidateDao,
+                    claimDao = claimDao,
+                    surveyDao = surveyDao,
+                    tileStore = tileStore,
+                    lowZoomCompositor = noOpCompositor,
+                    tileService = tileService,
+                    offlineManagerWrapper = offlineManagerWrapper,
+                    offlineBundleRepository = offlineBundleRepository,
+                    candidateImageRepository = candidateImageRepository,
+                    geotiffRadiusRepository = geotiffRadiusRepository,
+                    satelliteRegionStore = satelliteRegionStore,
+                    filesDir = Files.createTempDirectory("crops").toFile(),
+                    ioDispatcher = testDispatcher,
+                )
+
+            val outcome = orchestrator.run(SURVEY_ID, BUFFER_METERS) {}
+
+            assertTrue("Expected failure but got $outcome", outcome is PreDownloadOutcome.Failure)
+            val output = (outcome as PreDownloadOutcome.Failure).outputData
+            assertEquals(
+                PreDownloadOrchestrator.CODE_STORAGE_FULL_WHILE_WRITING,
+                output.getString(PreDownloadOrchestrator.KEY_ERROR_CODE),
+            )
+            assertTrue(
+                output.keyValueMap.keys.all {
+                    it ==
+                        PreDownloadOrchestrator.KEY_ERROR ||
+                        it == PreDownloadOrchestrator.KEY_ERROR_CODE ||
+                        it == PreDownloadOrchestrator.KEY_REQUIRED_BYTES ||
+                        it == PreDownloadOrchestrator.KEY_AVAILABLE_BYTES ||
+                        it == PreDownloadOrchestrator.KEY_RESERVE_BYTES
+                },
+            )
+        }
+
+    @Test
+    fun activeStorageOperationMapsToDistinctCode() =
+        runTest {
+            val tileStore = mock(TileStore::class.java)
+            val offlineBundleRepository =
+                OfflineBundleRepository(
+                    tileStore,
+                    FakeTileManifestDao(),
+                    FakeOfflineBundleDao(),
+                    testDispatcher,
+                )
+            val storageCoordinator = mock(StorageCoordinator::class.java)
+            `when`(storageCoordinator.state)
+                .thenReturn(MutableStateFlow(StorageMutationState.Downloading))
+            val claimRepository = mock(ClaimRepository::class.java)
+            `when`(claimRepository.refreshClaimsToRoom(SURVEY_ID))
+                .thenReturn(ClaimResult.Refreshed(count = 0))
+            val orchestrator =
+                PreDownloadOrchestrator(
+                    claimRepository = claimRepository,
+                    stage4Repository = mock(Stage4Repository::class.java),
+                    candidateDao = FakeCandidateDao(),
+                    claimDao = FakeClaimDao(),
+                    surveyDao = FakeSurveyDao(latestTaskCreated = null),
+                    tileStore = tileStore,
+                    lowZoomCompositor = noOpCompositor,
+                    tileService = mock(TileService::class.java),
+                    offlineManagerWrapper = mock(OfflineManagerWrapper::class.java),
+                    offlineBundleRepository = offlineBundleRepository,
+                    candidateImageRepository = candidateImageRepository,
+                    geotiffRadiusRepository = geotiffRadiusRepository,
+                    satelliteRegionStore = satelliteRegionStore,
+                    filesDir = Files.createTempDirectory("crops").toFile(),
+                    storageCoordinator = storageCoordinator,
+                    ioDispatcher = testDispatcher,
+                )
+
+            val outcome = orchestrator.run(SURVEY_ID, BUFFER_METERS) {}
+
+            assertTrue("Expected failure but got $outcome", outcome is PreDownloadOutcome.Failure)
+            val output = (outcome as PreDownloadOutcome.Failure).outputData
+            assertEquals(
+                PreDownloadOrchestrator.CODE_STORAGE_OPERATION_ACTIVE,
+                output.getString(PreDownloadOrchestrator.KEY_ERROR_CODE),
+            )
+        }
+
+    @Test
+    fun staleReplacementAdmitsFullPlanAndRejectsBeforeDownload() =
+        runTest {
+            val candidateDao = FakeCandidateDao(listOf(candidate(1L, 0.0, 0.0)))
+            val claimDao = FakeClaimDao()
+            val surveyDao = FakeSurveyDao(latestTaskCreated = "local")
+            val tileStore = TileStore(Files.createTempDirectory("tiles").toFile())
+            val offlineBundleDao = FakeOfflineBundleDao()
+            val offlineBundleRepository =
+                OfflineBundleRepository(
+                    tileStore,
+                    FakeTileManifestDao(),
+                    offlineBundleDao,
+                    testDispatcher,
+                )
+            val stage4Service = mock(Stage4Service::class.java)
+            `when`(stage4Service.getClaims(SURVEY_ID.toString(), true))
+                .thenReturn(
+                    ListClaimsResponseDto(
+                        listOf(
+                            ClaimDto(
+                                inferenceResultId = 1L,
+                                userId = 2L,
+                                username = "me",
+                                isMe = true,
+                            ),
+                        ),
+                    ),
+                )
+            val claimRepository =
+                ClaimRepository(
+                    stage4Service,
+                    claimDao,
+                    testDispatcher,
+                )
+            val stage4Repository = mock(Stage4Repository::class.java)
+            `when`(stage4Repository.fetchLatestTaskCreated(SURVEY_ID))
+                .thenReturn("server")
+            val tileService = mock(TileService::class.java)
+            val offlineManagerWrapper = mock(OfflineManagerWrapper::class.java)
+            val preflight = mock(PreDownloadStoragePreflight::class.java)
+            val estimate =
+                PreDownloadSpaceCalculator.calculate(
+                    PreDownloadInventory(0, 10, 0, 1, 0, 1),
+                    0L,
+                    0L,
+                )
+            whenever(preflight.evaluate(any(), any(), any(), eq(true)))
+                .thenReturn(PreDownloadPreflightResult.InsufficientDeviceSpace(estimate))
+            val orchestrator =
+                PreDownloadOrchestrator(
+                    claimRepository = claimRepository,
+                    stage4Repository = stage4Repository,
+                    candidateDao = candidateDao,
+                    claimDao = claimDao,
+                    surveyDao = surveyDao,
+                    tileStore = tileStore,
+                    lowZoomCompositor = noOpCompositor,
+                    tileService = tileService,
+                    offlineManagerWrapper = offlineManagerWrapper,
+                    offlineBundleRepository = offlineBundleRepository,
+                    candidateImageRepository = candidateImageRepository,
+                    geotiffRadiusRepository = geotiffRadiusRepository,
+                    satelliteRegionStore = satelliteRegionStore,
+                    filesDir = Files.createTempDirectory("crops").toFile(),
+                    preflight = preflight,
+                    ioDispatcher = testDispatcher,
+                )
+
+            val outcome = orchestrator.run(SURVEY_ID, BUFFER_METERS) {}
+
+            assertTrue("Expected failure but got $outcome", outcome is PreDownloadOutcome.Failure)
+            val output = (outcome as PreDownloadOutcome.Failure).outputData
+            assertEquals(
+                PreDownloadOrchestrator.CODE_INSUFFICIENT_DEVICE_SPACE,
+                output.getString(PreDownloadOrchestrator.KEY_ERROR_CODE),
+            )
+            verify(preflight).evaluate(any(), any(), any(), eq(true))
+            verifyNoInteractions(tileService)
+            verifyNoInteractions(offlineManagerWrapper)
             assertTrue(offlineBundleDao.inserted.isEmpty())
         }
 
@@ -620,7 +796,6 @@ class PreDownloadWorkerTest {
                     satelliteRegionStore = satelliteRegionStore,
                     filesDir = filesDir,
                     ioDispatcher = testDispatcher,
-                    freeBytes = { Long.MAX_VALUE },
                 )
 
             val outcome = orchestrator.run(SURVEY_ID, BUFFER_METERS) {}
@@ -721,7 +896,6 @@ class PreDownloadWorkerTest {
                     satelliteRegionStore = satelliteRegionStore,
                     filesDir = filesDir,
                     ioDispatcher = testDispatcher,
-                    freeBytes = { Long.MAX_VALUE },
                 )
 
             val progressUpdates = mutableListOf<Data>()
@@ -810,7 +984,6 @@ class PreDownloadWorkerTest {
                     satelliteRegionStore = satelliteRegionStore,
                     filesDir = filesDir,
                     ioDispatcher = testDispatcher,
-                    freeBytes = { Long.MAX_VALUE },
                 )
 
             val outcome = orchestrator.run(SURVEY_ID, BUFFER_METERS) {}
@@ -920,7 +1093,6 @@ class PreDownloadWorkerTest {
                     satelliteRegionStore = satelliteRegionStore,
                     filesDir = filesDir,
                     ioDispatcher = testDispatcher,
-                    freeBytes = { Long.MAX_VALUE },
                 )
 
             val outcome = orchestrator.run(SURVEY_ID, BUFFER_METERS) {}
@@ -1029,7 +1201,6 @@ class PreDownloadWorkerTest {
                     satelliteRegionStore = satelliteRegionStore,
                     filesDir = filesDir,
                     ioDispatcher = testDispatcher,
-                    freeBytes = { Long.MAX_VALUE },
                 )
 
             var thrown = false

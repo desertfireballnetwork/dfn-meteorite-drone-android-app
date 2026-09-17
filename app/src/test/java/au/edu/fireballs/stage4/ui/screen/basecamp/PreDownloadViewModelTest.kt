@@ -7,6 +7,10 @@ import androidx.work.Operation
 import androidx.work.WorkInfo
 import au.edu.fireballs.stage4.data.repository.ClaimRepository
 import au.edu.fireballs.stage4.data.repository.ClaimResult
+import au.edu.fireballs.stage4.data.repository.PreDownloadInventory
+import au.edu.fireballs.stage4.data.repository.PreDownloadPreflightResult
+import au.edu.fireballs.stage4.data.repository.PreDownloadSpaceCalculator
+import au.edu.fireballs.stage4.data.repository.PreDownloadStoragePreflight
 import au.edu.fireballs.stage4.data.repository.Stage4Repository
 import au.edu.fireballs.stage4.data.tiles.BufferRadiusRepository
 import au.edu.fireballs.stage4.data.tiles.GeotiffRadiusRepository
@@ -29,6 +33,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import org.mockito.kotlin.any
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.whenever
 import java.util.UUID
@@ -40,6 +45,7 @@ class PreDownloadViewModelTest {
     private lateinit var stage4Repository: Stage4Repository
     private lateinit var bufferRadiusRepository: BufferRadiusRepository
     private lateinit var geotiffRadiusRepository: GeotiffRadiusRepository
+    private lateinit var preflight: PreDownloadStoragePreflight
     private lateinit var workManager: FakePreDownloadWorkManager
     private lateinit var viewModel: PreDownloadViewModel
 
@@ -61,6 +67,19 @@ class PreDownloadViewModelTest {
         whenever(bufferRadiusRepository.getBufferRadiusMeters()).thenReturn(100.0f)
         geotiffRadiusRepository = mock<GeotiffRadiusRepository>()
         whenever(geotiffRadiusRepository.getRadiusMeters()).thenReturn(15.0f)
+        preflight = mock<PreDownloadStoragePreflight>()
+        runBlocking {
+            whenever(preflight.evaluate(any(), any(), any(), any()))
+                .thenReturn(
+                    PreDownloadPreflightResult.Allowed(
+                        PreDownloadSpaceCalculator.calculate(
+                            PreDownloadInventory(0, 2, 0, 1, 0, 0),
+                            30_000_000_000L,
+                            256_000_000_000L,
+                        ),
+                    ),
+                )
+        }
         workManager = FakePreDownloadWorkManager()
         viewModel =
             PreDownloadViewModel(
@@ -68,6 +87,7 @@ class PreDownloadViewModelTest {
                 stage4Repository,
                 bufferRadiusRepository,
                 geotiffRadiusRepository,
+                preflight,
                 workManager,
             )
     }
@@ -78,15 +98,44 @@ class PreDownloadViewModelTest {
     }
 
     @Test
-    fun `openSurvey computes claimed candidate count and estimated size`() =
+    fun `openSurvey reports claimed candidates and allowed preflight estimate`() =
         runTest(testDispatcher) {
             viewModel.openSurvey(7L)
             advanceUntilIdle()
 
             val ready = viewModel.uiState.value as PreDownloadUiState.Ready
             assertEquals(1, ready.claimedCandidateCount)
-            assertEquals(33_300_000L, ready.estimatedSizeBytes)
+            assertEquals(0, ready.geotiffPresentCount)
+            assertEquals(2, ready.geotiffMissingCount)
+            assertEquals(0, ready.cropPresentCount)
+            assertEquals(1, ready.cropMissingCount)
+            assertEquals(5L * 1024L * 1024L, ready.estimatedIncrementalBytes)
+            assertEquals(30_000_000_000L, ready.availableBytes)
+            assertTrue(ready.canStart)
             assertFalse(ready.isStale)
+        }
+
+    @Test
+    fun `openSurvey reports insufficient device space without allowing start`() =
+        runTest(testDispatcher) {
+            val estimate =
+                PreDownloadSpaceCalculator.calculate(
+                    PreDownloadInventory(0, 2, 0, 1, 0, 0),
+                    4_000_000L,
+                    100_000_000L,
+                )
+            whenever(preflight.evaluate(any(), any(), any(), any()))
+                .thenReturn(PreDownloadPreflightResult.InsufficientDeviceSpace(estimate))
+
+            viewModel.openSurvey(7L)
+            advanceUntilIdle()
+
+            val ready = viewModel.uiState.value as PreDownloadUiState.Ready
+            assertFalse(ready.canStart)
+            assertEquals(5L * 1024L * 1024L, ready.estimatedIncrementalBytes)
+            assertEquals(4_000_000L, ready.availableBytes)
+            assertEquals(estimate.reserveBytes, ready.reserveBytes)
+            assertEquals(estimate.expectedRemainingBytes, ready.expectedRemainingBytes)
         }
 
     @Test
