@@ -73,6 +73,40 @@ class CandidateModalTest {
     }
 
     @Test
+    fun candidateMap_rendersRecenterButton() {
+        val candidate = createCandidate()
+
+        composeRule.setContent {
+            CompositionLocalProvider(LocalInspectionMode provides true) {
+                CandidateMap(
+                    candidate = candidate,
+                    tileUrlPattern = "",
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag(CandidateMapDefaults.RECENTER_TAG).assertExists()
+    }
+
+    @Test
+    fun candidateLocationDisplay_enablesPuckPulseAndAccuracyRingWithPermission() {
+        val display = candidateLocationDisplay(permissionGranted = true)
+
+        assertTrue(display.enabled)
+        assertTrue(display.pulsingEnabled)
+        assertTrue(display.showAccuracyRing)
+    }
+
+    @Test
+    fun candidateLocationDisplay_disablesLocationFeaturesWithoutPermission() {
+        val display = candidateLocationDisplay(permissionGranted = false)
+
+        assertTrue(!display.enabled)
+        assertTrue(!display.pulsingEnabled)
+        assertTrue(!display.showAccuracyRing)
+    }
+
+    @Test
     fun candidateModal_headerDisplaysCandidateIdCoordinatesAndConfidence() {
         val candidate = createCandidate(id = 42L, confidence = 0.95)
 

@@ -203,7 +203,7 @@ fun CandidateModal(
                 )
             },
         ) { innerPadding ->
-            Box(
+            Column(
                 modifier =
                     Modifier
                         .fillMaxSize()
@@ -215,57 +215,58 @@ fun CandidateModal(
                 Box(
                     modifier =
                         Modifier
-                            .fillMaxSize()
-                            .zIndex(if (isMapActive) 1f else 0f)
-                            .graphicsLayer {
-                                alpha = if (isMapActive) 1f else 0f
-                            }.then(
-                                if (isMapActive) {
-                                    Modifier
-                                } else {
-                                    Modifier.clearAndSetSemantics {}
-                                },
-                            ).pointerHitTestEnabled(isMapActive),
+                            .weight(1f)
+                            .fillMaxWidth(),
                 ) {
-                    key(activeCandidate.inferenceResultId, tileUrlPattern) {
-                        CandidateMap(
+                    Box(
+                        modifier =
+                            Modifier
+                                .fillMaxSize()
+                                .zIndex(if (isMapActive) 1f else 0f)
+                                .graphicsLayer {
+                                    alpha = if (isMapActive) 1f else 0f
+                                }.then(
+                                    if (isMapActive) {
+                                        Modifier
+                                    } else {
+                                        Modifier.clearAndSetSemantics {}
+                                    },
+                                ).pointerHitTestEnabled(isMapActive),
+                    ) {
+                        key(activeCandidate.inferenceResultId, tileUrlPattern) {
+                            CandidateMap(
+                                candidate = activeCandidate,
+                                tileUrlPattern = tileUrlPattern,
+                            )
+                        }
+                    }
+
+                    Box(
+                        modifier =
+                            Modifier
+                                .fillMaxSize()
+                                .zIndex(if (isImageActive) 1f else 0f)
+                                .graphicsLayer {
+                                    alpha = if (isImageActive) 1f else 0f
+                                }.then(
+                                    if (isImageActive) {
+                                        Modifier
+                                    } else {
+                                        Modifier.clearAndSetSemantics {}
+                                    },
+                                ).pointerHitTestEnabled(isImageActive),
+                    ) {
+                        CandidateImageView(
                             candidate = activeCandidate,
-                            tileUrlPattern = tileUrlPattern,
+                            imageModel = imageModel,
+                            onRetry = onRetry,
+                            onAuthExpired = onAuthExpired,
+                            modifier = Modifier.fillMaxSize(),
                         )
                     }
                 }
 
-                Box(
-                    modifier =
-                        Modifier
-                            .fillMaxSize()
-                            .zIndex(if (isImageActive) 1f else 0f)
-                            .graphicsLayer {
-                                alpha = if (isImageActive) 1f else 0f
-                            }.then(
-                                if (isImageActive) {
-                                    Modifier
-                                } else {
-                                    Modifier.clearAndSetSemantics {}
-                                },
-                            ).pointerHitTestEnabled(isImageActive),
-                ) {
-                    CandidateImageView(
-                        candidate = activeCandidate,
-                        imageModel = imageModel,
-                        onRetry = onRetry,
-                        onAuthExpired = onAuthExpired,
-                        modifier = Modifier.fillMaxSize(),
-                    )
-                }
-
-                Column(
-                    modifier =
-                        Modifier
-                            .zIndex(2f)
-                            .align(Alignment.BottomCenter)
-                            .fillMaxWidth(),
-                ) {
+                Column(modifier = Modifier.fillMaxWidth()) {
                     PhotoGallery(
                         photos = photos,
                         onPhotoCaptured = onPhotoCaptured,
