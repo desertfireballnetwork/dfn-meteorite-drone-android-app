@@ -11,6 +11,7 @@ object CandidateMapDefaults {
     const val MAX_ZOOM = 22L
     const val ROOT_TAG = "candidate-map-root"
     const val MARKER_TAG = "candidate-map-marker"
+    const val RECENTER_TAG = "candidate-map-recenter"
 
     fun sourceKey(candidateId: Long): String = "candidate-raster-$candidateId"
 
