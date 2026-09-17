@@ -58,7 +58,7 @@ class SettingsViewModelTest {
     fun `initial load maps populated snapshot in fixed order`() =
         runTest {
             coEvery { storageCoordinator.snapshot() } returns populatedSnapshot()
-            val viewModel = createViewModel()
+            val viewModel = createEnteredViewModel()
 
             advanceUntilIdle()
 
@@ -100,7 +100,7 @@ class SettingsViewModelTest {
                     mapboxRegionCount = 1,
                     mapboxBytes = null,
                 )
-            val viewModel = createViewModel()
+            val viewModel = createEnteredViewModel()
 
             advanceUntilIdle()
 
@@ -114,7 +114,7 @@ class SettingsViewModelTest {
     fun `zero values remain visible and plural satellite count is shown`() =
         runTest {
             coEvery { storageCoordinator.snapshot() } returns snapshot()
-            val viewModel = createViewModel()
+            val viewModel = createEnteredViewModel()
 
             advanceUntilIdle()
 
@@ -144,7 +144,7 @@ class SettingsViewModelTest {
     fun `initial failure has recoverable error and no invented model`() =
         runTest {
             coEvery { storageCoordinator.snapshot() } throws IllegalStateException()
-            val viewModel = createViewModel()
+            val viewModel = createEnteredViewModel()
 
             advanceUntilIdle()
 
@@ -161,19 +161,19 @@ class SettingsViewModelTest {
     fun `refresh failure retains stale model and retry recovers`() =
         runTest {
             coEvery { storageCoordinator.snapshot() } returns populatedSnapshot()
-            val viewModel = createViewModel()
+            val viewModel = createEnteredViewModel()
             advanceUntilIdle()
             val stale = viewModel.uiState.value.storage.displayModel
             coEvery { storageCoordinator.snapshot() } throws IllegalStateException()
 
-            viewModel.retryStorage()
+            viewModel.refreshStorage()
             advanceUntilIdle()
 
             assertEquals(stale, viewModel.uiState.value.storage.displayModel)
             assertNotNull(viewModel.uiState.value.storage.error)
             coEvery { storageCoordinator.snapshot() } returns snapshot(geotiffBytes = 9 * ONE_MB)
 
-            viewModel.retryStorage()
+            viewModel.refreshStorage()
             advanceUntilIdle()
 
             assertNull(viewModel.uiState.value.storage.error)
@@ -188,7 +188,7 @@ class SettingsViewModelTest {
     fun `only mutation completion transitions refresh`() =
         runTest {
             coEvery { storageCoordinator.snapshot() } returns snapshot()
-            createViewModel()
+            createEnteredViewModel()
             advanceUntilIdle()
             coVerify(exactly = 1) { storageCoordinator.snapshot() }
 
@@ -217,12 +217,12 @@ class SettingsViewModelTest {
             coEvery { storageCoordinator.snapshot() } coAnswers {
                 if (!first.isCompleted) first.await() else snapshot()
             }
-            val viewModel = createViewModel()
+            val viewModel = createEnteredViewModel()
             dispatcher.scheduler.runCurrent()
             coVerify(exactly = 1) { storageCoordinator.snapshot() }
 
-            viewModel.retryStorage()
-            viewModel.retryStorage()
+            viewModel.refreshStorage()
+            viewModel.refreshStorage()
             mutationState.value = StorageMutationState.Downloading
             dispatcher.scheduler.runCurrent()
             mutationState.value = StorageMutationState.Idle
@@ -239,7 +239,7 @@ class SettingsViewModelTest {
     fun `radius editing saving and loading remain unchanged`() =
         runTest {
             coEvery { storageCoordinator.snapshot() } returns snapshot()
-            val viewModel = createViewModel()
+            val viewModel = createEnteredViewModel()
             assertEquals(100.0f, viewModel.uiState.value.currentRadius)
             assertEquals("100", viewModel.uiState.value.inputText)
 
@@ -259,7 +259,23 @@ class SettingsViewModelTest {
             assertEquals(300.5f, viewModel.uiState.value.currentRadius)
         }
 
-    private fun createViewModel() = SettingsViewModel(radiusRepository, storageCoordinator)
+    @Test
+    fun `construction does not load and screen entry refreshes`() =
+        runTest {
+            coEvery { storageCoordinator.snapshot() } returns snapshot()
+            val viewModel = SettingsViewModel(radiusRepository, storageCoordinator)
+            advanceUntilIdle()
+            coVerify(exactly = 0) { storageCoordinator.snapshot() }
+
+            viewModel.refreshStorage()
+            advanceUntilIdle()
+            coVerify(exactly = 1) { storageCoordinator.snapshot() }
+        }
+
+    private fun createEnteredViewModel() =
+        SettingsViewModel(radiusRepository, storageCoordinator).also {
+            it.refreshStorage()
+        }
 
     private fun populatedSnapshot() =
         snapshot(

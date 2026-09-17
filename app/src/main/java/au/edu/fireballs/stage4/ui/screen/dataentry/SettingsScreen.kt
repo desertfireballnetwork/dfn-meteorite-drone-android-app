@@ -29,6 +29,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import au.edu.fireballs.stage4.data.tiles.GeotiffRadiusRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -106,6 +107,11 @@ fun SettingsScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val geotiffState by geotiffViewModel.uiState.collectAsStateWithLifecycle()
 
+    LifecycleResumeEffect(Unit) {
+        viewModel.refreshStorage()
+        onPauseOrDispose { }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -122,7 +128,7 @@ fun SettingsScreen(
                 viewModel.save()
                 geotiffViewModel.save()
             },
-            onRetryStorage = viewModel::retryStorage,
+            onRetryStorage = viewModel::refreshStorage,
             modifier =
                 modifier
                     .fillMaxSize()

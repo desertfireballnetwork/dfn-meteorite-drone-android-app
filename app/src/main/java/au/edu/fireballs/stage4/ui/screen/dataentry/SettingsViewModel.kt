@@ -66,7 +66,6 @@ class SettingsViewModel
 
         init {
             observeStorageMutations()
-            refreshStorage()
         }
 
         fun load() {
@@ -109,10 +108,6 @@ class SettingsViewModel
             }
         }
 
-        fun retryStorage() {
-            refreshStorage()
-        }
-
         private fun observeStorageMutations() {
             viewModelScope.launch {
                 var previous: StorageMutationState? = null
@@ -129,7 +124,7 @@ class SettingsViewModel
             }
         }
 
-        private fun refreshStorage() {
+        fun refreshStorage() {
             if (refreshInFlight) {
                 refreshPending = true
                 return
