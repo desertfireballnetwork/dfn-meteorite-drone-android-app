@@ -24,6 +24,32 @@ class TileStore(
         coord: TileCoord,
     ): Boolean = contains(surveyId, candidateId, coord.z, coord.x, coord.y)
 
+    fun candidateTiles(
+        surveyId: Long,
+        candidateId: Long,
+        zoom: Int,
+    ): List<TileCoord> {
+        val dir = File(baseDir, "$surveyId/$candidateId/$zoom")
+        return dir
+            .listFiles()
+            ?.flatMap { xDirectory ->
+                val x = xDirectory.name.toIntOrNull()
+                if (x == null || !xDirectory.isDirectory) {
+                    emptyList()
+                } else {
+                    xDirectory
+                        .listFiles()
+                        ?.mapNotNull { yFile ->
+                            yFile
+                                .name
+                                .removeSuffix(".png")
+                                .toIntOrNull()
+                                ?.let { y -> TileCoord(zoom, x, y) }
+                        }.orEmpty()
+                }
+            }.orEmpty()
+    }
+
     fun hasCandidate(
         surveyId: Long,
         candidateId: Long,

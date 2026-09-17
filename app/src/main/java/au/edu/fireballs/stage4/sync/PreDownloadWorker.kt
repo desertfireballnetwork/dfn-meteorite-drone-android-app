@@ -13,6 +13,7 @@ import au.edu.fireballs.stage4.data.repository.ClaimRepository
 import au.edu.fireballs.stage4.data.repository.Stage4Repository
 import au.edu.fireballs.stage4.data.tiles.BufferRadiusRepository
 import au.edu.fireballs.stage4.data.tiles.GeotiffRadiusRepository
+import au.edu.fireballs.stage4.data.tiles.LowZoomTileCompositor
 import au.edu.fireballs.stage4.data.tiles.OfflineBundleRepository
 import au.edu.fireballs.stage4.data.tiles.OfflineManagerWrapper
 import au.edu.fireballs.stage4.data.tiles.SatelliteRegionStore
@@ -67,6 +68,7 @@ class PreDownloadWorker
                     claimDao = claimDao,
                     surveyDao = surveyDao,
                     tileStore = tileStore,
+                    lowZoomCompositor = LowZoomTileCompositor(tileStore),
                     tileService = tileService,
                     offlineManagerWrapper = offlineManagerWrapper,
                     offlineBundleRepository = offlineBundleRepository,

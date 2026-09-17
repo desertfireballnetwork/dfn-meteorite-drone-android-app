@@ -2,14 +2,17 @@ package au.edu.fireballs.stage4.ui.screen.stage4map
 
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.key
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import au.edu.fireballs.stage4.domain.model.MapCameraTarget
 import au.edu.fireballs.stage4.domain.model.Stage4Candidate
 import au.edu.fireballs.stage4.domain.model.Stage4State
 import au.edu.fireballs.stage4.domain.model.UserLocation
 import au.edu.fireballs.stage4.ui.screen.stage4map.marker.CandidateMarkers
 import com.mapbox.maps.CameraBoundsOptions
 import com.mapbox.maps.MapView
+import com.mapbox.maps.extension.compose.DisposableMapEffect
 import com.mapbox.maps.extension.compose.MapEffect
 import com.mapbox.maps.extension.compose.MapboxMap
 import com.mapbox.maps.extension.compose.animation.viewport.MapViewportState
@@ -19,8 +22,8 @@ import com.mapbox.maps.extension.compose.style.rememberStyleState
 import com.mapbox.maps.plugin.Plugin
 import com.mapbox.maps.plugin.locationcomponent.LocationComponentPlugin
 
-private const val BASE_STYLE_URI = "mapbox://styles/mapbox/standard-satellite"
-private const val MAX_CAMERA_ZOOM = 25.0
+private const val BASE_STYLE_URI = "mapbox://styles/mapbox/satellite-v9"
+private const val MAX_CAMERA_ZOOM = 24.0
 
 @Composable
 internal fun MapHost(
@@ -30,8 +33,8 @@ internal fun MapHost(
     layerToggleState: LayerToggleState,
     onMarkerClick: (Stage4Candidate) -> Unit,
     onUserLocationClick: (UserLocation) -> Unit,
-    candidateId: Long? = null,
-    tileUrlPattern: String? = null,
+    overlayCandidates: List<Pair<Long, String>> = emptyList(),
+    onCameraChange: (MapCameraTarget) -> Unit = {},
 ) {
     val styleState =
         rememberStyleState {
@@ -55,6 +58,20 @@ internal fun MapHost(
             locationPermissionGranted = locationPermissionGranted,
             showAccuracyRing = state.showGeolocationAccuracyCircle,
         )
+        DisposableMapEffect(Unit) { mapView ->
+            val subscription =
+                mapView.mapboxMap.subscribeCameraChanged {
+                    val camera = mapView.mapboxMap.cameraState
+                    onCameraChange(
+                        MapCameraTarget(
+                            latitude = camera.center.latitude(),
+                            longitude = camera.center.longitude(),
+                            zoom = camera.zoom,
+                        ),
+                    )
+                }
+            onDispose { subscription.cancel() }
+        }
 
         SurveyedAreaOverlay(
             polygons = state.surveyedAreas,
@@ -63,6 +80,15 @@ internal fun MapHost(
         )
         BaseMarker(base = state.base)
 
+        overlayCandidates.forEach { (candidateId, pattern) ->
+            key(candidateId) {
+                CustomRasterOverlay(
+                    surveyId = state.survey.id,
+                    candidateId = candidateId,
+                    tileUrlPattern = pattern,
+                )
+            }
+        }
         CandidateMarkers(
             state = state,
             toggleState = layerToggleState,
@@ -71,11 +97,6 @@ internal fun MapHost(
         UserLocationMarkers(
             userLocations = state.userLocations,
             onUserLocationClick = onUserLocationClick,
-        )
-        CustomRasterOverlay(
-            surveyId = state.survey.id,
-            candidateId = candidateId,
-            tileUrlPattern = tileUrlPattern,
         )
     }
 }

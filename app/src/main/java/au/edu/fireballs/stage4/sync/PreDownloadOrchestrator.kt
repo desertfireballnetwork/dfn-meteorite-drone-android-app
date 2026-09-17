@@ -15,6 +15,8 @@ import au.edu.fireballs.stage4.data.repository.Stage4Repository
 import au.edu.fireballs.stage4.data.tiles.Bbox
 import au.edu.fireballs.stage4.data.tiles.GeotiffRadiusRepository
 import au.edu.fireballs.stage4.data.tiles.LocalFileRasterTileProvider
+import au.edu.fireballs.stage4.data.tiles.LowZoomCompositor
+import au.edu.fireballs.stage4.data.tiles.LowZoomTileCompositor
 import au.edu.fireballs.stage4.data.tiles.OfflineBundleRepository
 import au.edu.fireballs.stage4.data.tiles.OfflineManagerWrapper
 import au.edu.fireballs.stage4.data.tiles.SatelliteRegionStore
@@ -60,6 +62,7 @@ class PreDownloadOrchestrator(
     private val claimDao: ClaimDao,
     private val surveyDao: SurveyDao,
     private val tileStore: TileStore,
+    private val lowZoomCompositor: LowZoomCompositor,
     private val tileService: TileService,
     private val offlineManagerWrapper: OfflineManagerWrapper,
     private val offlineBundleRepository: OfflineBundleRepository,
@@ -220,6 +223,7 @@ class PreDownloadOrchestrator(
                 total = total,
                 progress = progress,
             )
+        val derivedTileCount = precomputeLowZoomTiles(surveyId, candidates)
         val cropCount =
             downloadCrops(
                 surveyId = surveyId,
@@ -236,7 +240,7 @@ class PreDownloadOrchestrator(
                     surveyId = surveyId,
                     created = Instant.now().toString(),
                     totalBytes = totalBytes,
-                    tileCount = tileCount,
+                    tileCount = tileCount + derivedTileCount,
                     satelliteRegionCount = satelliteTotal,
                     candidateCount = candidates.size,
                     bufferMeters = bufferMeters,
@@ -247,7 +251,7 @@ class PreDownloadOrchestrator(
             Data
                 .Builder()
                 .putLong(KEY_BUNDLE_ID, bundleId)
-                .putInt(KEY_TILE_COUNT, tileCount)
+                .putInt(KEY_TILE_COUNT, tileCount + derivedTileCount)
                 .putInt(KEY_CROP_COUNT, cropCount)
                 .putInt(KEY_SATELLITE_REGION_COUNT, satelliteTotal)
                 .putInt(KEY_CANDIDATE_COUNT, candidates.size)
@@ -369,7 +373,7 @@ class PreDownloadOrchestrator(
         val work = mutableListOf<SatelliteWork>()
         for (cluster in clusters) {
             val bbox = unionBbox(cluster, bufferRadius)
-            val signature = satelliteSignature(bbox)
+            val signature = satelliteSignature(cluster, bbox)
             if (forceRefresh || !satelliteRegionStore.contains(surveyId, signature)) {
                 work += SatelliteWork(bbox, signature)
             }
@@ -377,9 +381,14 @@ class PreDownloadOrchestrator(
         return work
     }
 
-    private fun satelliteSignature(bbox: Bbox): String =
+    private fun satelliteSignature(
+        cluster: List<CandidatePoint>,
+        bbox: Bbox,
+    ): String =
         buildString {
             append("sat:")
+            append(cluster.map { it.inferenceResultId }.sorted().joinToString(","))
+            append(':')
             append(bbox.minLat.toBits())
             append(',')
             append(bbox.minLon.toBits())
@@ -484,6 +493,49 @@ class PreDownloadOrchestrator(
         }
         return written
     }
+
+    private suspend fun precomputeLowZoomTiles(
+        surveyId: Long,
+        candidates: List<CandidatePoint>,
+    ): Int =
+        withContext(ioDispatcher) {
+            val minZoom = LowZoomTileCompositor.MIN_ZOOM
+            val sourceZoom = LowZoomTileCompositor.SOURCE_ZOOM
+            var written = 0
+            candidates.forEach { candidate ->
+                for (zoom in minZoom until sourceZoom) {
+                    lowZoomCompositor
+                        .parentTiles(
+                            surveyId,
+                            candidate.inferenceResultId,
+                            zoom,
+                        ).forEach { parent ->
+                            val bytes =
+                                lowZoomCompositor.compose(
+                                    surveyId,
+                                    candidate.inferenceResultId,
+                                    parent,
+                                )
+                            if (
+                                !bytes.contentEquals(
+                                    LocalFileRasterTileProvider.TRANSPARENT_PNG,
+                                )
+                            ) {
+                                tileStore.write(
+                                    surveyId,
+                                    candidate.inferenceResultId,
+                                    parent.z,
+                                    parent.x,
+                                    parent.y,
+                                    bytes,
+                                )
+                                written++
+                            }
+                        }
+                }
+            }
+            written
+        }
 
     private suspend fun fetchTileWithRetry(
         surveyId: Long,

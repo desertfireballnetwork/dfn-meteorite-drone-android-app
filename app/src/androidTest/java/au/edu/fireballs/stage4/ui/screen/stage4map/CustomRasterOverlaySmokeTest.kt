@@ -28,8 +28,7 @@ class CustomRasterOverlaySmokeTest {
                 layerToggleState = LayerToggleState(),
                 onMarkerClick = {},
                 onUserLocationClick = {},
-                candidateId = 2L,
-                tileUrlPattern = null,
+                overlayCandidates = emptyList(),
             )
         }
         composeRule.waitForIdle()
@@ -46,9 +45,11 @@ class CustomRasterOverlaySmokeTest {
                 layerToggleState = LayerToggleState(),
                 onMarkerClick = {},
                 onUserLocationClick = {},
-                candidateId = 2L,
-                tileUrlPattern =
-                    "https://find.gfo.rocks/image_geotiff_candidate_tile/1/2/{z}/{x}/{y}/",
+                overlayCandidates =
+                    listOf(
+                        2L to
+                            "https://find.gfo.rocks/image_geotiff_candidate_tile/1/2/{z}/{x}/{y}/",
+                    ),
             )
         }
         composeRule.waitForIdle()

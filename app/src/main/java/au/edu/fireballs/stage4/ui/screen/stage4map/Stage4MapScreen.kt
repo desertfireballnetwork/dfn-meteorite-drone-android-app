@@ -35,6 +35,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import au.edu.fireballs.stage4.data.repository.NetworkState
+import au.edu.fireballs.stage4.domain.model.MapCameraTarget
 import au.edu.fireballs.stage4.domain.model.Stage4Candidate
 import au.edu.fireballs.stage4.domain.model.UserLocation
 import au.edu.fireballs.stage4.ui.PendingSyncBadge
@@ -60,6 +61,7 @@ fun Stage4MapScreen(
     val connectionBannerState by viewModel.connectionBannerState.collectAsStateWithLifecycle()
     val networkState by viewModel.networkState.collectAsStateWithLifecycle()
     val hasOfflineBundle by viewModel.hasOfflineBundle.collectAsStateWithLifecycle()
+    val overlayCandidates by viewModel.overlayCandidates.collectAsStateWithLifecycle()
     val mapViewportState = rememberMapViewportState()
     val locationPermission = rememberLocationPermission()
     var positionedSurveyId by rememberSaveable { mutableStateOf<Long?>(null) }
@@ -85,15 +87,16 @@ fun Stage4MapScreen(
 
         is Stage4MapUiState.Loaded -> {
             var selectedCandidateId by rememberSaveable { mutableStateOf<Long?>(null) }
+            var modalCandidateId by rememberSaveable { mutableStateOf<Long?>(null) }
             var selectedUser by remember { mutableStateOf<UserLocation?>(null) }
 
-            val selectedCandidate =
-                selectedCandidateId?.let { id ->
-                    (
-                        state.state.unprocessedCandidates +
-                            state.state.yesMeteorites +
-                            state.state.noMeteorites
-                    ).firstOrNull { it.inferenceResultId == id }
+            val candidates =
+                state.state.unprocessedCandidates +
+                    state.state.yesMeteorites +
+                    state.state.noMeteorites
+            val modalCandidate =
+                modalCandidateId?.let { id ->
+                    candidates.firstOrNull { it.inferenceResultId == id }
                 }
 
             LoadedMap(
@@ -106,17 +109,16 @@ fun Stage4MapScreen(
                 pendingCount = pendingCount,
                 hasOfflineBundle = hasOfflineBundle,
                 selectedUser = selectedUser,
-                tileUrlPattern =
-                    selectedCandidateId?.let {
-                        viewModel.candidateTileUrlPattern(state.state.survey.id, it)
-                    },
-                candidateId = selectedCandidateId,
+                overlayCandidates = overlayCandidates,
+                onCameraChange = viewModel::updateCamera,
                 onSurveyPositioned = { positionedSurveyId = state.state.survey.id },
                 onToggleLayer = viewModel::toggleLayer,
                 onSync = viewModel::syncNow,
                 onMarkerClick = {
                     if (shouldAllowCandidateSelection(hasOfflineBundle, networkState)) {
                         selectedCandidateId = it.inferenceResultId
+                        modalCandidateId = it.inferenceResultId
+                        viewModel.setSelectedCandidate(it.inferenceResultId)
                     }
                 },
                 onUserLocationClick = { selectedUser = it },
@@ -124,12 +126,12 @@ fun Stage4MapScreen(
                 onOpenDownloads = onOpenDownloads,
             )
 
-            selectedCandidate?.let { candidate ->
+            modalCandidate?.let { candidate ->
                 CandidateModal(
                     candidate = candidate,
                     surveyId = state.state.survey.id,
                     detectionTags = state.state.detectionTags,
-                    onClose = { selectedCandidateId = null },
+                    onClose = { modalCandidateId = null },
                     onAuthExpired = onAuthExpired,
                 )
             }
@@ -185,8 +187,8 @@ private fun LoadedMap(
     pendingCount: Int,
     hasOfflineBundle: Boolean,
     selectedUser: UserLocation?,
-    tileUrlPattern: String?,
-    candidateId: Long?,
+    overlayCandidates: List<Pair<Long, String>>,
+    onCameraChange: (MapCameraTarget) -> Unit,
     onSurveyPositioned: () -> Unit,
     onToggleLayer: (LayerType, Boolean) -> Unit,
     onSync: () -> Unit,
@@ -241,8 +243,8 @@ private fun LoadedMap(
                 layerToggleState = loaded.layerToggleState,
                 onMarkerClick = onMarkerClick,
                 onUserLocationClick = onUserLocationClick,
-                candidateId = candidateId,
-                tileUrlPattern = tileUrlPattern,
+                overlayCandidates = overlayCandidates,
+                onCameraChange = onCameraChange,
             )
 
             LayerToggleBar(

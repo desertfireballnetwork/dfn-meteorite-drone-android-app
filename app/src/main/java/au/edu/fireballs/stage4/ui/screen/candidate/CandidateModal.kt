@@ -39,6 +39,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -179,10 +180,14 @@ fun CandidateModal(
     onRetryServerGallery: () -> Unit = {},
     serverUrl: String = "",
 ) {
-    val activeCandidate = uiState?.candidate ?: candidate
-    val currentMode = uiState?.viewMode ?: CandidateViewMode.MAP
-    val tileUrlPattern = uiState?.tileUrlPattern ?: ""
-    val imageModel = uiState?.croppedImageModel
+    val matchingState =
+        uiState?.takeIf {
+            it.candidate.inferenceResultId == candidate.inferenceResultId
+        }
+    val activeCandidate = matchingState?.candidate ?: candidate
+    val currentMode = matchingState?.viewMode ?: CandidateViewMode.MAP
+    val tileUrlPattern = matchingState?.tileUrlPattern.orEmpty()
+    val imageModel = matchingState?.croppedImageModel
 
     Dialog(
         onDismissRequest = onClose,
@@ -222,10 +227,12 @@ fun CandidateModal(
                                 },
                             ).pointerHitTestEnabled(isMapActive),
                 ) {
-                    CandidateMap(
-                        candidate = activeCandidate,
-                        tileUrlPattern = tileUrlPattern,
-                    )
+                    key(activeCandidate.inferenceResultId, tileUrlPattern) {
+                        CandidateMap(
+                            candidate = activeCandidate,
+                            tileUrlPattern = tileUrlPattern,
+                        )
+                    }
                 }
 
                 Box(

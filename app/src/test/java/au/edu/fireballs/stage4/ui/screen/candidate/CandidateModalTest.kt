@@ -93,6 +93,31 @@ class CandidateModalTest {
     }
 
     @Test
+    fun candidateModal_ignoresUiStateForPreviousCandidate() {
+        val requested = createCandidate(id = 99L)
+        val previous = createCandidate(id = 42L)
+
+        composeRule.setContent {
+            CompositionLocalProvider(LocalInspectionMode provides true) {
+                CandidateModal(
+                    candidate = requested,
+                    uiState =
+                        CandidateUiState(
+                            candidate = previous,
+                            surveyId = 1L,
+                            tileUrlPattern = "https://example.com/42/{z}/{x}/{y}",
+                        ),
+                    onClose = {},
+                    onSelectMode = {},
+                )
+            }
+        }
+
+        composeRule.onNodeWithText("Candidate #99").assertExists()
+        composeRule.onNodeWithText("Candidate #42").assertDoesNotExist()
+    }
+
+    @Test
     fun candidateModal_headerDisplaysNAWhenCoordinatesAreNull() {
         val candidate = createCandidate(id = 99L, centroid = null)
 
