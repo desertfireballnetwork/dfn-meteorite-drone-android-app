@@ -85,11 +85,29 @@ class LowZoomTileCompositor(
         val paint = Paint(Paint.FILTER_BITMAP_FLAG)
         var rendered = false
         placements.forEach { placement ->
-            val bytes =
+            val raw =
                 tileStore
                     .read(surveyId, candidateId, placement.child)
-                    ?.use { it.readBytes() }
-                    ?: return@forEach
+                    ?.use { input ->
+                        input.readNBytes(MAX_ENCODED_TILE_BYTES + 1)
+                    }
+            val bytes =
+                if (raw == null || raw.size > MAX_ENCODED_TILE_BYTES) {
+                    return@forEach
+                } else {
+                    raw
+                }
+            val bounds =
+                BitmapFactory.Options().apply {
+                    inJustDecodeBounds = true
+                }
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+            if (
+                bounds.outWidth !in 1..MAX_SOURCE_TILE_PIXELS ||
+                bounds.outHeight !in 1..MAX_SOURCE_TILE_PIXELS
+            ) {
+                return@forEach
+            }
             val bitmap =
                 BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
                     ?: return@forEach
@@ -132,5 +150,7 @@ class LowZoomTileCompositor(
         const val SOURCE_ZOOM = 20
         private const val TILE_SIZE = 2048
         private const val PNG_QUALITY = 100
+        private const val MAX_ENCODED_TILE_BYTES = 16 * 1024 * 1024
+        private const val MAX_SOURCE_TILE_PIXELS = 4096
     }
 }

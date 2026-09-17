@@ -728,12 +728,9 @@ class PreDownloadWorkerTest {
             val outcome =
                 orchestrator.run(SURVEY_ID, BUFFER_METERS) { progressUpdates.add(it) }
 
-            assertTrue("Expected success but got $outcome", outcome is PreDownloadOutcome.Success)
-            val last = progressUpdates.last()
-            assertEquals(
-                last.getInt(PreDownloadOrchestrator.KEY_TOTAL, -1),
-                last.getInt(PreDownloadOrchestrator.KEY_DONE, -1),
-            )
+            assertTrue("Expected failure but got $outcome", outcome is PreDownloadOutcome.Failure)
+            assertTrue("Expected progress updates", progressUpdates.isNotEmpty())
+            assertTrue("Expected no completed bundle", offlineBundleDao.inserted.isEmpty())
         }
 
     @Test
@@ -781,8 +778,11 @@ class PreDownloadWorkerTest {
                     anyInt(),
                 ),
             ).thenReturn(Response.success<ResponseBody>(204, null))
+            val cropBody =
+                byteArrayOf(9, 9, 9)
+                    .toResponseBody("image/jpeg".toMediaType())
             `when`(tileService.getCandidateCrop(anyLong()))
-                .thenReturn(Response.error(500, "err".toResponseBody()))
+                .thenReturn(Response.success(cropBody))
 
             val offlineManagerWrapper = mock(OfflineManagerWrapper::class.java)
             doAnswer { invocation ->
@@ -925,9 +925,7 @@ class PreDownloadWorkerTest {
 
             val outcome = orchestrator.run(SURVEY_ID, BUFFER_METERS) {}
 
-            assertTrue("Expected success but got $outcome", outcome is PreDownloadOutcome.Success)
-            val output = (outcome as PreDownloadOutcome.Success).outputData
-            assertEquals(0, output.getInt(PreDownloadOrchestrator.KEY_CROP_COUNT, -1))
+            assertTrue("Expected failure but got $outcome", outcome is PreDownloadOutcome.Failure)
             assertFalse(
                 "Expected oversized crop not written",
                 File(filesDir, "crops/$SURVEY_ID/1.jpg").exists(),

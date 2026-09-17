@@ -34,6 +34,8 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import okhttp3.ResponseBody
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.net.HttpURLConnection
 import java.time.Instant
@@ -223,6 +225,9 @@ class PreDownloadOrchestrator(
                 total = total,
                 progress = progress,
             )
+        if (tileCount != tileTotal) {
+            return failure("Tile download failed")
+        }
         val derivedTileCount = precomputeLowZoomTiles(surveyId, candidates)
         val cropCount =
             downloadCrops(
@@ -232,6 +237,9 @@ class PreDownloadOrchestrator(
                 total = total,
                 progress = progress,
             )
+        if (cropCount != missingCrops.size) {
+            return failure("Crop download failed")
+        }
 
         val totalBytes = computeTotalBytes(surveyId)
         val bundleId =
@@ -570,7 +578,8 @@ class PreDownloadOrchestrator(
 
                     response.isSuccessful &&
                         body != null &&
-                        body.contentLength() <= MAX_TILE_BYTES -> body.bytes()
+                        body.contentLength() <= MAX_TILE_BYTES ->
+                        readBoundedBody(body, MAX_TILE_BYTES)
 
                     else -> null
                 }
@@ -585,6 +594,27 @@ class PreDownloadOrchestrator(
         } catch (e: Exception) {
             false
         }
+
+    private fun readBoundedBody(
+        body: ResponseBody,
+        maxBytes: Int,
+    ): ByteArray? {
+        val output = ByteArrayOutputStream()
+        val buffer = ByteArray(READ_BUFFER_BYTES)
+        body.byteStream().use { input ->
+            while (true) {
+                val read = input.read(buffer)
+                if (read < 0) {
+                    break
+                }
+                if (output.size() + read > maxBytes) {
+                    return null
+                }
+                output.write(buffer, 0, read)
+            }
+        }
+        return output.toByteArray()
+    }
 
     private suspend fun downloadCrops(
         surveyId: Long,
@@ -632,11 +662,15 @@ class PreDownloadOrchestrator(
             val response = tileService.getCandidateCrop(candidateId)
             val body = response.body()
             if (response.isSuccessful && body != null && body.contentLength() <= MAX_CROP_BYTES) {
-                val bytes = body.bytes()
-                val file = File(filesDir, "$CROP_DIR/$surveyId/$candidateId.jpg")
-                file.parentFile?.mkdirs()
-                file.writeBytes(bytes)
-                true
+                val bytes = readBoundedBody(body, MAX_CROP_BYTES)
+                if (bytes != null) {
+                    val file = File(filesDir, "$CROP_DIR/$surveyId/$candidateId.jpg")
+                    file.parentFile?.mkdirs()
+                    file.writeBytes(bytes)
+                    true
+                } else {
+                    false
+                }
             } else {
                 false
             }
@@ -718,6 +752,7 @@ class PreDownloadOrchestrator(
         private const val TILE_MAX_ZOOM = 22
         private const val TILE_CONCURRENCY = 6
         private const val MAX_TILE_ATTEMPTS = 3
+        private const val READ_BUFFER_BYTES = 8 * 1024
         private const val MAX_TILE_BYTES = 16 * 1024 * 1024
         private const val MAX_CROP_BYTES = 2_097_152
         private const val EARTH_RADIUS_METERS = 6_371_000.0
