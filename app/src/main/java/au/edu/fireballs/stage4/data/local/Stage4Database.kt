@@ -269,7 +269,8 @@ abstract class Stage4Database : RoomDatabase() {
                         "CREATE INDEX index_tile_manifest_surveyId ON tile_manifest(surveyId)",
                     )
                     db.execSQL(
-                        "CREATE INDEX index_tile_manifest_candidateId ON tile_manifest(candidateId)",
+                        "CREATE INDEX index_tile_manifest_candidateId " +
+                            "ON tile_manifest(candidateId)",
                     )
                     db.execSQL(
                         """
