@@ -163,24 +163,28 @@ class StorageClearRepositoryTest {
                 assertTrue(after > 0)
                 assertEquals(protectedBefore[table], after)
             }
-            assertNotNull(database.surveyDao().getById(PROTECTED_SURVEY_ID))
-            assertNotNull(database.candidateDao().getById(PROTECTED_CANDIDATE_ID))
-            assertNotNull(
-                database.claimDao().getByCandidateId(PROTECTED_CANDIDATE_ID),
-            )
-            assertEquals(
-                1,
-                database.localDecisionDao().getUnsynced().count {
-                    it.inferenceResultId == PROTECTED_CANDIDATE_ID
-                },
-            )
-            assertEquals(
-                1,
-                database.pendingPhotoUploadDao().getUnuploaded().count {
-                    it.inferenceResultId == PROTECTED_CANDIDATE_ID
-                },
-            )
+            assertProtectedDataRemains()
         }
+
+    private suspend fun assertProtectedDataRemains() {
+        assertNotNull(database.surveyDao().getById(PROTECTED_SURVEY_ID))
+        assertNotNull(database.candidateDao().getById(PROTECTED_CANDIDATE_ID))
+        assertNotNull(
+            database.claimDao().getByCandidateId(PROTECTED_CANDIDATE_ID),
+        )
+        assertEquals(
+            1,
+            database.localDecisionDao().getUnsynced().count {
+                it.inferenceResultId == PROTECTED_CANDIDATE_ID
+            },
+        )
+        assertEquals(
+            1,
+            database.pendingPhotoUploadDao().getUnuploaded().count {
+                it.inferenceResultId == PROTECTED_CANDIDATE_ID
+            },
+        )
+    }
 
     private suspend fun seedProtectedData() {
         database.surveyDao().upsert(
@@ -369,7 +373,7 @@ class StorageClearRepositoryTest {
         }
 
     @Test
-    fun clearAllRemovesDownloadsAndBundlesButLeavesTemporaryCache() =
+    fun clearAllRemovesDownloadsBundlesAndInactiveCacheWhilePreservingProtectedData() =
         runTest {
             insertBundle("all", WorkingSetState.COMPLETE)
             database.tileManifestDao().insertAll(listOf(tileManifest("all", 21L)))
@@ -381,8 +385,15 @@ class StorageClearRepositoryTest {
             val crop = context.filesDir.resolve("crops/1/21.jpg")
             crop.parentFile?.mkdirs()
             crop.writeBytes(PNG)
-            val temporary = tempRoot.resolve("retained.tmp")
-            temporary.writeText("retained")
+            val inactive = tempRoot.resolve("inactive.tmp")
+            inactive.writeText("inactive")
+            val active = tempRoot.resolve("active.tmp")
+            active.writeText("active")
+            ActiveEvidenceCapture.mark(active.canonicalPath)
+            val evidence = context.filesDir.resolve("evidence/protected.jpg")
+            evidence.parentFile?.mkdirs()
+            evidence.writeBytes(PNG)
+            seedProtectedData()
             repository =
                 repositoryWithWrapper(
                     synchronousWrapper(
@@ -402,7 +413,10 @@ class StorageClearRepositoryTest {
             assertFalse(crop.exists())
             assertTrue(database.satelliteRegionDao().getPendingDeletion().isEmpty())
             assertTrue(database.offlineBundleDao().getAll().isEmpty())
-            assertTrue(temporary.exists())
+            assertFalse(inactive.exists())
+            assertTrue(active.exists())
+            assertTrue(evidence.exists())
+            assertProtectedDataRemains()
         }
 
     private fun repositoryWithWrapper(wrapper: OfflineRegionWrapper): StorageClearRepository {

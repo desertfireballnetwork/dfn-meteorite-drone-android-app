@@ -18,23 +18,23 @@ class ActiveEvidenceCaptureTest {
     }
 
     @Test
-    fun `mark replaces the active path`() {
+    fun `mark retains concurrently active paths`() {
         ActiveEvidenceCapture.mark("/evidence/first.jpg")
-        assertTrue(ActiveEvidenceCapture.isActive("/evidence/first.jpg"))
-
         ActiveEvidenceCapture.mark("/evidence/second.jpg")
 
-        assertFalse(ActiveEvidenceCapture.isActive("/evidence/first.jpg"))
+        assertTrue(ActiveEvidenceCapture.isActive("/evidence/first.jpg"))
         assertTrue(ActiveEvidenceCapture.isActive("/evidence/second.jpg"))
     }
 
     @Test
     fun `clear removes only a matching active path`() {
         ActiveEvidenceCapture.mark("/evidence/active.jpg")
+        ActiveEvidenceCapture.mark("/evidence/other.jpg")
 
         ActiveEvidenceCapture.clear("/evidence/other.jpg")
 
         assertTrue(ActiveEvidenceCapture.isActive("/evidence/active.jpg"))
+        assertFalse(ActiveEvidenceCapture.isActive("/evidence/other.jpg"))
 
         ActiveEvidenceCapture.clear("/evidence/active.jpg")
 
@@ -42,11 +42,13 @@ class ActiveEvidenceCaptureTest {
     }
 
     @Test
-    fun `reset removes the active path`() {
-        ActiveEvidenceCapture.mark("/evidence/active.jpg")
+    fun `reset removes every active path`() {
+        ActiveEvidenceCapture.mark("/evidence/first.jpg")
+        ActiveEvidenceCapture.mark("/evidence/second.jpg")
 
         ActiveEvidenceCapture.reset()
 
-        assertFalse(ActiveEvidenceCapture.isActive("/evidence/active.jpg"))
+        assertFalse(ActiveEvidenceCapture.isActive("/evidence/first.jpg"))
+        assertFalse(ActiveEvidenceCapture.isActive("/evidence/second.jpg"))
     }
 }

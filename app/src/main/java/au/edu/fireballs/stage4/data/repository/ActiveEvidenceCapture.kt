@@ -4,19 +4,19 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
 
 object ActiveEvidenceCapture {
-    private val active = MutableStateFlow<String?>(null)
+    private val active = MutableStateFlow<Set<String>>(emptySet())
 
     fun mark(path: String) {
-        active.update { path }
+        active.update { it + path }
     }
 
     fun clear(path: String) {
-        active.update { current -> if (current == path) null else current }
+        active.update { it - path }
     }
 
-    fun isActive(path: String): Boolean = active.value == path
+    fun isActive(path: String): Boolean = path in active.value
 
     fun reset() {
-        active.update { null }
+        active.update { emptySet() }
     }
 }

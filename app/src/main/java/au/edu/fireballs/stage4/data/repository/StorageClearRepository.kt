@@ -172,6 +172,7 @@ class StorageClearRepository
             if (cropResult is StorageClearResult.Failed) {
                 return cropResult
             }
+            clearTemporaryCache(category)
             clearSatellites(category)
             database.withTransaction {
                 offlineBundleDao.deleteAll()
