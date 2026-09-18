@@ -77,6 +77,17 @@ class NetworkStateRepositoryTest {
     }
 
     @Test
+    fun `onLost moves state offline when active network is still reported as lost network`() {
+        shadowOf(connectivityManager).setNetworkCapabilities(network, internetCapabilities())
+        setActiveNetwork(network)
+        val callback = shadowOf(connectivityManager).networkCallbacks.single()
+        callback.onAvailable(network)
+        callback.onLost(network)
+
+        assertEquals(NetworkState.Offline, repository.networkState.value)
+    }
+
+    @Test
     fun `onLost keeps state online while another network remains active`() {
         shadowOf(connectivityManager).setNetworkCapabilities(network, internetCapabilities())
         shadowOf(connectivityManager).setNetworkCapabilities(network2, internetCapabilities())

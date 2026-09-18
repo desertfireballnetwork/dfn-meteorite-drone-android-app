@@ -31,28 +31,41 @@ class NetworkStateRepository
 
         private var registered = false
 
+        private val availableNetworks = mutableMapOf<Network, NetworkCapabilities?>()
+
         private val callback =
             object : ConnectivityManager.NetworkCallback() {
                 override fun onAvailable(network: Network) {
-                    _networkState.value =
-                        networkStateFor(connectivityManager.getNetworkCapabilities(network))
+                    availableNetworks[network] = connectivityManager.getNetworkCapabilities(network)
+                    refreshNetworkState()
                 }
 
                 override fun onCapabilitiesChanged(
                     network: Network,
                     networkCapabilities: NetworkCapabilities,
                 ) {
-                    _networkState.value = networkStateFor(networkCapabilities)
+                    availableNetworks[network] = networkCapabilities
+                    refreshNetworkState()
                 }
 
                 override fun onLost(network: Network) {
-                    _networkState.value = initialNetworkState()
+                    availableNetworks.remove(network)
+                    refreshNetworkState()
                 }
 
                 override fun onUnavailable() {
                     _networkState.value = NetworkState.Offline
                 }
             }
+
+        private fun refreshNetworkState() {
+            _networkState.value =
+                if (availableNetworks.values.any { networkStateFor(it) == NetworkState.Online }) {
+                    NetworkState.Online
+                } else {
+                    NetworkState.Offline
+                }
+        }
 
         private val request =
             NetworkRequest
