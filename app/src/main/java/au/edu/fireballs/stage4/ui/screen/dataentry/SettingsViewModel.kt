@@ -8,6 +8,7 @@ import au.edu.fireballs.stage4.data.repository.StorageUsageSnapshot
 import au.edu.fireballs.stage4.data.tiles.BufferRadiusRepository
 import au.edu.fireballs.stage4.ui.util.UiText
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -152,6 +153,8 @@ class SettingsViewModel
                                 ),
                         )
                     }
+                } catch (cancellation: CancellationException) {
+                    throw cancellation
                 } catch (_: Exception) {
                     _uiState.update {
                         it.copy(
