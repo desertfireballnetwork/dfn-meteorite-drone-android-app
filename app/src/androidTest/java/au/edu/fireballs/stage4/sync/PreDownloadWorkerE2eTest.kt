@@ -14,6 +14,7 @@ import au.edu.fireballs.stage4.data.remote.Stage4Service
 import au.edu.fireballs.stage4.data.remote.TileService
 import au.edu.fireballs.stage4.data.repository.CandidateImageRepository
 import au.edu.fireballs.stage4.data.repository.ClaimRepository
+import au.edu.fireballs.stage4.data.repository.OfflineWorkingSetRepository
 import au.edu.fireballs.stage4.data.repository.Stage4Repository
 import au.edu.fireballs.stage4.data.tiles.GeotiffRadiusRepository
 import au.edu.fireballs.stage4.data.tiles.LowZoomTileCompositor
@@ -105,13 +106,12 @@ class PreDownloadWorkerE2eTest {
                     database.offlineBundleDao(),
                     ioDispatcher,
                 )
-            val offlineManagerWrapper =
-                OfflineManagerWrapper(
-                    OfflineRegionWrapper(
-                        source = FakeOfflineRegionSource(),
-                        mainHandler = immediateHandler(),
-                    ),
+            val offlineRegionWrapper =
+                OfflineRegionWrapper(
+                    source = FakeOfflineRegionSource(),
+                    mainHandler = immediateHandler(),
                 )
+            val offlineManagerWrapper = OfflineManagerWrapper(offlineRegionWrapper)
             val context = InstrumentationRegistry.getInstrumentation().targetContext
             val candidateImageRepository =
                 CandidateImageRepository(
@@ -138,11 +138,21 @@ class PreDownloadWorkerE2eTest {
                     lowZoomCompositor = LowZoomTileCompositor(tileStore),
                     tileService = tileService(),
                     offlineManagerWrapper = offlineManagerWrapper,
-                    offlineBundleRepository = offlineBundleRepository,
+                    workingSetRepository =
+                        OfflineWorkingSetRepository(
+                            database = database,
+                            offlineBundleDao = database.offlineBundleDao(),
+                            tileManifestDao = database.tileManifestDao(),
+                            candidateCropManifestDao = database.candidateCropManifestDao(),
+                            satelliteRegionDao = database.satelliteRegionDao(),
+                            tileStore = tileStore,
+                            candidateImageRepository = candidateImageRepository,
+                            offlineRegionWrapper = offlineRegionWrapper,
+                            ioDispatcher = ioDispatcher,
+                        ),
                     candidateImageRepository = candidateImageRepository,
                     geotiffRadiusRepository = geotiffRadiusRepository,
                     satelliteRegionStore = satelliteRegionStore,
-                    filesDir = cropsDir,
                     ioDispatcher = ioDispatcher,
                 )
 
@@ -160,7 +170,7 @@ class PreDownloadWorkerE2eTest {
                 assertTrue("No tiles for candidate $candidateId", tileFiles.isNotEmpty())
                 assertTrue(
                     "Missing crop for candidate $candidateId",
-                    File(cropsDir, "$SURVEY_ID/$candidateId.jpg").isFile,
+                    candidateImageRepository.getLocalCropImageFile(SURVEY_ID, candidateId) != null,
                 )
             }
 
@@ -175,7 +185,7 @@ class PreDownloadWorkerE2eTest {
                 assertTrue(it.tileCount > 0)
                 assertTrue(it.satelliteRegionCount > 0)
                 assertEquals(CANDIDATE_IDS.size, it.candidateCount)
-                assertEquals(BUFFER_METERS, it.bufferMeters)
+                assertEquals(BUFFER_METERS.toDouble(), it.radiusMetres, 0.0)
             }
         }
 

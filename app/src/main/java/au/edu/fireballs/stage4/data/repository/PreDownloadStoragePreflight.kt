@@ -133,4 +133,16 @@ class PreDownloadStoragePreflight
                 snapshot.totalVolumeBytes,
             )
         }
+
+        suspend fun evaluateReplacement(
+            classification: ReplacementClassification,
+        ): PreDownloadPreflightResult {
+            val snapshot = storageCoordinator.snapshot()
+            return PreDownloadSpaceCalculator.evaluate(
+                inventory = classification.toInventory(),
+                availableBytes = snapshot.availableVolumeBytes,
+                totalVolumeBytes = snapshot.totalVolumeBytes,
+                confidentlyDeletableBytes = classification.confidentlyDeletableBytes,
+            )
+        }
     }

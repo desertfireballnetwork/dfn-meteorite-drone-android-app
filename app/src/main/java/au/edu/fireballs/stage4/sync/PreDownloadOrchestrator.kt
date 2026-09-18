@@ -2,7 +2,6 @@ package au.edu.fireballs.stage4.sync
 
 import androidx.work.Data
 import androidx.work.workDataOf
-import au.edu.fireballs.stage4.data.local.OfflineBundleEntity
 import au.edu.fireballs.stage4.data.local.dao.CandidateDao
 import au.edu.fireballs.stage4.data.local.dao.ClaimDao
 import au.edu.fireballs.stage4.data.local.dao.SurveyDao
@@ -10,11 +9,20 @@ import au.edu.fireballs.stage4.data.remote.TileService
 import au.edu.fireballs.stage4.data.repository.CandidateImageRepository
 import au.edu.fireballs.stage4.data.repository.ClaimRepository
 import au.edu.fireballs.stage4.data.repository.ClaimResult
+import au.edu.fireballs.stage4.data.repository.CropWriteResult
+import au.edu.fireballs.stage4.data.repository.OfflineWorkingSetRepository
 import au.edu.fireballs.stage4.data.repository.PreDownloadPreflightResult
 import au.edu.fireballs.stage4.data.repository.PreDownloadSpaceEstimate
 import au.edu.fireballs.stage4.data.repository.PreDownloadStoragePreflight
 import au.edu.fireballs.stage4.data.repository.PreDownloadTargetCandidate
+import au.edu.fireballs.stage4.data.repository.PreDownloadTargetKey
 import au.edu.fireballs.stage4.data.repository.PreDownloadTargetPlanner
+import au.edu.fireballs.stage4.data.repository.PreDownloadTargetSet
+import au.edu.fireballs.stage4.data.repository.ReplacementBeginResult
+import au.edu.fireballs.stage4.data.repository.ReplacementClassification
+import au.edu.fireballs.stage4.data.repository.ReplacementCompletionResult
+import au.edu.fireballs.stage4.data.repository.ReplacementPruneResult
+import au.edu.fireballs.stage4.data.repository.ReplacementTarget
 import au.edu.fireballs.stage4.data.repository.Stage4Repository
 import au.edu.fireballs.stage4.data.repository.StorageCoordinator
 import au.edu.fireballs.stage4.data.repository.StorageMutationState
@@ -23,7 +31,6 @@ import au.edu.fireballs.stage4.data.tiles.GeotiffRadiusRepository
 import au.edu.fireballs.stage4.data.tiles.LocalFileRasterTileProvider
 import au.edu.fireballs.stage4.data.tiles.LowZoomCompositor
 import au.edu.fireballs.stage4.data.tiles.LowZoomTileCompositor
-import au.edu.fireballs.stage4.data.tiles.OfflineBundleRepository
 import au.edu.fireballs.stage4.data.tiles.OfflineManagerWrapper
 import au.edu.fireballs.stage4.data.tiles.SatelliteRegionStore
 import au.edu.fireballs.stage4.data.tiles.TileCoord
@@ -42,9 +49,8 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import okhttp3.ResponseBody
 import java.io.ByteArrayOutputStream
-import java.io.File
 import java.net.HttpURLConnection
-import java.time.Instant
+import java.util.UUID
 import java.util.concurrent.CancellationException
 import kotlin.coroutines.resume
 
@@ -69,11 +75,10 @@ class PreDownloadOrchestrator(
     private val lowZoomCompositor: LowZoomCompositor,
     private val tileService: TileService,
     private val offlineManagerWrapper: OfflineManagerWrapper,
-    private val offlineBundleRepository: OfflineBundleRepository,
+    private val workingSetRepository: OfflineWorkingSetRepository,
     private val candidateImageRepository: CandidateImageRepository,
     private val geotiffRadiusRepository: GeotiffRadiusRepository,
     private val satelliteRegionStore: SatelliteRegionStore,
-    private val filesDir: File,
     private val storageCoordinator: StorageCoordinator? = null,
     @IoDispatcher private val ioDispatcher: CoroutineDispatcher,
     private val preflight: PreDownloadStoragePreflight? = null,
@@ -92,6 +97,7 @@ class PreDownloadOrchestrator(
     suspend fun run(
         surveyId: Long,
         bufferMeters: Float,
+        manifestId: String? = null,
         progress: suspend (Data) -> Unit,
     ): PreDownloadOutcome {
         val locallyCachedTask = surveyDao.getById(surveyId)?.latestTaskCreated
@@ -100,6 +106,7 @@ class PreDownloadOrchestrator(
             return failure("Failed to refresh claims")
         }
         val serverTask = stage4Repository.fetchLatestTaskCreated(surveyId)
+        val sourceVersion = serverTask.orEmpty()
         val replacementRequired =
             locallyCachedTask != null &&
                 serverTask != null &&
@@ -139,10 +146,24 @@ class PreDownloadOrchestrator(
         }
         return try {
             if (coordinator == null) {
-                runDownload(surveyId, bufferMeters, replacementRequired, progress)
+                runDownload(
+                    surveyId,
+                    bufferMeters,
+                    replacementRequired,
+                    sourceVersion,
+                    manifestId,
+                    progress,
+                )
             } else {
                 coordinator.withDownloadLease {
-                    runDownload(surveyId, bufferMeters, replacementRequired, progress)
+                    runDownload(
+                        surveyId,
+                        bufferMeters,
+                        replacementRequired,
+                        sourceVersion,
+                        manifestId,
+                        progress,
+                    )
                 }
             }
         } catch (e: StorageFullException) {
@@ -158,65 +179,140 @@ class PreDownloadOrchestrator(
         surveyId: Long,
         bufferMeters: Float,
         forceRefresh: Boolean,
+        sourceVersion: String,
+        manifestId: String?,
         progress: suspend (Data) -> Unit,
     ): PreDownloadOutcome {
-        if (forceRefresh) {
-            cleanupSurvey(surveyId)
-        }
-
         val candidates = buildCandidates(surveyId)
         val satelliteRadius = bufferMeters.toDouble()
         val geotiffRadius = geotiffRadiusRepository.getRadiusMeters().toDouble()
         val clusters = PreDownloadTargetPlanner.cluster(candidates, satelliteRadius)
-        val satelliteWork =
-            buildSatelliteWork(
-                surveyId = surveyId,
-                clusters = clusters,
-                bufferRadius = satelliteRadius,
-                forceRefresh = forceRefresh,
+        val satelliteTargets =
+            PreDownloadTargetPlanner.satelliteTargets(clusters, satelliteRadius)
+        val targetSet =
+            PreDownloadTargetSet(
+                geotiffTiles =
+                    candidates.flatMap { candidate ->
+                        PreDownloadTargetPlanner
+                            .tilesForCandidate(candidate, geotiffRadius)
+                            .map { tile ->
+                                tileKey(
+                                    surveyId,
+                                    candidate.inferenceResultId,
+                                    sourceVersion,
+                                    geotiffRadius,
+                                    tile,
+                                )
+                            }
+                    },
+                crops =
+                    candidates.map { candidate ->
+                        cropKey(surveyId, candidate.inferenceResultId, sourceVersion)
+                    },
+                satellites =
+                    satelliteTargets.map { target ->
+                        PreDownloadTargetKey.Satellite(
+                            surveyId,
+                            sourceVersion,
+                            target.signature,
+                        )
+                    },
             )
+
+        val activeManifestId = manifestId ?: UUID.randomUUID().toString()
+        val classification =
+            if (manifestId == null) {
+                val inspected = workingSetRepository.inspectTarget(targetSet)
+                val target =
+                    ReplacementTarget(
+                        surveyId = surveyId,
+                        sourceVersion = sourceVersion,
+                        radiusMetres = satelliteRadius,
+                        minZoom = PreDownloadTargetPlanner.SATELLITE_MIN_ZOOM,
+                        maxZoom = PreDownloadTargetPlanner.SATELLITE_MAX_ZOOM,
+                        candidateCount = candidates.size,
+                    )
+                when (
+                    val begin =
+                        workingSetRepository.beginReplacement(target, inspected, activeManifestId)
+                ) {
+                    is ReplacementBeginResult.ConflictingReplacement ->
+                        return failureWithCode(
+                            CODE_REPLACEMENT_CONFLICT,
+                            "Another replacement is in progress",
+                        )
+
+                    is ReplacementBeginResult.Started -> {
+                        when (workingSetRepository.pruneObsolete(begin.session)) {
+                            is ReplacementPruneResult.LocalDeletionFailed ->
+                                return failureWithCode(
+                                    CODE_REPLACEMENT_FAILED,
+                                    "Failed to remove obsolete content",
+                                )
+
+                            ReplacementPruneResult.ManifestUnavailable ->
+                                return failureWithCode(
+                                    CODE_REPLACEMENT_FAILED,
+                                    "Replacement manifest unavailable",
+                                )
+
+                            is ReplacementPruneResult.Completed -> Unit
+                        }
+                        inspected
+                    }
+                }
+            } else {
+                val resumed =
+                    workingSetRepository.resume(manifestId)
+                        ?: return failureWithCode(
+                            CODE_REPLACEMENT_FAILED,
+                            "Replacement not found",
+                        )
+                ReplacementClassification(
+                    retained = emptySet(),
+                    missing = resumed.session.missing,
+                    obsolete = emptySet(),
+                    clearCommands = emptyList(),
+                    confidentlyDeletableBytes = 0L,
+                )
+            }
+
+        val missing = classification.missing
         val candidateTiles =
             candidates.mapNotNull { candidate ->
-                val allTiles =
-                    PreDownloadTargetPlanner.tilesForCandidate(
-                        candidate,
-                        geotiffRadius,
-                    )
-                val missingTiles =
-                    if (
-                        forceRefresh ||
-                        !tileStore.hasCandidate(surveyId, candidate.inferenceResultId)
-                    ) {
-                        allTiles
-                    } else {
-                        allTiles.filterNot { tile ->
-                            tileStore.contains(
+                val tiles =
+                    PreDownloadTargetPlanner
+                        .tilesForCandidate(candidate, geotiffRadius)
+                        .filter { tile ->
+                            tileKey(
                                 surveyId,
                                 candidate.inferenceResultId,
-                                tile.z,
-                                tile.x,
-                                tile.y,
-                            )
+                                sourceVersion,
+                                geotiffRadius,
+                                tile,
+                            ) in missing
                         }
-                    }
-                missingTiles
-                    .takeIf { it.isNotEmpty() }
-                    ?.let { CandidateTiles(candidate, it) }
+                tiles.takeIf { it.isNotEmpty() }?.let { CandidateTiles(candidate, it) }
             }
         val missingCrops =
             candidates.filter { candidate ->
-                forceRefresh ||
-                    candidateImageRepository.getLocalCropImageFile(
-                        surveyId,
-                        candidate.inferenceResultId,
-                    ) == null
+                cropKey(surveyId, candidate.inferenceResultId, sourceVersion) in missing
             }
+        val satelliteWork =
+            satelliteTargets
+                .filter { target ->
+                    PreDownloadTargetKey.Satellite(
+                        surveyId,
+                        sourceVersion,
+                        target.signature,
+                    ) in missing
+                }.map { SatelliteWork(it.bbox, it.signature) }
         val satelliteTotal = satelliteWork.size
         val tileTotal = candidateTiles.sumOf { it.tiles.size }
         val cropTotal = missingCrops.size
         val total = satelliteTotal + tileTotal + cropTotal
 
-        return try {
+        val outcome =
             acquireSurvey(
                 surveyId = surveyId,
                 candidates = candidates,
@@ -226,18 +322,58 @@ class PreDownloadOrchestrator(
                 satelliteTotal = satelliteTotal,
                 tileTotal = tileTotal,
                 total = total,
-                bufferMeters = bufferMeters,
                 reDownloadRecommended = forceRefresh,
                 progress = progress,
+                manifestId = activeManifestId,
             )
-        } catch (e: CancellationException) {
-            cleanupSurvey(surveyId)
-            throw e
-        } catch (e: Exception) {
-            cleanupSurvey(surveyId)
-            throw e
+        if (outcome !is PreDownloadOutcome.Success) {
+            return outcome
+        }
+        missing.forEach { key -> workingSetRepository.markItemComplete(activeManifestId, key) }
+        return when (val completed = workingSetRepository.completeReplacement(activeManifestId)) {
+            is ReplacementCompletionResult.Completed -> outcome
+
+            is ReplacementCompletionResult.Refused ->
+                failureWithCode(
+                    CODE_REPLACEMENT_FAILED,
+                    "Replacement incomplete: ${completed.missingCount} missing",
+                )
+
+            ReplacementCompletionResult.ManifestUnavailable ->
+                failureWithCode(CODE_REPLACEMENT_FAILED, "Replacement manifest unavailable")
         }
     }
+
+    private fun tileKey(
+        surveyId: Long,
+        candidateId: Long,
+        sourceVersion: String,
+        radiusMetres: Double,
+        tile: TileCoord,
+    ): PreDownloadTargetKey.Tile =
+        PreDownloadTargetKey.Tile(
+            surveyId = surveyId,
+            candidateId = candidateId,
+            sourceVersion = sourceVersion,
+            radiusMetres = radiusMetres,
+            zoom = tile.z,
+            x = tile.x,
+            y = tile.y,
+            kind = TILE_KIND_SOURCE,
+            expectedFormat = TILE_FORMAT_GEOTIFF,
+        )
+
+    private fun cropKey(
+        surveyId: Long,
+        candidateId: Long,
+        sourceVersion: String,
+    ): PreDownloadTargetKey.Crop =
+        PreDownloadTargetKey.Crop(
+            surveyId = surveyId,
+            candidateId = candidateId,
+            sourceVersion = sourceVersion,
+            requestSignature = candidateId.toString(),
+        )
 
     private suspend fun acquireSurvey(
         surveyId: Long,
@@ -248,9 +384,9 @@ class PreDownloadOrchestrator(
         satelliteTotal: Int,
         tileTotal: Int,
         total: Int,
-        bufferMeters: Float,
         reDownloadRecommended: Boolean,
         progress: suspend (Data) -> Unit,
+        manifestId: String?,
     ): PreDownloadOutcome {
         if (satelliteWork.isNotEmpty()) {
             val satelliteOk =
@@ -289,36 +425,17 @@ class PreDownloadOrchestrator(
             return failure("Crop download failed")
         }
 
-        val totalBytes = computeTotalBytes(surveyId)
-        val bundleId =
-            offlineBundleRepository.insertBundle(
-                OfflineBundleEntity(
-                    surveyId = surveyId,
-                    created = Instant.now().toString(),
-                    totalBytes = totalBytes,
-                    tileCount = tileCount + derivedTileCount,
-                    satelliteRegionCount = satelliteTotal,
-                    candidateCount = candidates.size,
-                    bufferMeters = bufferMeters,
-                ),
-            )
-
         val builder =
             Data
                 .Builder()
-                .putLong(KEY_BUNDLE_ID, bundleId)
+                .putString(KEY_MANIFEST_ID, manifestId)
+                .putLong(KEY_BUNDLE_ID, 0L)
                 .putInt(KEY_TILE_COUNT, tileCount + derivedTileCount)
                 .putInt(KEY_CROP_COUNT, cropCount)
                 .putInt(KEY_SATELLITE_REGION_COUNT, satelliteTotal)
                 .putInt(KEY_CANDIDATE_COUNT, candidates.size)
                 .putBoolean(KEY_RE_DOWNLOAD_RECOMMENDED, reDownloadRecommended)
         return PreDownloadOutcome.Success(builder.build())
-    }
-
-    private suspend fun cleanupSurvey(surveyId: Long) {
-        tileStore.deleteSurveyTiles(surveyId)
-        File(filesDir, "$CROP_DIR/$surveyId").deleteRecursively()
-        satelliteRegionStore.deleteForSurvey(surveyId)
     }
 
     private suspend fun buildCandidates(surveyId: Long): List<PreDownloadTargetCandidate> {
@@ -341,25 +458,6 @@ class PreDownloadOrchestrator(
                     PreDownloadTargetCandidate(candidate.inferenceResultId, lat, lon)
                 }
             }
-    }
-
-    private suspend fun buildSatelliteWork(
-        surveyId: Long,
-        clusters: List<List<PreDownloadTargetCandidate>>,
-        bufferRadius: Double,
-        forceRefresh: Boolean,
-    ): List<SatelliteWork> {
-        val work = mutableListOf<SatelliteWork>()
-        val targets = PreDownloadTargetPlanner.satelliteTargets(clusters, bufferRadius)
-        for (target in targets) {
-            if (
-                forceRefresh ||
-                !satelliteRegionStore.contains(surveyId, target.signature)
-            ) {
-                work += SatelliteWork(target.bbox, target.signature)
-            }
-        }
-        return work
     }
 
     private suspend fun downloadSatellite(
@@ -623,10 +721,9 @@ class PreDownloadOrchestrator(
             if (response.isSuccessful && body != null && body.contentLength() <= MAX_CROP_BYTES) {
                 val bytes = readBoundedBody(body, MAX_CROP_BYTES)
                 if (bytes != null) {
-                    val file = File(filesDir, "$CROP_DIR/$surveyId/$candidateId.jpg")
-                    file.parentFile?.mkdirs()
-                    file.writeBytes(bytes)
-                    true
+                    val result =
+                        candidateImageRepository.writeCrop(surveyId, candidateId, bytes)
+                    result is CropWriteResult.Success
                 } else {
                     false
                 }
@@ -640,19 +737,6 @@ class PreDownloadOrchestrator(
                 throw StorageFullException(e)
             }
             false
-        }
-
-    private fun computeTotalBytes(surveyId: Long): Long {
-        val tilesDir = tileStore.surveyTilesDirectory(surveyId)
-        val cropsDir = File(filesDir, "$CROP_DIR/$surveyId")
-        return dirSize(tilesDir) + dirSize(cropsDir)
-    }
-
-    private fun dirSize(dir: File): Long =
-        if (dir.isDirectory) {
-            dir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
-        } else {
-            0L
         }
 
     private fun failureWithCode(
@@ -694,6 +778,11 @@ class PreDownloadOrchestrator(
         const val CODE_INSUFFICIENT_DEVICE_SPACE = "INSUFFICIENT_DEVICE_SPACE"
         const val CODE_STORAGE_OPERATION_ACTIVE = "STORAGE_OPERATION_ACTIVE"
         const val CODE_STORAGE_FULL_WHILE_WRITING = "STORAGE_FULL_WHILE_WRITING"
+        const val CODE_REPLACEMENT_CONFLICT = "REPLACEMENT_CONFLICT"
+        const val CODE_REPLACEMENT_FAILED = "REPLACEMENT_FAILED"
+        const val KEY_MANIFEST_ID = "manifestId"
+        const val TILE_KIND_SOURCE = "SOURCE"
+        const val TILE_FORMAT_GEOTIFF = "geotiff"
         const val KEY_BUNDLE_ID = "bundleId"
         const val KEY_TILE_COUNT = "tileCount"
         const val KEY_CROP_COUNT = "cropCount"
@@ -713,7 +802,6 @@ class PreDownloadOrchestrator(
         private const val READ_BUFFER_BYTES = 8 * 1024
         private const val MAX_TILE_BYTES = 16 * 1024 * 1024
         private const val MAX_CROP_BYTES = 2_097_152
-        private const val CROP_DIR = "crops"
     }
 }
 

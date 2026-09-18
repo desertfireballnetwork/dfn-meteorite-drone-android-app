@@ -115,48 +115,118 @@ data class PendingPhotoUploadEntity(
 @Entity(
     tableName = "offline_bundle",
     indices = [
+        Index(value = ["manifestId"], unique = true),
         Index("surveyId"),
+        Index(value = ["surveyId", "sourceVersion"]),
+        Index("state"),
     ],
 )
 data class OfflineBundleEntity(
     @PrimaryKey(autoGenerate = true) val rowId: Long = 0L,
+    val manifestId: String = "",
     val surveyId: Long,
-    val created: String, // ISO-8601 UTC; creation timestamp
+    val sourceVersion: String = "",
+    val radiusMetres: Double = 0.0,
+    val minZoom: Int = 0,
+    val maxZoom: Int = 0,
+    val state: String = "INCOMPLETE",
+    val createdAt: Long = 0L,
+    val updatedAt: Long = 0L,
     val totalBytes: Long,
     val tileCount: Int,
-    val satelliteRegionCount: Int, // may be >1 if split into sub-regions
-    val candidateCount: Int, // number of claimed candidates pushed into the download
-    val bufferMeters: Float,
+    val satelliteRegionCount: Int,
+    val candidateCount: Int,
 )
 
 @Entity(
     tableName = "tile_manifest",
     indices = [
+        Index("manifestId"),
         Index("surveyId"),
         Index("candidateId"),
+        Index(
+            value = [
+                "manifestId",
+                "surveyId",
+                "candidateId",
+                "sourceVersion",
+                "radiusMetres",
+                "zoom",
+                "x",
+                "y",
+                "kind",
+                "expectedFormat",
+            ],
+            unique = true,
+        ),
+        Index(value = ["manifestId", "completed"]),
     ],
 )
 data class TileManifestEntity(
     @PrimaryKey(autoGenerate = true) val rowId: Long = 0L,
+    val manifestId: String = "",
     val surveyId: Long,
     val candidateId: Long,
+    val sourceVersion: String = "",
+    val radiusMetres: Double = 0.0,
     val zoom: Int,
     val x: Int,
     val y: Int,
+    val kind: String = "",
+    val expectedFormat: String = "",
+    val completed: Boolean = false,
     val bytes: Long = 0L,
+)
+
+@Entity(
+    tableName = "candidate_crop_manifest",
+    indices = [
+        Index("manifestId"),
+        Index("surveyId"),
+        Index("candidateId"),
+        Index(
+            value = [
+                "manifestId",
+                "surveyId",
+                "candidateId",
+                "sourceVersion",
+                "requestSignature",
+            ],
+            unique = true,
+        ),
+        Index(value = ["manifestId", "completed"]),
+    ],
+)
+data class CandidateCropManifestEntity(
+    @PrimaryKey(autoGenerate = true) val rowId: Long = 0L,
+    val manifestId: String = "",
+    val surveyId: Long,
+    val candidateId: Long,
+    val sourceVersion: String = "",
+    val requestSignature: String = "",
+    val completed: Boolean = false,
 )
 
 @Entity(
     tableName = "satellite_region",
     indices = [
+        Index("manifestId"),
         Index(value = ["surveyId", "signature"], unique = true),
+        Index(value = ["manifestId", "surveyId", "sourceVersion", "signature"]),
+        Index("pendingDeletion"),
+        Index(value = ["manifestId", "completed"]),
     ],
 )
 data class SatelliteRegionEntity(
     @PrimaryKey(autoGenerate = true) val rowId: Long = 0L,
+    val manifestId: String = "",
     val surveyId: Long,
+    val sourceVersion: String = "",
     val signature: String,
     val completed: Boolean,
+    val pendingDeletion: Boolean = false,
+    val purgeCategory: String? = null,
+    val lastAttemptTime: Long? = null,
 )
 
 @Entity(tableName = "sync_run")

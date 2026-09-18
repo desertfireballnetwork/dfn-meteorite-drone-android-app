@@ -1,10 +1,12 @@
 package au.edu.fireballs.stage4.ui.screen.basecamp
 
+import androidx.work.Data
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequest
 import androidx.work.Operation
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
+import au.edu.fireballs.stage4.sync.PreDownloadWorker
 import kotlinx.coroutines.flow.Flow
 import java.util.UUID
 import javax.inject.Inject
@@ -12,6 +14,22 @@ import javax.inject.Inject
 interface PreDownloadWorkManager {
     companion object {
         const val UNIQUE_WORK_PREFIX = "pre_download_"
+
+        fun inputData(
+            surveyId: Long,
+            bufferMeters: Float,
+            geotiffRadiusMeters: Float,
+            manifestId: String? = null,
+        ): Data =
+            Data
+                .Builder()
+                .putLong(PreDownloadWorker.KEY_SURVEY_ID, surveyId)
+                .putFloat(PreDownloadWorker.KEY_BUFFER_METERS, bufferMeters)
+                .putFloat(
+                    PreDownloadWorker.KEY_GEOTIFF_RADIUS_METERS,
+                    geotiffRadiusMeters,
+                ).putString(PreDownloadWorker.KEY_MANIFEST_ID, manifestId)
+                .build()
     }
 
     fun enqueueUniqueWork(

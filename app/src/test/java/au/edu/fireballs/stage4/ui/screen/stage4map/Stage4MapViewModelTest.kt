@@ -178,12 +178,12 @@ class Stage4MapViewModelTest {
                 MutableStateFlow<OfflineBundleEntity?>(
                     OfflineBundleEntity(
                         surveyId = 7L,
-                        created = "2026-09-16T00:00:00Z",
+                        createdAt = 0L,
                         totalBytes = 1L,
                         tileCount = 1,
                         satelliteRegionCount = 1,
                         candidateCount = 2,
-                        bufferMeters = 100f,
+                        radiusMetres = 100.0,
                     ),
                 )
             val first =
@@ -1153,12 +1153,12 @@ class Stage4MapViewModelTest {
             bundleFlow.value =
                 OfflineBundleEntity(
                     surveyId = 7L,
-                    created = "2026-09-14T00:00:00Z",
+                    createdAt = 0L,
                     totalBytes = 100L,
                     tileCount = 1,
                     satelliteRegionCount = 1,
                     candidateCount = 0,
-                    bufferMeters = 0f,
+                    radiusMetres = 0.0,
                 )
             advanceUntilIdle()
             assertTrue(viewModel.hasOfflineBundle.value)

@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
@@ -55,6 +56,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -117,6 +119,8 @@ fun BasecampScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val preDownloadState by preDownloadViewModel.uiState.collectAsStateWithLifecycle()
+    val workingSetState by
+        preDownloadViewModel.workingSetState.collectAsStateWithLifecycle()
     val isSettingCarLocation by viewModel.isSettingCarLocation.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -247,6 +251,8 @@ fun BasecampScreen(
     if (showDownloadDialog) {
         DownloadDialog(
             state = preDownloadState,
+            workingSet = workingSetState,
+            onResume = preDownloadViewModel::resumeReplacement,
             onDismiss = { showDownloadDialog = false },
             onStart = preDownloadViewModel::startDownload,
             onCancel = preDownloadViewModel::cancel,
@@ -330,6 +336,8 @@ private fun BasecampToolbarActions(
 @Composable
 private fun DownloadDialog(
     state: PreDownloadUiState,
+    workingSet: WorkingSetUiState = WorkingSetUiState.None,
+    onResume: (String) -> Unit = {},
     onDismiss: () -> Unit,
     onStart: () -> Unit,
     onCancel: () -> Unit,
@@ -338,120 +346,129 @@ private fun DownloadDialog(
         onDismissRequest = onDismiss,
         title = { Text(text = "Download for offline") },
         text = {
-            when (state) {
-                is PreDownloadUiState.Idle -> Text(text = "Preparing download…")
-                is PreDownloadUiState.Ready -> {
-                    Column {
-                        Text(text = "Claimed candidates: ${state.claimedCandidateCount}")
-                        Text(
-                            text =
-                                "Geotiff tiles: ${state.geotiffPresentCount} present, " +
-                                    "${state.geotiffMissingCount} missing",
-                        )
-                        Text(
-                            text =
-                                "Crops: ${state.cropPresentCount} present, " +
-                                    "${state.cropMissingCount} missing",
-                        )
-                        Text(
-                            text =
-                                "Satellite regions: ${state.satellitePresentCount} present, " +
-                                    "${state.satelliteMissingCount} missing",
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text =
-                                "Estimated download: " +
-                                    "${formatBytes(state.estimatedIncrementalBytes)} (estimate)",
-                        )
-                        Text(text = "Available: ${formatBytes(state.availableBytes)}")
-                        Text(text = "Reserve to keep free: ${formatBytes(state.reserveBytes)}")
-                        Text(
-                            text =
-                                "Expected free after download: " +
-                                    formatBytes(state.expectedRemainingBytes),
-                        )
-                        if (!state.canStart) {
+            Column {
+                WorkingSetSection(
+                    workingSet = workingSet,
+                    onResume = onResume,
+                )
+                when (state) {
+                    is PreDownloadUiState.Idle -> Text(text = "Preparing download…")
+                    is PreDownloadUiState.Ready -> {
+                        Column {
+                            Text(text = "Claimed candidates: ${state.claimedCandidateCount}")
+                            Text(
+                                text =
+                                    "Geotiff tiles: ${state.geotiffPresentCount} present, " +
+                                        "${state.geotiffMissingCount} missing",
+                            )
+                            Text(
+                                text =
+                                    "Crops: ${state.cropPresentCount} present, " +
+                                        "${state.cropMissingCount} missing",
+                            )
+                            Text(
+                                text =
+                                    "Satellite regions: ${state.satellitePresentCount} present, " +
+                                        "${state.satelliteMissingCount} missing",
+                            )
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
                                 text =
-                                    "Not enough device space. Download requires " +
-                                        "${formatBytes(state.estimatedIncrementalBytes)}, " +
-                                        "${formatBytes(state.availableBytes)} is available, and " +
-                                        "${formatBytes(state.reserveBytes)} must remain free.",
-                                color = MaterialTheme.colorScheme.error,
-                                style = MaterialTheme.typography.bodyMedium,
+                                    "Estimated download: " +
+                                        formatBytes(
+                                            state.estimatedIncrementalBytes,
+                                        ) + " (estimate)",
                             )
+                            Text(text = "Available: ${formatBytes(state.availableBytes)}")
+                            Text(text = "Reserve to keep free: ${formatBytes(state.reserveBytes)}")
+                            Text(
+                                text =
+                                    "Expected free after download: " +
+                                        formatBytes(state.expectedRemainingBytes),
+                            )
+                            if (!state.canStart) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    text =
+                                        "Not enough device space. Download requires " +
+                                            "${formatBytes(state.estimatedIncrementalBytes)}, " +
+                                            formatBytes(state.availableBytes) +
+                                            " is available, and " +
+                                            "${formatBytes(state.reserveBytes)} must remain free.",
+                                    color = MaterialTheme.colorScheme.error,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                )
+                            }
+                            if (state.isStale) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    text = "Local data is stale — re-download recommended",
+                                    color = MaterialTheme.colorScheme.primary,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Button(
+                                onClick = onStart,
+                                enabled = state.canStart,
+                            ) {
+                                Text(text = if (state.isStale) "Re-download" else "Download")
+                            }
                         }
-                        if (state.isStale) {
+                    }
+
+                    is PreDownloadUiState.Running -> {
+                        Column {
+                            Text(text = state.phase)
+                            Spacer(modifier = Modifier.height(8.dp))
+                            LinearProgressIndicator(
+                                progress = {
+                                    if (state.total > 0) {
+                                        state.done.toFloat() / state.total
+                                    } else {
+                                        0f
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                            )
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
-                                text = "Local data is stale — re-download recommended",
-                                color = MaterialTheme.colorScheme.primary,
-                                style = MaterialTheme.typography.bodyMedium,
+                                text = "${state.done} / ${state.total}",
+                                style = MaterialTheme.typography.bodySmall,
                             )
                         }
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Button(
-                            onClick = onStart,
-                            enabled = state.canStart,
-                        ) {
-                            Text(text = if (state.isStale) "Re-download" else "Download")
+                    }
+
+                    is PreDownloadUiState.Done -> {
+                        Column {
+                            Text(text = "Download complete")
+                            if (state.reDownloadRecommended) {
+                                Spacer(modifier = Modifier.height(16.dp))
+                                Text(
+                                    text = "Re-download recommended — ML task changed",
+                                    color = MaterialTheme.colorScheme.primary,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    modifier =
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .clickable(onClick = onStart)
+                                            .padding(vertical = 8.dp),
+                                )
+                            }
                         }
                     }
-                }
 
-                is PreDownloadUiState.Running -> {
-                    Column {
-                        Text(text = state.phase)
-                        Spacer(modifier = Modifier.height(8.dp))
-                        LinearProgressIndicator(
-                            progress = {
-                                if (state.total > 0) {
-                                    state.done.toFloat() / state.total
-                                } else {
-                                    0f
-                                }
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = "${state.done} / ${state.total}",
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                    }
-                }
-
-                is PreDownloadUiState.Done -> {
-                    Column {
-                        Text(text = "Download complete")
-                        if (state.reDownloadRecommended) {
+                    is PreDownloadUiState.Error -> {
+                        Column {
+                            Text(text = state.message)
                             Spacer(modifier = Modifier.height(16.dp))
-                            Text(
-                                text = "Re-download recommended — ML task changed",
-                                color = MaterialTheme.colorScheme.primary,
-                                style = MaterialTheme.typography.bodyMedium,
-                                modifier =
-                                    Modifier
-                                        .fillMaxWidth()
-                                        .clickable(onClick = onStart)
-                                        .padding(vertical = 8.dp),
-                            )
+                            Button(onClick = onStart) {
+                                Text(text = "Retry")
+                            }
                         }
                     }
+                    is PreDownloadUiState.Cancelled -> Text(text = "Download cancelled")
                 }
-
-                is PreDownloadUiState.Error -> {
-                    Column {
-                        Text(text = state.message)
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Button(onClick = onStart) {
-                            Text(text = "Retry")
-                        }
-                    }
-                }
-                is PreDownloadUiState.Cancelled -> Text(text = "Download cancelled")
             }
         },
         confirmButton = {
@@ -791,6 +808,116 @@ private fun ClaimListPanel(
         }
     }
 }
+
+@Composable
+private fun WorkingSetSection(
+    workingSet: WorkingSetUiState,
+    onResume: (String) -> Unit,
+) {
+    when (workingSet) {
+        is WorkingSetUiState.None -> Unit
+
+        is WorkingSetUiState.ReplacementReady -> {
+            Column(modifier = Modifier.semantics { heading() }) {
+                Text(
+                    text =
+                        "Starting a new download replaces the current offline set. " +
+                            "Evidence photos, pending uploads, and your decisions are kept.",
+                )
+                Text(text = "Replacing: ${workingSet.obsoleteCount} obsolete items")
+                Text(text = "Keeping: ${workingSet.retainedCount} valid items")
+                Text(
+                    text =
+                        "Estimated space from removing obsolete content: " +
+                            formatWorkingSetBytes(
+                                workingSet.confidentlyDeletableBytes,
+                            ) + " (estimate)",
+                )
+                Text(
+                    text =
+                        "Estimated download: " +
+                            formatWorkingSetBytes(
+                                workingSet.estimatedDownloadBytes,
+                            ) + " (estimate)",
+                )
+                if (workingSet.mapboxBytesUnavailable) {
+                    Text(text = "Satellite map size unavailable")
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+            }
+        }
+
+        is WorkingSetUiState.Incomplete -> {
+            IncompleteSection(
+                manifestId = workingSet.manifestId,
+                missingCount = workingSet.missingCount,
+                onResume = onResume,
+            )
+        }
+
+        is WorkingSetUiState.ResumeAvailable -> {
+            IncompleteSection(
+                manifestId = workingSet.manifestId,
+                missingCount = workingSet.missingCount,
+                onResume = onResume,
+            )
+        }
+
+        is WorkingSetUiState.Replacing -> {
+            val phase =
+                when (workingSet.phase) {
+                    ReplacingPhase.PLANNING -> "Planning"
+                    ReplacingPhase.PRUNING -> "Removing obsolete content"
+                    ReplacingPhase.TRANSFER -> "Transferring"
+                    ReplacingPhase.VERIFYING -> "Verifying"
+                    ReplacingPhase.COMPLETING -> "Completing"
+                }
+            Column {
+                Text(text = "Replacing offline set")
+                Text(text = "$phase: ${workingSet.done}/${workingSet.total}")
+                Spacer(modifier = Modifier.height(8.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun IncompleteSection(
+    manifestId: String,
+    missingCount: Int,
+    onResume: (String) -> Unit,
+) {
+    Column {
+        Text(
+            text =
+                "Offline set incomplete: $missingCount items missing. " +
+                    "It is not available offline.",
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Button(
+            onClick = { onResume(manifestId) },
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp)
+                    .semantics {
+                        contentDescription = "Resume offline download"
+                    },
+        ) {
+            Text(text = "Resume download")
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+    }
+}
+
+private fun formatWorkingSetBytes(bytes: Long): String =
+    if (bytes >= 1024L * 1024L) {
+        "${bytes / (1024L * 1024L)} MB"
+    } else if (bytes >= 1024L) {
+        "${bytes / 1024L} KB"
+    } else {
+        "$bytes B"
+    }
 
 @Composable
 private fun ClaimRow(

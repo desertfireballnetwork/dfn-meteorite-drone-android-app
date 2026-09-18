@@ -2,7 +2,10 @@ package au.edu.fireballs.stage4.data.tiles
 
 import android.os.Handler
 import android.os.Looper
+import au.edu.fireballs.stage4.data.repository.PreDownloadTargetKey
+import com.mapbox.bindgen.Expected
 import com.mapbox.bindgen.ExpectedFactory
+import com.mapbox.bindgen.None
 import com.mapbox.maps.AsyncOperationResultCallback
 import com.mapbox.maps.OfflineRegionDownloadState
 import com.mapbox.maps.OfflineRegionError
@@ -10,6 +13,7 @@ import com.mapbox.maps.OfflineRegionObserver
 import com.mapbox.maps.OfflineRegionStatus
 import com.mapbox.maps.OfflineRegionTilePyramidDefinition
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -167,7 +171,203 @@ class OfflineRegionWrapperTest {
         assertEquals(null, inventories.single().getOrThrow().measuredBytes)
     }
 
+    @Test
+    fun retainExactRetainsOnlyExactStage4Target() {
+        val retained = target(1L, "v1", "sat:alpha")
+        val missing = target(1L, "v1", "sat:beta")
+        source.regions = listOf(FakeRegionHandle(metadata = encodeOfflineRegionTarget(retained)))
+        val results = mutableListOf<Result<List<OfflineRegionRetention>>>()
+
+        wrapper.retainExact(listOf(retained, missing)) { results.add(it) }
+        idleMain()
+
+        assertEquals(
+            listOf(
+                OfflineRegionRetention.Retained(retained),
+                OfflineRegionRetention.Missing(missing),
+            ),
+            results.single().getOrThrow(),
+        )
+    }
+
+    @Test
+    fun retainExactTreatsEveryIdentityMismatchAsMissing() {
+        val reference = target(1L, "v1", "sat:alpha")
+        source.regions = listOf(FakeRegionHandle(metadata = encodeOfflineRegionTarget(reference)))
+        val mismatches =
+            listOf(
+                target(2L, "v1", "sat:alpha"),
+                target(1L, "v2", "sat:alpha"),
+                target(1L, "v1", "sat:gamma"),
+            )
+        val results = mutableListOf<Result<List<OfflineRegionRetention>>>()
+
+        wrapper.retainExact(mismatches) { results.add(it) }
+        idleMain()
+
+        assertTrue(results.single().getOrThrow().all { it is OfflineRegionRetention.Missing })
+    }
+
+    @Test
+    fun retainExactIgnoresRegionsWithoutStage4Metadata() {
+        val expected = target(1L, "v1", "sat:alpha")
+        source.regions = listOf(FakeRegionHandle(metadata = null))
+        val results = mutableListOf<Result<List<OfflineRegionRetention>>>()
+
+        wrapper.retainExact(listOf(expected)) { results.add(it) }
+        idleMain()
+
+        assertEquals(
+            listOf(OfflineRegionRetention.Missing(expected)),
+            results.single().getOrThrow(),
+        )
+    }
+
+    @Test
+    fun purgeExactPurgesOwnedExactRegion() {
+        val expected = target(1L, "v1", "sat:alpha")
+        val handle = FakeRegionHandle(metadata = encodeOfflineRegionTarget(expected))
+        source.regions = listOf(handle)
+        val results = mutableListOf<OfflineRegionPurgeResult>()
+
+        wrapper.purgeExact(expected) { results.add(it) }
+        idleMain()
+
+        assertEquals(OfflineRegionPurgeResult.Purged(expected), results.single())
+        assertEquals(1, handle.purgeCalls)
+    }
+
+    @Test
+    fun purgeExactConfirmsAbsenceAndNeverPurgesMismatchedRegion() {
+        val expected = target(1L, "v1", "sat:alpha")
+        val otherTarget = target(2L, "v9", "sat:x")
+        val other = FakeRegionHandle(metadata = encodeOfflineRegionTarget(otherTarget))
+        source.regions = listOf(other)
+        val results = mutableListOf<OfflineRegionPurgeResult>()
+
+        wrapper.purgeExact(expected) { results.add(it) }
+        idleMain()
+
+        assertEquals(OfflineRegionPurgeResult.ConfirmedAbsent(expected), results.single())
+        assertEquals(0, other.purgeCalls)
+    }
+
+    @Test
+    fun purgeExactReportsTypedRetryableFailureWithoutRawSdkError() {
+        val expected = target(1L, "v1", "sat:alpha")
+        val handle =
+            FakeRegionHandle(
+                metadata = encodeOfflineRegionTarget(expected),
+                purgeResult = ExpectedFactory.createError("raw-sdk-secret"),
+            )
+        source.regions = listOf(handle)
+        val results = mutableListOf<OfflineRegionPurgeResult>()
+
+        wrapper.purgeExact(expected) { results.add(it) }
+        idleMain()
+
+        val failure = results.single() as OfflineRegionPurgeResult.RetryableFailure
+        assertEquals(expected, failure.target)
+        assertEquals(OfflineRegionFailureCategory.PURGE_REJECTED, failure.category)
+        assertTrue(failure.attemptTimeMillis > 0L)
+        assertFalse(failure.toString().contains("raw-sdk-secret"))
+    }
+
+    @Test
+    fun purgeExactReportsRetryableFailureWhenRegionsUnavailable() {
+        val expected = target(1L, "v1", "sat:alpha")
+        source.failure = IllegalStateException("raw-sdk-secret")
+        val results = mutableListOf<OfflineRegionPurgeResult>()
+
+        wrapper.purgeExact(expected) { results.add(it) }
+        idleMain()
+
+        val failure = results.single() as OfflineRegionPurgeResult.RetryableFailure
+        assertEquals(OfflineRegionFailureCategory.REGION_LIST_FAILED, failure.category)
+        assertTrue(failure.attemptTimeMillis > 0L)
+        assertFalse(failure.toString().contains("raw-sdk-secret"))
+    }
+
+    @Test
+    fun purgeExactRetrySucceedsAfterTransientFailure() {
+        val expected = target(1L, "v1", "sat:alpha")
+        val handle =
+            FakeRegionHandle(
+                metadata = encodeOfflineRegionTarget(expected),
+                purgeResult = ExpectedFactory.createError("transient"),
+            )
+        source.regions = listOf(handle)
+        val first = mutableListOf<OfflineRegionPurgeResult>()
+
+        wrapper.purgeExact(expected) { first.add(it) }
+        idleMain()
+        assertTrue(first.single() is OfflineRegionPurgeResult.RetryableFailure)
+
+        handle.purgeResult = ExpectedFactory.createNone()
+        val second = mutableListOf<OfflineRegionPurgeResult>()
+        wrapper.purgeExact(expected) { second.add(it) }
+        idleMain()
+
+        assertEquals(OfflineRegionPurgeResult.Purged(expected), second.single())
+        assertEquals(2, handle.purgeCalls)
+    }
+
+    @Test
+    fun downloadWithTargetStoresStage4OwnershipMetadata() {
+        val expected = target(3L, "v2", "sat:cluster")
+        val handle = FakeRegionHandle()
+        wrapper.downloadSatelliteRegion(
+            bbox(),
+            0,
+            10,
+            resourceCountCb = {},
+            progressCb = {},
+            completionCb = {},
+            target = expected,
+        )
+
+        source.createCallback(Result.success(handle))
+        idleMain()
+
+        assertEquals(expected, decodeOfflineRegionTarget(handle.metadata))
+        assertTrue(handle.observer != null)
+    }
+
+    @Test
+    fun downloadWithTargetPurgesWhenOwnershipMetadataCannotBeStored() {
+        val expected = target(3L, "v2", "sat:cluster")
+        val handle =
+            FakeRegionHandle(metadataResult = ExpectedFactory.createError("raw-sdk-secret"))
+        val completions = mutableListOf<Result<Unit>>()
+        wrapper.downloadSatelliteRegion(
+            bbox(),
+            0,
+            10,
+            resourceCountCb = {},
+            progressCb = {},
+            completionCb = { completions.add(it) },
+            target = expected,
+        )
+
+        source.createCallback(Result.success(handle))
+        idleMain()
+
+        assertTrue(completions.single().isFailure)
+        assertEquals(1, handle.purgeCalls)
+    }
+
     private fun bbox(): Bbox = Bbox(-1.0, -1.0, 1.0, 1.0)
+
+    private fun target(
+        surveyId: Long,
+        sourceVersion: String,
+        signature: String,
+    ): PreDownloadTargetKey.Satellite =
+        PreDownloadTargetKey.Satellite(
+            surveyId = surveyId,
+            sourceVersion = sourceVersion,
+            signature = signature,
+        )
 
     private fun completeStatus(): OfflineRegionStatus =
         OfflineRegionStatus(
@@ -212,9 +412,42 @@ class OfflineRegionWrapperTest {
         assertTrue(second.single().isFailure)
     }
 
+    private class FakeRegionHandle(
+        override var metadata: ByteArray? = null,
+        var purgeResult: Expected<String, None> = ExpectedFactory.createNone(),
+        var metadataResult: Expected<String, None> = ExpectedFactory.createNone(),
+    ) : OfflineRegionHandle {
+        var purgeCalls = 0
+        var observer: OfflineRegionObserver? = null
+
+        override val identifier: Long = 1L
+
+        override fun setOfflineRegionObserver(observer: OfflineRegionObserver) {
+            this.observer = observer
+        }
+
+        override fun setOfflineRegionDownloadState(state: OfflineRegionDownloadState) = Unit
+
+        override fun purge(callback: AsyncOperationResultCallback) {
+            purgeCalls++
+            callback.run(purgeResult)
+        }
+
+        override fun setMetadata(
+            metadata: ByteArray,
+            callback: AsyncOperationResultCallback,
+        ) {
+            if (!metadataResult.isError) {
+                this.metadata = metadata
+            }
+            callback.run(metadataResult)
+        }
+    }
+
     private class FakeSource : OfflineRegionSource {
         lateinit var createCallback: (Result<OfflineRegionHandle>) -> Unit
         var regions: List<OfflineRegionHandle> = emptyList()
+        var failure: Throwable? = null
         var getRegionsCalls = 0
 
         override fun createOfflineRegion(
@@ -226,7 +459,14 @@ class OfflineRegionWrapperTest {
 
         override fun getOfflineRegions(callback: (Result<List<OfflineRegionHandle>>) -> Unit) {
             getRegionsCalls++
-            callback(Result.success(regions))
+            val error = failure
+            callback(
+                if (error == null) {
+                    Result.success(regions)
+                } else {
+                    Result.failure(error)
+                },
+            )
         }
     }
 }
