@@ -20,7 +20,10 @@ import com.mapbox.maps.extension.compose.style.MapStyle
 import com.mapbox.maps.extension.compose.style.projection.generated.Projection
 import com.mapbox.maps.extension.compose.style.rememberStyleState
 import com.mapbox.maps.plugin.Plugin
+import com.mapbox.maps.plugin.PuckBearing
 import com.mapbox.maps.plugin.locationcomponent.LocationComponentPlugin
+import com.mapbox.maps.plugin.locationcomponent.createDefault2DPuck
+import com.mapbox.maps.plugin.locationcomponent.generated.LocationComponentSettings
 
 private const val BASE_STYLE_URI = "mapbox://styles/mapbox/satellite-v9"
 private const val MAX_CAMERA_ZOOM = 24.0
@@ -129,8 +132,18 @@ private fun setLocationPuckEnabled(
     val locationPlugin =
         mapView.getPlugin(Plugin.MAPBOX_LOCATION_COMPONENT_PLUGIN_ID) as? LocationComponentPlugin
     locationPlugin?.updateSettings {
-        this.enabled = enabled
-        this.pulsingEnabled = enabled
-        this.showAccuracyRing = showAccuracyRing
+        applyUserLocationDisplay(enabled = enabled, showAccuracyRing = showAccuracyRing)
     }
+}
+
+internal fun LocationComponentSettings.Builder.applyUserLocationDisplay(
+    enabled: Boolean,
+    showAccuracyRing: Boolean,
+) {
+    this.enabled = enabled
+    pulsingEnabled = enabled
+    this.showAccuracyRing = showAccuracyRing
+    puckBearingEnabled = enabled
+    puckBearing = PuckBearing.HEADING
+    locationPuck = createDefault2DPuck(withBearing = enabled)
 }
