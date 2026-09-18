@@ -1,6 +1,8 @@
 package au.edu.fireballs.stage4.ui.screen.candidate
 
 import android.app.Application
+import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -54,6 +56,19 @@ class CandidateModalGalleryTest {
             username = "searcher-$id",
         )
 
+    private val deterministicImageLoader: ImageLoader by lazy {
+        ImageLoader
+            .Builder(ApplicationProvider.getApplicationContext())
+            .components {
+                add(
+                    FakeImageLoaderEngine
+                        .Builder()
+                        .default(ColorDrawable(Color.GRAY))
+                        .build(),
+                )
+            }.build()
+    }
+
     private fun setGallery(
         photos: List<PendingPhotoUploadEntity> = emptyList(),
         serverGalleryState: EvidenceGalleryUiState = EvidenceGalleryUiState.Loading,
@@ -62,15 +77,17 @@ class CandidateModalGalleryTest {
         serverUrl: String = "https://example.com",
     ) {
         composeRule.setContent {
-            PhotoGallery(
-                photos = photos,
-                onPhotoCaptured = {},
-                onPhotoPicked = {},
-                serverGalleryState = serverGalleryState,
-                onRetryServerGallery = onRetryServerGallery,
-                serverUrl = serverUrl,
-                onAuthExpired = onAuthExpired,
-            )
+            CompositionLocalProvider(LocalImageLoader provides deterministicImageLoader) {
+                PhotoGallery(
+                    photos = photos,
+                    onPhotoCaptured = {},
+                    onPhotoPicked = {},
+                    serverGalleryState = serverGalleryState,
+                    onRetryServerGallery = onRetryServerGallery,
+                    serverUrl = serverUrl,
+                    onAuthExpired = onAuthExpired,
+                )
+            }
         }
     }
 

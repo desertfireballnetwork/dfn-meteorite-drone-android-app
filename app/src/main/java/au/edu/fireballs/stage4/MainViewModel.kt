@@ -5,7 +5,10 @@ import androidx.lifecycle.viewModelScope
 import au.edu.fireballs.stage4.data.local.dao.LocalDecisionDao
 import au.edu.fireballs.stage4.data.local.dao.PendingPhotoUploadDao
 import au.edu.fireballs.stage4.data.remote.AccountManager
+import au.edu.fireballs.stage4.data.repository.DurableSyncStatus
 import au.edu.fireballs.stage4.data.repository.SelectedSurveyRepository
+import au.edu.fireballs.stage4.data.repository.SyncProgress
+import au.edu.fireballs.stage4.data.repository.SyncStatusSource
 import au.edu.fireballs.stage4.di.IoDispatcher
 import au.edu.fireballs.stage4.ui.screen.stage4map.SyncWorkManager
 import dagger.Lazy
@@ -17,6 +20,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -30,6 +34,29 @@ sealed interface AuthState {
     ) : AuthState
 }
 
+sealed interface GlobalSyncState {
+    data object Hidden : GlobalSyncState
+
+    data class Pending(
+        val decisions: Int,
+        val photos: Int,
+    ) : GlobalSyncState
+
+    data object WaitingForNetwork : GlobalSyncState
+
+    data class Running(
+        val progress: SyncProgress?,
+    ) : GlobalSyncState
+
+    data object Resuming : GlobalSyncState
+
+    data object Complete : GlobalSyncState
+
+    data object Failed : GlobalSyncState
+
+    data object SessionExpired : GlobalSyncState
+}
+
 @HiltViewModel
 class MainViewModel
     @Inject
@@ -39,6 +66,7 @@ class MainViewModel
         private val localDecisionDao: LocalDecisionDao,
         private val pendingPhotoUploadDao: PendingPhotoUploadDao,
         private val syncWorkManager: SyncWorkManager,
+        private val syncStatusSource: SyncStatusSource,
         @IoDispatcher private val ioDispatcher: CoroutineDispatcher,
     ) : ViewModel() {
         private val _authState = MutableStateFlow<AuthState>(AuthState.Loading)
@@ -46,19 +74,17 @@ class MainViewModel
 
         val selectedSurveyId: Flow<Long?> = selectedSurveyRepository.selectedSurveyId
 
-        val pendingDecisions: StateFlow<Int> =
-            localDecisionDao.getAllUnsyncedCount().stateIn(
-                viewModelScope,
-                SharingStarted.WhileSubscribed(5000),
-                0,
-            )
+        val globalSyncState: StateFlow<GlobalSyncState> =
+            syncStatusSource.status
+                .map(DurableSyncStatus::toGlobalSyncState)
+                .stateIn(
+                    viewModelScope,
+                    SharingStarted.WhileSubscribed(5_000),
+                    GlobalSyncState.Hidden,
+                )
 
-        val pendingPhotos: StateFlow<Int> =
-            pendingPhotoUploadDao.getAllNotUploadedCount().stateIn(
-                viewModelScope,
-                SharingStarted.WhileSubscribed(5000),
-                0,
-            )
+        val syncCompletionEvents: Flow<Unit> =
+            syncStatusSource.completions.map { Unit }
 
         fun setSelectedSurvey(surveyId: Long) {
             viewModelScope.launch {
@@ -93,4 +119,16 @@ class MainViewModel
                 _authState.value = AuthState.Resolved(isSignedIn)
             }
         }
+    }
+
+private fun DurableSyncStatus.toGlobalSyncState(): GlobalSyncState =
+    when (this) {
+        DurableSyncStatus.Idle -> GlobalSyncState.Hidden
+        is DurableSyncStatus.Pending -> GlobalSyncState.Pending(decisions, photos)
+        is DurableSyncStatus.WaitingForNetwork -> GlobalSyncState.WaitingForNetwork
+        is DurableSyncStatus.Running -> GlobalSyncState.Running(progress)
+        is DurableSyncStatus.Resuming -> GlobalSyncState.Resuming
+        is DurableSyncStatus.Complete -> GlobalSyncState.Hidden
+        is DurableSyncStatus.Failed -> GlobalSyncState.Failed
+        is DurableSyncStatus.SessionExpired -> GlobalSyncState.SessionExpired
     }

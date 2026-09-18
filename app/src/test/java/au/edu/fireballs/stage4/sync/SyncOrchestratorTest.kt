@@ -444,6 +444,8 @@ class SyncOrchestratorTest {
         override fun observeRun(surveyId: Long): Flow<SyncRunEntity?> =
             flowOf(upserts.lastOrNull { it.surveyId == surveyId })
 
+        override fun observeCurrentRun(): Flow<SyncRunEntity?> = flowOf(upserts.lastOrNull())
+
         override suspend fun clear(surveyId: Long) {
             cleared.add(surveyId)
         }

@@ -27,7 +27,11 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -40,6 +44,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import au.edu.fireballs.stage4.ui.PendingSyncBadge
 import au.edu.fireballs.stage4.ui.screen.basecamp.BasecampScreen
 import au.edu.fireballs.stage4.ui.screen.dataentry.SettingsScreen
 import au.edu.fireballs.stage4.ui.screen.login.LoginScreen
@@ -53,6 +58,7 @@ import au.edu.fireballs.stage4.ui.session.SessionExpiredHandler
 import au.edu.fireballs.stage4.ui.sync.PendingSyncSnackbar
 import au.edu.fireballs.stage4.ui.theme.Stage4Theme
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.delay
 import javax.inject.Inject
 
 @AndroidEntryPoint
@@ -133,6 +139,20 @@ private val topLevelDestinations =
 internal fun pendingSyncRoute(selectedSurveyId: Long?): String =
     if (selectedSurveyId != null) "sync" else "map"
 
+internal const val FAILED_SYNC_ROUTE = "sync"
+
+internal fun globalSyncRoute(
+    surfaceState: GlobalSyncState,
+    selectedSurveyId: Long?,
+): String =
+    if (surfaceState is GlobalSyncState.Failed) {
+        FAILED_SYNC_ROUTE
+    } else {
+        pendingSyncRoute(selectedSurveyId)
+    }
+
+private const val COMPLETION_DISPLAY_MS = 4_000L
+
 @Composable
 private fun MainScaffold(
     navController: NavHostController,
@@ -141,8 +161,25 @@ private fun MainScaffold(
 ) {
     val selectedSurveyId by
         viewModel.selectedSurveyId.collectAsStateWithLifecycle(initialValue = null)
-    val pendingDecisions by viewModel.pendingDecisions.collectAsStateWithLifecycle()
-    val pendingPhotos by viewModel.pendingPhotos.collectAsStateWithLifecycle()
+    val globalSyncState by viewModel.globalSyncState.collectAsStateWithLifecycle()
+
+    val pendingBadgeCount =
+        (globalSyncState as? GlobalSyncState.Pending)?.let { it.decisions + it.photos } ?: 0
+
+    var completionVisible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        viewModel.syncCompletionEvents.collect {
+            completionVisible = true
+        }
+    }
+    LaunchedEffect(completionVisible) {
+        if (completionVisible) {
+            delay(COMPLETION_DISPLAY_MS)
+            completionVisible = false
+        }
+    }
+    val surfaceState =
+        if (completionVisible) GlobalSyncState.Complete else globalSyncState
 
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = backStackEntry?.destination
@@ -152,24 +189,30 @@ private fun MainScaffold(
             currentDestination?.hierarchy?.any { it.route == destination.route } == true
         }
 
+    val openSync = {
+        navController.navigate(globalSyncRoute(surfaceState, selectedSurveyId)) {
+            popUpTo(navController.graph.findStartDestination().id) {
+                saveState = true
+            }
+            launchSingleTop = true
+            restoreState = true
+        }
+        Unit
+    }
+
     Scaffold(
         contentWindowInsets =
             WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal),
         bottomBar = {
             if (showBottomBar) {
                 Column {
+                    PendingSyncBadge(
+                        state = surfaceState,
+                        onAction = openSync,
+                    )
                     PendingSyncSnackbar(
-                        pendingDecisions = pendingDecisions,
-                        pendingPhotos = pendingPhotos,
-                        onTap = {
-                            navController.navigate(pendingSyncRoute(selectedSurveyId)) {
-                                popUpTo(navController.graph.findStartDestination().id) {
-                                    saveState = true
-                                }
-                                launchSingleTop = true
-                                restoreState = true
-                            }
-                        },
+                        state = surfaceState,
+                        onAction = openSync,
                     )
                     NavigationBar {
                         topLevelDestinations.forEach { destination ->
@@ -239,7 +282,7 @@ private fun MainScaffold(
                                 restoreState = true
                             }
                         },
-                        pendingCount = pendingDecisions + pendingPhotos,
+                        pendingCount = pendingBadgeCount,
                     )
                 } else {
                     SurveyListScreen(

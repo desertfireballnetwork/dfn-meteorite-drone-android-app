@@ -10,13 +10,10 @@ import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import au.edu.fireballs.stage4.sync.SyncWorker
 import kotlinx.coroutines.flow.Flow
-import java.util.UUID
 import javax.inject.Inject
 
 interface SyncWorkManager {
     fun enqueueSync(): OneTimeWorkRequest
-
-    fun getWorkInfoByIdFlow(id: UUID): Flow<WorkInfo?>
 
     fun getWorkInfosForUniqueWorkFlow(uniqueWorkName: String): Flow<List<WorkInfo>>
 
@@ -40,9 +37,6 @@ class WorkManagerSyncWorkManager
             workManager.enqueueUniqueWork(UNIQUE_WORK_NAME, ExistingWorkPolicy.KEEP, request)
             return request
         }
-
-        override fun getWorkInfoByIdFlow(id: UUID): Flow<WorkInfo?> =
-            workManager.getWorkInfoByIdFlow(id)
 
         override fun getWorkInfosForUniqueWorkFlow(uniqueWorkName: String): Flow<List<WorkInfo>> =
             workManager.getWorkInfosForUniqueWorkFlow(uniqueWorkName)
