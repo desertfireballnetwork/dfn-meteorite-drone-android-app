@@ -2,9 +2,14 @@ package au.edu.fireballs.stage4.ui.screen.dataentry
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import au.edu.fireballs.stage4.data.repository.DurableSyncStatus
+import au.edu.fireballs.stage4.data.repository.StorageClearCategory
+import au.edu.fireballs.stage4.data.repository.StorageClearRepository
+import au.edu.fireballs.stage4.data.repository.StorageClearResult
 import au.edu.fireballs.stage4.data.repository.StorageCoordinator
 import au.edu.fireballs.stage4.data.repository.StorageMutationState
 import au.edu.fireballs.stage4.data.repository.StorageUsageSnapshot
+import au.edu.fireballs.stage4.data.repository.SyncStatusSource
 import au.edu.fireballs.stage4.data.tiles.BufferRadiusRepository
 import au.edu.fireballs.stage4.ui.util.UiText
 import io.mockk.coEvery
@@ -29,6 +34,7 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import java.util.UUID
 
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
@@ -37,6 +43,9 @@ class SettingsViewModelTest {
     private val mutationState = MutableStateFlow<StorageMutationState>(StorageMutationState.Idle)
     private lateinit var radiusRepository: BufferRadiusRepository
     private lateinit var storageCoordinator: StorageCoordinator
+    private lateinit var storageClearRepository: StorageClearRepository
+    private lateinit var syncStatusSource: SyncStatusSource
+    private val syncStatus = MutableStateFlow<DurableSyncStatus>(DurableSyncStatus.Idle)
 
     @Before
     fun setUp() {
@@ -47,6 +56,9 @@ class SettingsViewModelTest {
         radiusRepository = BufferRadiusRepository(preferences)
         storageCoordinator = mockk()
         coEvery { storageCoordinator.state } returns mutationState
+        storageClearRepository = mockk()
+        syncStatusSource = mockk()
+        coEvery { syncStatusSource.status } returns syncStatus
     }
 
     @After
@@ -263,7 +275,13 @@ class SettingsViewModelTest {
     fun `construction does not load and screen entry refreshes`() =
         runTest {
             coEvery { storageCoordinator.snapshot() } returns snapshot()
-            val viewModel = SettingsViewModel(radiusRepository, storageCoordinator)
+            val viewModel =
+                SettingsViewModel(
+                    radiusRepository,
+                    storageCoordinator,
+                    storageClearRepository,
+                    syncStatusSource,
+                )
             advanceUntilIdle()
             coVerify(exactly = 0) { storageCoordinator.snapshot() }
 
@@ -272,8 +290,173 @@ class SettingsViewModelTest {
             coVerify(exactly = 1) { storageCoordinator.snapshot() }
         }
 
+    @Test
+    fun `clear gating follows mutations and durable sync status`() =
+        runTest {
+            coEvery { storageCoordinator.snapshot() } returns snapshot()
+            val viewModel = createEnteredViewModel()
+            advanceUntilIdle()
+
+            val gatedMutations =
+                listOf(
+                    StorageMutationState.Downloading,
+                    StorageMutationState.Clearing,
+                )
+            gatedMutations.forEach { state ->
+                mutationState.value = state
+                advanceUntilIdle()
+                assertFalse(viewModel.uiState.value.clear.clearEnabled)
+            }
+
+            mutationState.value = StorageMutationState.Idle
+            val workId = UUID.randomUUID()
+            val gatedStatuses =
+                listOf(
+                    DurableSyncStatus.Running(workId, null),
+                    DurableSyncStatus.Resuming(workId),
+                    DurableSyncStatus.WaitingForNetwork(workId, 1, 1),
+                )
+            gatedStatuses.forEach { status ->
+                syncStatus.value = status
+                advanceUntilIdle()
+                assertFalse(viewModel.uiState.value.clear.clearEnabled)
+            }
+
+            val enabledStatuses =
+                listOf(
+                    DurableSyncStatus.Idle,
+                    DurableSyncStatus.Pending(1, 1),
+                    DurableSyncStatus.Complete(workId),
+                    DurableSyncStatus.Failed(workId, "failed"),
+                    DurableSyncStatus.SessionExpired(workId),
+                )
+            enabledStatuses.forEach { status ->
+                syncStatus.value = status
+                advanceUntilIdle()
+                assertTrue(viewModel.uiState.value.clear.clearEnabled)
+            }
+        }
+
+    @Test
+    fun `temporary cache bypasses confirmation and other categories require it`() =
+        runTest {
+            coEvery { storageCoordinator.snapshot() } returns snapshot()
+            coEvery {
+                storageClearRepository.clear(StorageClearCategory.TemporaryCache)
+            } returns StorageClearResult.Cleared(StorageClearCategory.TemporaryCache)
+            val viewModel = createEnteredViewModel()
+            advanceUntilIdle()
+
+            viewModel.onClearRequested(StorageClearCategory.TemporaryCache)
+            advanceUntilIdle()
+
+            assertNull(viewModel.uiState.value.clear.pendingConfirmation)
+            coVerify(exactly = 1) {
+                storageClearRepository.clear(StorageClearCategory.TemporaryCache)
+            }
+
+            viewModel.onClearRequested(StorageClearCategory.GeotiffTiles)
+
+            assertEquals(
+                StorageClearCategory.GeotiffTiles,
+                viewModel.uiState.value.clear.pendingConfirmation,
+            )
+            coVerify(exactly = 0) {
+                storageClearRepository.clear(StorageClearCategory.GeotiffTiles)
+            }
+        }
+
+    @Test
+    fun `cancelling confirmation performs no clear mutation`() =
+        runTest {
+            coEvery { storageCoordinator.snapshot() } returns snapshot()
+            val viewModel = createEnteredViewModel()
+            advanceUntilIdle()
+
+            viewModel.onClearRequested(StorageClearCategory.CandidateCrops)
+            assertEquals(
+                StorageClearCategory.CandidateCrops,
+                viewModel.uiState.value.clear.pendingConfirmation,
+            )
+
+            viewModel.onClearCancelled()
+            advanceUntilIdle()
+
+            assertNull(viewModel.uiState.value.clear.pendingConfirmation)
+            coVerify(exactly = 0) { storageClearRepository.clear(any()) }
+        }
+
+    @Test
+    fun `duplicate confirmation launches clear exactly once`() =
+        runTest {
+            coEvery { storageCoordinator.snapshot() } returns snapshot()
+            val result = CompletableDeferred<StorageClearResult>()
+            coEvery {
+                storageClearRepository.clear(StorageClearCategory.GeotiffTiles)
+            } coAnswers { result.await() }
+            val viewModel = createEnteredViewModel()
+            advanceUntilIdle()
+
+            viewModel.onClearRequested(StorageClearCategory.GeotiffTiles)
+            viewModel.onClearConfirmed()
+            viewModel.onClearConfirmed()
+            dispatcher.scheduler.runCurrent()
+
+            coVerify(exactly = 1) {
+                storageClearRepository.clear(StorageClearCategory.GeotiffTiles)
+            }
+            result.complete(
+                StorageClearResult.Cleared(StorageClearCategory.GeotiffTiles),
+            )
+            advanceUntilIdle()
+            coVerify(exactly = 1) {
+                storageClearRepository.clear(StorageClearCategory.GeotiffTiles)
+            }
+        }
+
+    @Test
+    fun `storage refreshes after complete partial and failed clear results`() =
+        runTest {
+            coEvery { storageCoordinator.snapshot() } returns snapshot()
+            val results =
+                listOf<StorageClearResult>(
+                    StorageClearResult.Cleared(StorageClearCategory.GeotiffTiles),
+                    StorageClearResult.PartiallyCleared(
+                        StorageClearCategory.SatelliteMaps,
+                        1,
+                    ),
+                    StorageClearResult.Failed(
+                        StorageClearCategory.CandidateCrops,
+                        "failed",
+                    ),
+                )
+
+            results.forEachIndexed { index, result ->
+                coEvery {
+                    storageClearRepository.clear(result.category)
+                } returns result
+                val viewModel = createEnteredViewModel()
+                advanceUntilIdle()
+                viewModel.onClearRequested(result.category)
+                if (result.category != StorageClearCategory.TemporaryCache) {
+                    viewModel.onClearConfirmed()
+                }
+                advanceUntilIdle()
+
+                assertEquals(result, viewModel.uiState.value.clear.lastResult)
+                coVerify(exactly = (index + 1) * 2) {
+                    storageCoordinator.snapshot()
+                }
+            }
+        }
+
     private fun createEnteredViewModel() =
-        SettingsViewModel(radiusRepository, storageCoordinator).also {
+        SettingsViewModel(
+            radiusRepository,
+            storageCoordinator,
+            storageClearRepository,
+            syncStatusSource,
+        ).also {
             it.refreshStorage()
         }
 

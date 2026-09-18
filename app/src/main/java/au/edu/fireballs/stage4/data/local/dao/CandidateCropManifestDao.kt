@@ -61,4 +61,7 @@ interface CandidateCropManifestDao {
         """,
     )
     suspend fun deleteOrphans()
+
+    @Query("DELETE FROM candidate_crop_manifest")
+    suspend fun deleteAll()
 }

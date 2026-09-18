@@ -2,13 +2,17 @@ package au.edu.fireballs.stage4.ui.screen.dataentry
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import au.edu.fireballs.stage4.data.repository.StorageClearCategory
+import au.edu.fireballs.stage4.data.repository.StorageClearRepository
+import au.edu.fireballs.stage4.data.repository.StorageClearResult
 import au.edu.fireballs.stage4.data.repository.StorageCoordinator
 import au.edu.fireballs.stage4.data.repository.StorageMutationState
 import au.edu.fireballs.stage4.data.repository.StorageUsageSnapshot
+import au.edu.fireballs.stage4.data.repository.SyncStatusSource
+import au.edu.fireballs.stage4.data.repository.isSyncGated
 import au.edu.fireballs.stage4.data.tiles.BufferRadiusRepository
 import au.edu.fireballs.stage4.ui.util.UiText
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -36,12 +40,24 @@ data class StorageDisplayRow(
         get() = listOfNotNull(category, value, status).joinToString()
 }
 
+data class SettingsClearUiState(
+    val active: StorageClearCategory? = null,
+    val pendingConfirmation: StorageClearCategory? = null,
+    val lastResult: StorageClearResult? = null,
+    val isGated: Boolean = false,
+    val isDownloading: Boolean = false,
+) {
+    val clearEnabled: Boolean
+        get() = !isGated && active == null
+}
+
 data class SettingsUiState(
     val currentRadius: Float,
     val inputText: String,
     val error: String?,
     val saved: Boolean,
     val storage: SettingsStorageUiState = SettingsStorageUiState(),
+    val clear: SettingsClearUiState = SettingsClearUiState(),
 )
 
 @HiltViewModel
@@ -50,6 +66,8 @@ class SettingsViewModel
     constructor(
         private val bufferRadiusRepository: BufferRadiusRepository,
         private val storageCoordinator: StorageCoordinator,
+        private val storageClearRepository: StorageClearRepository,
+        private val syncStatusSource: SyncStatusSource,
     ) : ViewModel() {
         private val _uiState =
             MutableStateFlow(
@@ -64,9 +82,11 @@ class SettingsViewModel
 
         private var refreshInFlight = false
         private var refreshPending = false
+        private var clearLaunchInFlight = false
 
         init {
             observeStorageMutations()
+            observeClearGating()
         }
 
         fun load() {
@@ -125,6 +145,96 @@ class SettingsViewModel
             }
         }
 
+        fun onClearRequested(category: StorageClearCategory) {
+            if (!_uiState.value.clear.clearEnabled) {
+                return
+            }
+            if (category == StorageClearCategory.TemporaryCache) {
+                launchClear(category)
+            } else {
+                _uiState.update {
+                    it.copy(
+                        clear = it.clear.copy(pendingConfirmation = category),
+                    )
+                }
+            }
+        }
+
+        fun onClearConfirmed() {
+            val category = _uiState.value.clear.pendingConfirmation ?: return
+            if (!_uiState.value.clear.clearEnabled || clearLaunchInFlight) {
+                return
+            }
+            _uiState.update {
+                it.copy(clear = it.clear.copy(pendingConfirmation = null))
+            }
+            launchClear(category)
+        }
+
+        fun onClearCancelled() {
+            _uiState.update {
+                it.copy(clear = it.clear.copy(pendingConfirmation = null))
+            }
+        }
+
+        private fun launchClear(category: StorageClearCategory) {
+            if (clearLaunchInFlight || !_uiState.value.clear.clearEnabled) {
+                return
+            }
+            clearLaunchInFlight = true
+            _uiState.update {
+                it.copy(
+                    clear =
+                        it.clear.copy(
+                            active = category,
+                            pendingConfirmation = null,
+                            lastResult = null,
+                        ),
+                )
+            }
+            viewModelScope.launch {
+                try {
+                    val result = storageClearRepository.clear(category)
+                    _uiState.update {
+                        it.copy(clear = it.clear.copy(lastResult = result))
+                    }
+                } finally {
+                    clearLaunchInFlight = false
+                    _uiState.update {
+                        it.copy(clear = it.clear.copy(active = null))
+                    }
+                    refreshStorage()
+                }
+            }
+        }
+
+        private fun observeClearGating() {
+            viewModelScope.launch {
+                storageCoordinator.state.collect { updateClearGating() }
+            }
+            viewModelScope.launch {
+                syncStatusSource.status.collect { updateClearGating() }
+            }
+        }
+
+        private fun updateClearGating() {
+            val mutationState = storageCoordinator.state.value
+            val isDownloading = mutationState is StorageMutationState.Downloading
+            val isGated =
+                isDownloading ||
+                    mutationState is StorageMutationState.Clearing ||
+                    syncStatusSource.status.value.isSyncGated
+            _uiState.update {
+                it.copy(
+                    clear =
+                        it.clear.copy(
+                            isGated = isGated,
+                            isDownloading = isDownloading,
+                        ),
+                )
+            }
+        }
+
         fun refreshStorage() {
             if (refreshInFlight) {
                 refreshPending = true
@@ -153,8 +263,6 @@ class SettingsViewModel
                                 ),
                         )
                     }
-                } catch (cancellation: CancellationException) {
-                    throw cancellation
                 } catch (_: Exception) {
                     _uiState.update {
                         it.copy(

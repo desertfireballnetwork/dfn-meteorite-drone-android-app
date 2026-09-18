@@ -81,8 +81,11 @@ class SettingsStorageTest {
             .onNodeWithContentDescription("Evidence photos, 2 MB, Preserved")
             .assertExists()
         composeRule.onNodeWithText("Size unavailable").assertDoesNotExist()
-        composeRule.onNodeWithText("Clear").assertDoesNotExist()
         composeRule.onNodeWithText("Delete").assertDoesNotExist()
+        composeRule.onNodeWithTag("clear-geotiff-tiles").assertExists()
+        composeRule.onNodeWithTag("clear-candidate-crops").assertExists()
+        composeRule.onNodeWithTag("clear-satellite-maps").assertExists()
+        composeRule.onNodeWithTag("clear-temporary-cache").assertExists()
     }
 
     @Test
@@ -192,6 +195,9 @@ class SettingsStorageTest {
                         onGeotiffRadiusInput = {},
                         onSave = {},
                         onRetryStorage = {},
+                        onClearRequested = {},
+                        onClearConfirmed = {},
+                        onClearCancelled = {},
                         modifier = Modifier.height(360.dp),
                     )
                 }
@@ -218,6 +224,9 @@ class SettingsStorageTest {
                     onGeotiffRadiusInput = {},
                     onSave = {},
                     onRetryStorage = onRetry,
+                    onClearRequested = {},
+                    onClearConfirmed = {},
+                    onClearCancelled = {},
                 )
             }
         }
