@@ -15,6 +15,8 @@ import au.edu.fireballs.stage4.data.local.dao.SurveyDao
 import au.edu.fireballs.stage4.data.local.dao.SyncRunDao
 import au.edu.fireballs.stage4.data.local.dao.TileManifestDao
 
+internal const val STAGE4_DATABASE_VERSION = 7
+
 @Database(
     entities = [
         SurveyEntity::class,
@@ -28,7 +30,7 @@ import au.edu.fireballs.stage4.data.local.dao.TileManifestDao
         SyncRunEntity::class,
         SatelliteRegionEntity::class,
     ],
-    version = 7,
+    version = STAGE4_DATABASE_VERSION,
     exportSchema = true,
 )
 abstract class Stage4Database : RoomDatabase() {
@@ -403,5 +405,15 @@ abstract class Stage4Database : RoomDatabase() {
                     )
                 }
             }
+
+        val ALL_MIGRATIONS: Array<Migration> =
+            arrayOf(
+                MIGRATION_1_2,
+                MIGRATION_2_3,
+                MIGRATION_3_4,
+                MIGRATION_4_5,
+                MIGRATION_5_6,
+                MIGRATION_6_7,
+            )
     }
 }

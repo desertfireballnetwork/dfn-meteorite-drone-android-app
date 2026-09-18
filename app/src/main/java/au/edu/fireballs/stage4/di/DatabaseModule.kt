@@ -26,19 +26,18 @@ object DatabaseModule {
     @Singleton
     fun provideStage4Database(
         @ApplicationContext context: Context,
-    ): Stage4Database =
-        Room
-            .databaseBuilder(
+    ): Stage4Database {
+        val builder =
+            Room.databaseBuilder(
                 context,
                 Stage4Database::class.java,
                 "stage4.db",
-            ).addMigrations(
-                Stage4Database.MIGRATION_1_2,
-                Stage4Database.MIGRATION_2_3,
-                Stage4Database.MIGRATION_3_4,
-                Stage4Database.MIGRATION_4_5,
-                Stage4Database.MIGRATION_5_6,
-            ).build()
+            )
+        Stage4Database.ALL_MIGRATIONS.forEach { migration ->
+            builder.addMigrations(migration)
+        }
+        return builder.build()
+    }
 
     @Provides
     fun provideSurveyDao(db: Stage4Database): SurveyDao = db.surveyDao()
