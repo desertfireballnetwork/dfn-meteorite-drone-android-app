@@ -24,6 +24,8 @@ object PreDownloadTargetPlanner {
     const val TILE_MAX_ZOOM = 22
     const val SATELLITE_MIN_ZOOM = 18
     const val SATELLITE_MAX_ZOOM = 22
+    const val GEOTIFF_KIND = "GEOTIFF"
+    const val GEOTIFF_EXPECTED_FORMAT = "PNG"
 
     fun cluster(
         candidates: List<PreDownloadTargetCandidate>,
@@ -127,6 +129,85 @@ object PreDownloadTargetPlanner {
             val bbox = unionBbox(cluster, bufferRadiusMeters)
             PreDownloadSatelliteTarget(bbox, satelliteSignature(cluster, bbox))
         }
+
+    fun tileKeysForCandidate(
+        surveyId: Long,
+        candidate: PreDownloadTargetCandidate,
+        radiusMeters: Double,
+        sourceVersion: String,
+        kind: String = GEOTIFF_KIND,
+        expectedFormat: String = GEOTIFF_EXPECTED_FORMAT,
+    ): List<PreDownloadTargetKey.Tile> =
+        tilesForCandidate(candidate, radiusMeters).map { coord ->
+            PreDownloadTargetKey.Tile(
+                surveyId = surveyId,
+                candidateId = candidate.inferenceResultId,
+                sourceVersion = sourceVersion,
+                radiusMetres = radiusMeters,
+                zoom = coord.z,
+                x = coord.x,
+                y = coord.y,
+                kind = kind,
+                expectedFormat = expectedFormat,
+            )
+        }
+
+    fun cropRequestSignature(
+        surveyId: Long,
+        candidateId: Long,
+    ): String = "crop:$surveyId:$candidateId"
+
+    fun cropKey(
+        surveyId: Long,
+        candidateId: Long,
+        sourceVersion: String,
+    ): PreDownloadTargetKey.Crop =
+        PreDownloadTargetKey.Crop(
+            surveyId = surveyId,
+            candidateId = candidateId,
+            sourceVersion = sourceVersion,
+            requestSignature = cropRequestSignature(surveyId, candidateId),
+        )
+
+    fun satelliteKey(
+        surveyId: Long,
+        sourceVersion: String,
+        signature: String,
+    ): PreDownloadTargetKey.Satellite =
+        PreDownloadTargetKey.Satellite(
+            surveyId = surveyId,
+            sourceVersion = sourceVersion,
+            signature = signature,
+        )
+
+    fun targetSet(
+        surveyId: Long,
+        sourceVersion: String,
+        candidates: List<PreDownloadTargetCandidate>,
+        bufferRadiusMeters: Double,
+        geotiffRadiusMeters: Double,
+    ): PreDownloadTargetSet {
+        val clusters = cluster(candidates, bufferRadiusMeters)
+        return PreDownloadTargetSet(
+            geotiffTiles =
+                candidates.flatMap { candidate ->
+                    tileKeysForCandidate(
+                        surveyId,
+                        candidate,
+                        geotiffRadiusMeters,
+                        sourceVersion,
+                    )
+                },
+            crops =
+                candidates.map { candidate ->
+                    cropKey(surveyId, candidate.inferenceResultId, sourceVersion)
+                },
+            satellites =
+                satelliteTargets(clusters, bufferRadiusMeters).map { target ->
+                    satelliteKey(surveyId, sourceVersion, target.signature)
+                },
+        )
+    }
 
     fun tilesForCandidate(
         candidate: PreDownloadTargetCandidate,

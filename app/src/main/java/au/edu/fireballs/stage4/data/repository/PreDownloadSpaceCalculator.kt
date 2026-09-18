@@ -14,9 +14,11 @@ object PreDownloadSpaceCalculator {
         inventory: PreDownloadInventory,
         availableBytes: Long,
         totalVolumeBytes: Long,
+        confidentlyDeletableBytes: Long = 0L,
     ): PreDownloadSpaceEstimate {
         require(availableBytes >= 0)
         require(totalVolumeBytes >= 0)
+        require(confidentlyDeletableBytes >= 0)
 
         val incrementalRequiredBytes =
             inventory.geotiffMissingCount.toLong() * GEOTIFF_ESTIMATE_BYTES +
@@ -34,7 +36,9 @@ object PreDownloadSpaceCalculator {
             availableBytes = availableBytes,
             totalVolumeBytes = totalVolumeBytes,
             reserveBytes = reserveBytes,
-            expectedRemainingBytes = availableBytes - incrementalRequiredBytes,
+            expectedRemainingBytes =
+                availableBytes + confidentlyDeletableBytes - incrementalRequiredBytes,
+            confidentlyDeletableBytes = confidentlyDeletableBytes,
         )
     }
 
@@ -45,8 +49,15 @@ object PreDownloadSpaceCalculator {
         inventory: PreDownloadInventory,
         availableBytes: Long,
         totalVolumeBytes: Long,
+        confidentlyDeletableBytes: Long = 0L,
     ): PreDownloadPreflightResult {
-        val estimate = calculate(inventory, availableBytes, totalVolumeBytes)
+        val estimate =
+            calculate(
+                inventory,
+                availableBytes,
+                totalVolumeBytes,
+                confidentlyDeletableBytes,
+            )
         return if (hasSufficientSpace(estimate)) {
             PreDownloadPreflightResult.Allowed(estimate)
         } else {

@@ -2,6 +2,7 @@ package au.edu.fireballs.stage4.data.tiles
 
 import android.os.Handler
 import android.os.Looper
+import au.edu.fireballs.stage4.data.repository.PreDownloadTargetKey
 import com.mapbox.geojson.Point
 import com.mapbox.maps.CoordinateBounds
 import com.mapbox.maps.GlyphsRasterizationMode
@@ -17,6 +18,41 @@ data class OfflineRegionInventory(
     val regionCount: Int,
     val measuredBytes: Long?,
 )
+
+sealed interface OfflineRegionRetention {
+    val target: PreDownloadTargetKey.Satellite
+
+    data class Retained(
+        override val target: PreDownloadTargetKey.Satellite,
+    ) : OfflineRegionRetention
+
+    data class Missing(
+        override val target: PreDownloadTargetKey.Satellite,
+    ) : OfflineRegionRetention
+}
+
+enum class OfflineRegionFailureCategory {
+    REGION_LIST_FAILED,
+    PURGE_REJECTED,
+}
+
+sealed interface OfflineRegionPurgeResult {
+    val target: PreDownloadTargetKey.Satellite
+
+    data class Purged(
+        override val target: PreDownloadTargetKey.Satellite,
+    ) : OfflineRegionPurgeResult
+
+    data class ConfirmedAbsent(
+        override val target: PreDownloadTargetKey.Satellite,
+    ) : OfflineRegionPurgeResult
+
+    data class RetryableFailure(
+        override val target: PreDownloadTargetKey.Satellite,
+        val category: OfflineRegionFailureCategory,
+        val attemptTimeMillis: Long,
+    ) : OfflineRegionPurgeResult
+}
 
 class OfflineRegionWrapper(
     private val source: OfflineRegionSource = MapboxOfflineRegionSource(),
@@ -34,6 +70,7 @@ class OfflineRegionWrapper(
         resourceCountCb: (Long) -> Unit,
         progressCb: (Double) -> Unit,
         completionCb: (Result<Unit>) -> Unit,
+        target: PreDownloadTargetKey.Satellite? = null,
     ) {
         val operation =
             synchronized(operationLock) {
@@ -58,75 +95,142 @@ class OfflineRegionWrapper(
                     return@createOfflineRegion
                 }
             operation.region = region
-            region.setOfflineRegionObserver(
-                object : OfflineRegionObserver {
-                    override fun statusChanged(status: OfflineRegionStatus) {
-                        if (operation.isTerminal) {
-                            return
+            if (target == null) {
+                observeRegion(region, operation)
+            } else {
+                region.setMetadata(encodeOfflineRegionTarget(target)) { metadataResult ->
+                    if (metadataResult.isError) {
+                        region.purge {
+                            operation.complete(
+                                Result.failure(
+                                    IllegalStateException("Offline region ownership setup failed"),
+                                ),
+                            )
                         }
-                        operation.reportResourceCount(status.requiredResourceCount)
-                        val progress =
-                            if (status.requiredResourceCount > 0) {
-                                status.completedResourceCount.toDouble() /
-                                    status.requiredResourceCount.toDouble()
-                            } else {
-                                0.0
-                            }
-                        operation.postProgress(progress.coerceIn(0.0, 1.0))
-                        if (status.requiredResourceCount > 0 &&
-                            status.completedResourceCount >= status.requiredResourceCount
-                        ) {
-                            operation.complete(Result.success(Unit))
-                        }
+                    } else {
+                        mainHandler.post { observeRegion(region, operation) }
                     }
-
-                    override fun errorOccurred(error: OfflineRegionError) {
-                        operation.complete(
-                            Result.failure(
-                                IllegalStateException(error.message),
-                            ),
-                        )
-                    }
-                },
-            )
-            operation.activateIfActive()
+                }
+            }
         }
+    }
+
+    private fun observeRegion(
+        region: OfflineRegionHandle,
+        operation: RegionOperation,
+    ) {
+        region.setOfflineRegionObserver(
+            object : OfflineRegionObserver {
+                override fun statusChanged(status: OfflineRegionStatus) {
+                    if (operation.isTerminal) {
+                        return
+                    }
+                    operation.reportResourceCount(status.requiredResourceCount)
+                    val progress =
+                        if (status.requiredResourceCount > 0) {
+                            status.completedResourceCount.toDouble() /
+                                status.requiredResourceCount.toDouble()
+                        } else {
+                            0.0
+                        }
+                    operation.postProgress(progress.coerceIn(0.0, 1.0))
+                    if (status.requiredResourceCount > 0 &&
+                        status.completedResourceCount >= status.requiredResourceCount
+                    ) {
+                        operation.complete(Result.success(Unit))
+                    }
+                }
+
+                override fun errorOccurred(error: OfflineRegionError) {
+                    operation.complete(
+                        Result.failure(
+                            IllegalStateException(error.message),
+                        ),
+                    )
+                }
+            },
+        )
+        operation.activateIfActive()
     }
 
     fun cancelDownload() {
         activeOperation?.cancel()
     }
 
-    fun deleteRegion(
-        regionId: String,
-        callback: (Result<Unit>) -> Unit = {},
+    fun retainExact(
+        targets: List<PreDownloadTargetKey.Satellite>,
+        callback: (Result<List<OfflineRegionRetention>>) -> Unit,
+    ) {
+        if (targets.isEmpty()) {
+            mainHandler.post { callback(Result.success(emptyList())) }
+            return
+        }
+        source.getOfflineRegions { result ->
+            mainHandler.post {
+                callback(
+                    result.map { regions ->
+                        val owned =
+                            regions
+                                .mapNotNull { decodeOfflineRegionTarget(it.metadata) }
+                                .toSet()
+                        targets.map { target ->
+                            if (target in owned) {
+                                OfflineRegionRetention.Retained(target)
+                            } else {
+                                OfflineRegionRetention.Missing(target)
+                            }
+                        }
+                    },
+                )
+            }
+        }
+    }
+
+    fun purgeExact(
+        target: PreDownloadTargetKey.Satellite,
+        callback: (OfflineRegionPurgeResult) -> Unit,
     ) {
         source.getOfflineRegions { result ->
             val regions =
-                result.getOrElse { error ->
-                    mainHandler.post { callback(Result.failure(error)) }
+                result.getOrElse {
+                    mainHandler.post {
+                        callback(
+                            retryableFailure(
+                                target,
+                                OfflineRegionFailureCategory.REGION_LIST_FAILED,
+                            ),
+                        )
+                    }
                     return@getOfflineRegions
                 }
-            val region = regions.firstOrNull { it.identifier.toString() == regionId }
-            if (region == null) {
-                mainHandler.post {
-                    callback(Result.failure(IllegalStateException("Region not found: $regionId")))
-                }
+            val owned = regions.firstOrNull { decodeOfflineRegionTarget(it.metadata) == target }
+            if (owned == null) {
+                mainHandler.post { callback(OfflineRegionPurgeResult.ConfirmedAbsent(target)) }
                 return@getOfflineRegions
             }
-            region.purge {
+            owned.purge { purgeResult ->
                 mainHandler.post {
                     callback(
-                        if (it.isError) {
-                            Result.failure(IllegalStateException(it.error))
+                        if (purgeResult.isError) {
+                            retryableFailure(target, OfflineRegionFailureCategory.PURGE_REJECTED)
                         } else {
-                            Result.success(Unit)
+                            OfflineRegionPurgeResult.Purged(target)
                         },
                     )
                 }
             }
         }
     }
+
+    private fun retryableFailure(
+        target: PreDownloadTargetKey.Satellite,
+        category: OfflineRegionFailureCategory,
+    ): OfflineRegionPurgeResult.RetryableFailure =
+        OfflineRegionPurgeResult.RetryableFailure(
+            target = target,
+            category = category,
+            attemptTimeMillis = System.currentTimeMillis(),
+        )
 
     fun purgeAllRegions(callback: (Result<Unit>) -> Unit = {}) {
         source.getOfflineRegions { result ->
@@ -280,4 +384,31 @@ class OfflineRegionWrapper(
                     GlyphsRasterizationMode.IDEOGRAPHS_RASTERIZED_LOCALLY,
                 ).build()
     }
+}
+
+private const val REGION_METADATA_PREFIX = "stage4-satellite"
+private const val REGION_METADATA_SEPARATOR = "\u0000"
+
+internal fun encodeOfflineRegionTarget(target: PreDownloadTargetKey.Satellite): ByteArray =
+    listOf(
+        REGION_METADATA_PREFIX,
+        target.surveyId.toString(),
+        target.sourceVersion,
+        target.signature,
+    ).joinToString(REGION_METADATA_SEPARATOR).toByteArray(Charsets.UTF_8)
+
+internal fun decodeOfflineRegionTarget(bytes: ByteArray?): PreDownloadTargetKey.Satellite? {
+    if (bytes == null) {
+        return null
+    }
+    val parts = String(bytes, Charsets.UTF_8).split(REGION_METADATA_SEPARATOR)
+    if (parts.size != 4 || parts[0] != REGION_METADATA_PREFIX) {
+        return null
+    }
+    val surveyId = parts[1].toLongOrNull() ?: return null
+    return PreDownloadTargetKey.Satellite(
+        surveyId = surveyId,
+        sourceVersion = parts[2],
+        signature = parts[3],
+    )
 }

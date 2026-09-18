@@ -52,12 +52,12 @@ class OfflineBundleRepositoryTest {
             val bundle =
                 OfflineBundleEntity(
                     surveyId = 1,
-                    created = "now",
+                    createdAt = 0L,
                     totalBytes = 1,
                     tileCount = 1,
                     satelliteRegionCount = 0,
                     candidateCount = 1,
-                    bufferMeters = 100f,
+                    radiusMetres = 100.0,
                 )
 
             val rowId = repository.insertBundle(bundle)
@@ -81,12 +81,12 @@ class OfflineBundleRepositoryTest {
             database.offlineBundleDao().insert(
                 OfflineBundleEntity(
                     surveyId = 1,
-                    created = "now",
+                    createdAt = 0L,
                     totalBytes = 1,
                     tileCount = 1,
                     satelliteRegionCount = 0,
                     candidateCount = 1,
-                    bufferMeters = 100f,
+                    radiusMetres = 100.0,
                 ),
             )
 

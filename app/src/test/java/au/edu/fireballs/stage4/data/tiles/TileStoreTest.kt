@@ -1,12 +1,16 @@
 package au.edu.fireballs.stage4.data.tiles
 
+import au.edu.fireballs.stage4.data.repository.PreDownloadPruneKey
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertArrayEquals
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
+import java.io.IOException
 import java.nio.file.Files
 
 class TileStoreTest {
@@ -158,5 +162,170 @@ class TileStoreTest {
 
         assertTrue(store.contains(1, 2, 3, 4, 5))
         assertTrue(store.contains(1, 2, 3, 4, 6))
+    }
+
+    @Test
+    fun isValidPayloadAcceptsEncodedPng() {
+        val store = tempStore()
+
+        assertTrue(store.isValidPayload(LocalFileRasterTileProvider.TRANSPARENT_PNG))
+    }
+
+    @Test
+    fun isValidPayloadRejectsInvalidAndEmptyContent() {
+        val store = tempStore()
+
+        assertFalse(store.isValidPayload(byteArrayOf(1, 2, 3, 4)))
+        assertFalse(store.isValidPayload(ByteArray(0)))
+        assertFalse(store.isValidPayload(ByteArray(TileStore.MAX_TILE_BYTES + 1)))
+    }
+
+    @Test
+    fun isValidTileValidatesFinalEncodedPayload() {
+        val store = tempStore()
+        store.write(1, 2, 3, 4, 5, LocalFileRasterTileProvider.TRANSPARENT_PNG)
+        store.write(1, 2, 3, 4, 6, byteArrayOf(1, 2, 3))
+
+        assertTrue(store.isValidTile(1, 2, 3, 4, 5))
+        assertFalse(store.isValidTile(1, 2, 3, 4, 6))
+        assertFalse(store.isValidTile(1, 2, 3, 4, 7))
+    }
+
+    @Test
+    fun isValidTileRejectsOutOfRangeCoordinate() {
+        val store = tempStore()
+
+        assertFalse(store.isValidTile(1, 2, 3, 8, 0))
+        assertFalse(store.isValidTile(1, 2, 31, 0, 0))
+        assertFalse(store.isValidTile(-1, 2, 3, 4, 5))
+    }
+
+    @Test
+    fun selectiveDeleteRemovesOnlyRequestedKeysAndPreservesTimestamps() {
+        val dir = Files.createTempDirectory("tiles-selective").toFile()
+        val store = TileStore(dir)
+        val png = LocalFileRasterTileProvider.TRANSPARENT_PNG
+        store.write(1, 2, 3, 4, 5, png)
+        store.write(1, 2, 3, 4, 6, png)
+        val survivor = dir.resolve("1/2/3/4/6.png")
+        val timestamp = survivor.lastModified()
+
+        store.deleteTiles(listOf(PreDownloadPruneKey.Geotiff(1, 2, 3, 4, 5)))
+
+        assertFalse(dir.resolve("1/2/3/4/5.png").exists())
+        assertTrue(survivor.exists())
+        assertEquals(timestamp, survivor.lastModified())
+    }
+
+    @Test
+    fun selectiveDeletePrunesEmptyDirectoriesBelowTheRoot() {
+        val dir = Files.createTempDirectory("tiles-prune").toFile()
+        val store = TileStore(dir)
+        store.write(1, 2, 3, 4, 5, LocalFileRasterTileProvider.TRANSPARENT_PNG)
+
+        store.deleteTiles(listOf(PreDownloadPruneKey.Geotiff(1, 2, 3, 4, 5)))
+
+        assertFalse(dir.resolve("1").exists())
+        assertTrue(dir.exists())
+    }
+
+    @Test
+    fun selectiveDeleteRejectsSymbolicLinkWithoutTouchingTarget() {
+        val dir = Files.createTempDirectory("tiles-symlink").toFile()
+        val outside = Files.createTempDirectory("tiles-outside").toFile()
+        val store = TileStore(dir)
+        val outsideFile = File(outside, "target.png")
+        outsideFile.writeBytes(LocalFileRasterTileProvider.TRANSPARENT_PNG)
+        val link = dir.resolve("1/2/3/4/5.png")
+        link.parentFile!!.mkdirs()
+        Files.createSymbolicLink(link.toPath(), outsideFile.toPath())
+
+        assertThrows(IOException::class.java) {
+            store.deleteTiles(listOf(PreDownloadPruneKey.Geotiff(1, 2, 3, 4, 5)))
+        }
+
+        assertTrue(outsideFile.exists())
+        assertTrue(Files.isSymbolicLink(link.toPath()))
+    }
+
+    @Test
+    fun deleteSurveyTilesRejectsSymbolicLinkRoot() {
+        val dir = Files.createTempDirectory("tiles-survey-link").toFile()
+        val outside = Files.createTempDirectory("tiles-survey-outside").toFile()
+        val store = TileStore(dir)
+        val outsideFile = File(outside, "keep.png")
+        outsideFile.writeBytes(LocalFileRasterTileProvider.TRANSPARENT_PNG)
+        Files.createSymbolicLink(dir.resolve("1").toPath(), outside.toPath())
+
+        assertThrows(IOException::class.java) {
+            store.deleteSurveyTiles(1)
+        }
+
+        assertTrue(outsideFile.exists())
+    }
+
+    @Test
+    fun clearAllRemovesOrphanedTemporaryFiles() {
+        val dir = Files.createTempDirectory("tiles-orphan").toFile()
+        val store = TileStore(dir)
+        store.write(1, 2, 3, 4, 5, LocalFileRasterTileProvider.TRANSPARENT_PNG)
+        dir.resolve("1/2/3/4/9.png.tmp").writeBytes(byteArrayOf(1, 2, 3))
+
+        store.deleteAll()
+
+        assertFalse(dir.exists())
+    }
+
+    @Test
+    fun clearAllDoesNotFollowSymbolicLinks() {
+        val dir = Files.createTempDirectory("tiles-clear-link").toFile()
+        val outside = Files.createTempDirectory("tiles-clear-outside").toFile()
+        val store = TileStore(dir)
+        val outsideFile = File(outside, "keep.png")
+        outsideFile.writeBytes(LocalFileRasterTileProvider.TRANSPARENT_PNG)
+        store.write(1, 2, 3, 4, 5, LocalFileRasterTileProvider.TRANSPARENT_PNG)
+        val link = dir.resolve("evil")
+        Files.createSymbolicLink(link.toPath(), outside.toPath())
+
+        store.deleteAll()
+
+        assertTrue(outsideFile.exists())
+        assertTrue(Files.isSymbolicLink(link.toPath()))
+        assertFalse(dir.resolve("1").exists())
+    }
+
+    @Test
+    fun writeLeavesNoTemporaryFilesAfterSuccess() {
+        val dir = Files.createTempDirectory("tiles-temp").toFile()
+        val store = TileStore(dir)
+
+        store.write(1, 2, 3, 4, 5, LocalFileRasterTileProvider.TRANSPARENT_PNG)
+
+        val entries = dir.resolve("1/2/3/4").listFiles() ?: emptyArray()
+        assertTrue(entries.none { it.name.endsWith(".tmp") })
+    }
+
+    @Test
+    fun atomicReplaceFallsBackWhenAtomicMoveIsUnsupported() {
+        val source = File.createTempFile("atomic-source", ".tmp")
+        val target = File.createTempFile("atomic-target", ".png")
+        source.writeBytes(byteArrayOf(1, 2, 3))
+        var fallbackUsed = false
+
+        replaceFileAtomically(source, target) { from, to, atomic ->
+            if (atomic) {
+                throw java.nio.file.AtomicMoveNotSupportedException(
+                    from.path,
+                    to.path,
+                    "unsupported",
+                )
+            }
+            fallbackUsed = true
+            from.copyTo(to, overwrite = true)
+            from.delete()
+        }
+
+        assertTrue(fallbackUsed)
+        assertArrayEquals(byteArrayOf(1, 2, 3), target.readBytes())
     }
 }

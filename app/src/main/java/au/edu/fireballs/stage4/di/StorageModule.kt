@@ -1,6 +1,13 @@
 package au.edu.fireballs.stage4.di
 
 import android.content.Context
+import au.edu.fireballs.stage4.data.local.Stage4Database
+import au.edu.fireballs.stage4.data.local.dao.CandidateCropManifestDao
+import au.edu.fireballs.stage4.data.local.dao.OfflineBundleDao
+import au.edu.fireballs.stage4.data.local.dao.SatelliteRegionDao
+import au.edu.fireballs.stage4.data.local.dao.TileManifestDao
+import au.edu.fireballs.stage4.data.repository.CandidateImageRepository
+import au.edu.fireballs.stage4.data.repository.OfflineWorkingSetRepository
 import au.edu.fireballs.stage4.data.repository.StorageCoordinator
 import au.edu.fireballs.stage4.data.tiles.OfflineRegionWrapper
 import au.edu.fireballs.stage4.data.tiles.TileStore
@@ -85,6 +92,35 @@ object StorageModule {
             candidateCropRoot = candidateCropRoot,
             evidenceRoot = evidenceRoot,
             ownedTempCacheRoots = ownedTempCacheRoots,
+            ioDispatcher = ioDispatcher,
+        )
+
+    @Provides
+    fun provideCandidateCropManifestDao(database: Stage4Database): CandidateCropManifestDao =
+        database.candidateCropManifestDao()
+
+    @Provides
+    @Singleton
+    fun provideOfflineWorkingSetRepository(
+        database: Stage4Database,
+        offlineBundleDao: OfflineBundleDao,
+        tileManifestDao: TileManifestDao,
+        candidateCropManifestDao: CandidateCropManifestDao,
+        satelliteRegionDao: SatelliteRegionDao,
+        tileStore: TileStore,
+        candidateImageRepository: CandidateImageRepository,
+        offlineRegionWrapper: OfflineRegionWrapper,
+        @IoDispatcher ioDispatcher: CoroutineDispatcher,
+    ): OfflineWorkingSetRepository =
+        OfflineWorkingSetRepository(
+            database = database,
+            offlineBundleDao = offlineBundleDao,
+            tileManifestDao = tileManifestDao,
+            candidateCropManifestDao = candidateCropManifestDao,
+            satelliteRegionDao = satelliteRegionDao,
+            tileStore = tileStore,
+            candidateImageRepository = candidateImageRepository,
+            offlineRegionWrapper = offlineRegionWrapper,
             ioDispatcher = ioDispatcher,
         )
 }

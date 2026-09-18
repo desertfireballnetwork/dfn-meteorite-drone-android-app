@@ -10,13 +10,13 @@ import au.edu.fireballs.stage4.data.local.dao.SurveyDao
 import au.edu.fireballs.stage4.data.remote.TileService
 import au.edu.fireballs.stage4.data.repository.CandidateImageRepository
 import au.edu.fireballs.stage4.data.repository.ClaimRepository
+import au.edu.fireballs.stage4.data.repository.OfflineWorkingSetRepository
 import au.edu.fireballs.stage4.data.repository.PreDownloadStoragePreflight
 import au.edu.fireballs.stage4.data.repository.Stage4Repository
 import au.edu.fireballs.stage4.data.repository.StorageCoordinator
 import au.edu.fireballs.stage4.data.tiles.BufferRadiusRepository
 import au.edu.fireballs.stage4.data.tiles.GeotiffRadiusRepository
 import au.edu.fireballs.stage4.data.tiles.LowZoomTileCompositor
-import au.edu.fireballs.stage4.data.tiles.OfflineBundleRepository
 import au.edu.fireballs.stage4.data.tiles.OfflineManagerWrapper
 import au.edu.fireballs.stage4.data.tiles.SatelliteRegionStore
 import au.edu.fireballs.stage4.data.tiles.TileStore
@@ -39,16 +39,17 @@ class PreDownloadWorker
         private val tileStore: TileStore,
         private val tileService: TileService,
         private val offlineManagerWrapper: OfflineManagerWrapper,
-        private val offlineBundleRepository: OfflineBundleRepository,
         private val bufferRadiusRepository: BufferRadiusRepository,
         private val candidateImageRepository: CandidateImageRepository,
         private val geotiffRadiusRepository: GeotiffRadiusRepository,
         private val satelliteRegionStore: SatelliteRegionStore,
         private val storageCoordinator: StorageCoordinator,
+        private val workingSetRepository: OfflineWorkingSetRepository,
         private val preflight: PreDownloadStoragePreflight,
         @IoDispatcher private val ioDispatcher: CoroutineDispatcher,
     ) : CoroutineWorker(appContext, params) {
         override suspend fun doWork(): Result {
+            val manifestId = inputData.getString(KEY_MANIFEST_ID)
             val surveyId = inputData.getLong(KEY_SURVEY_ID, -1L)
             if (surveyId < 0L) {
                 return Result.failure()
@@ -75,17 +76,17 @@ class PreDownloadWorker
                     lowZoomCompositor = LowZoomTileCompositor(tileStore),
                     tileService = tileService,
                     offlineManagerWrapper = offlineManagerWrapper,
-                    offlineBundleRepository = offlineBundleRepository,
                     candidateImageRepository = candidateImageRepository,
                     geotiffRadiusRepository = geotiffRadiusRepository,
                     satelliteRegionStore = satelliteRegionStore,
-                    filesDir = applicationContext.filesDir,
                     storageCoordinator = storageCoordinator,
+                    workingSetRepository = workingSetRepository,
                     preflight = preflight,
                     ioDispatcher = ioDispatcher,
                 )
             return when (
-                val outcome = orchestrator.run(surveyId, bufferMeters) { setProgress(it) }
+                val outcome =
+                    orchestrator.run(surveyId, bufferMeters, manifestId) { setProgress(it) }
             ) {
                 is PreDownloadOutcome.Success -> Result.success(outcome.outputData)
                 is PreDownloadOutcome.Failure -> Result.failure(outcome.outputData)
@@ -93,6 +94,7 @@ class PreDownloadWorker
         }
 
         companion object {
+            const val KEY_MANIFEST_ID = "manifestId"
             const val KEY_SURVEY_ID = "surveyId"
             const val KEY_BUFFER_METERS = "bufferMeters"
             const val KEY_GEOTIFF_RADIUS_METERS = "geotiffRadiusMeters"

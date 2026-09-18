@@ -16,6 +16,7 @@ import au.edu.fireballs.stage4.data.tiles.BufferRadiusRepository
 import au.edu.fireballs.stage4.data.tiles.GeotiffRadiusRepository
 import au.edu.fireballs.stage4.sync.PreDownloadOrchestrator
 import au.edu.fireballs.stage4.sync.PreDownloadWorker
+import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -84,6 +85,7 @@ class PreDownloadViewModelTest {
         viewModel =
             PreDownloadViewModel(
                 claimRepository,
+                mockk(relaxed = true),
                 stage4Repository,
                 bufferRadiusRepository,
                 geotiffRadiusRepository,

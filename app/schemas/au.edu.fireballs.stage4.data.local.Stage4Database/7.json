@@ -1,0 +1,1011 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 7,
+    "identityHash": "1dd708de118cb35f056b83ea31feccaf",
+    "entities": [
+      {
+        "tableName": "survey",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER NOT NULL, `eventId` TEXT NOT NULL, `description` TEXT, `created` TEXT NOT NULL, `hasStage4` INTEGER NOT NULL, `activeSurvey` INTEGER NOT NULL, `tilesetId` TEXT, `latestTaskCreated` TEXT, `baseLat` REAL, `baseLon` REAL, `lastViewed` INTEGER, `surveyedAreasJson` TEXT, `detectionTagsJson` TEXT, `userLocationsJson` TEXT, `showGeolocationAccuracyCircle` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "eventId",
+            "columnName": "eventId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "description",
+            "columnName": "description",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "created",
+            "columnName": "created",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "hasStage4",
+            "columnName": "hasStage4",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "activeSurvey",
+            "columnName": "activeSurvey",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "tilesetId",
+            "columnName": "tilesetId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "latestTaskCreated",
+            "columnName": "latestTaskCreated",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "baseLat",
+            "columnName": "baseLat",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "baseLon",
+            "columnName": "baseLon",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "lastViewed",
+            "columnName": "lastViewed",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "surveyedAreasJson",
+            "columnName": "surveyedAreasJson",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "detectionTagsJson",
+            "columnName": "detectionTagsJson",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "userLocationsJson",
+            "columnName": "userLocationsJson",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "showGeolocationAccuracyCircle",
+            "columnName": "showGeolocationAccuracyCircle",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_survey_eventId",
+            "unique": false,
+            "columnNames": [
+              "eventId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_survey_eventId` ON `${TABLE_NAME}` (`eventId`)"
+          }
+        ]
+      },
+      {
+        "tableName": "candidate",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`inferenceResultId` INTEGER NOT NULL, `surveyId` INTEGER NOT NULL, `imageId` INTEGER NOT NULL, `imageFilename` TEXT NOT NULL, `imageWidth` INTEGER NOT NULL, `imageHeight` INTEGER NOT NULL, `geoCentroidLat` REAL, `geoCentroidLon` REAL, `geoAreaJson` TEXT NOT NULL, `boxX` INTEGER NOT NULL, `boxY` INTEGER NOT NULL, `boxW` INTEGER NOT NULL, `boxH` INTEGER NOT NULL, `confidence` REAL NOT NULL, `sizeMw` REAL, `sizeMh` REAL, `isClaimedByMe` INTEGER NOT NULL, `isClaimedByOther` INTEGER NOT NULL, `claimOwnerUsername` TEXT, `serverVerdict` INTEGER NOT NULL, PRIMARY KEY(`inferenceResultId`))",
+        "fields": [
+          {
+            "fieldPath": "inferenceResultId",
+            "columnName": "inferenceResultId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "surveyId",
+            "columnName": "surveyId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "imageId",
+            "columnName": "imageId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "imageFilename",
+            "columnName": "imageFilename",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "imageWidth",
+            "columnName": "imageWidth",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "imageHeight",
+            "columnName": "imageHeight",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "geoCentroidLat",
+            "columnName": "geoCentroidLat",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "geoCentroidLon",
+            "columnName": "geoCentroidLon",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "geoAreaJson",
+            "columnName": "geoAreaJson",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "boxX",
+            "columnName": "boxX",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "boxY",
+            "columnName": "boxY",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "boxW",
+            "columnName": "boxW",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "boxH",
+            "columnName": "boxH",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "confidence",
+            "columnName": "confidence",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sizeMw",
+            "columnName": "sizeMw",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "sizeMh",
+            "columnName": "sizeMh",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "isClaimedByMe",
+            "columnName": "isClaimedByMe",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isClaimedByOther",
+            "columnName": "isClaimedByOther",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "claimOwnerUsername",
+            "columnName": "claimOwnerUsername",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "serverVerdict",
+            "columnName": "serverVerdict",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "inferenceResultId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_candidate_surveyId",
+            "unique": false,
+            "columnNames": [
+              "surveyId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_candidate_surveyId` ON `${TABLE_NAME}` (`surveyId`)"
+          }
+        ]
+      },
+      {
+        "tableName": "claim",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`inferenceResultId` INTEGER NOT NULL, `surveyId` INTEGER NOT NULL, `userId` INTEGER NOT NULL, `username` TEXT NOT NULL, `claimedAt` TEXT NOT NULL, `isMine` INTEGER NOT NULL, `isActive` INTEGER NOT NULL, PRIMARY KEY(`inferenceResultId`))",
+        "fields": [
+          {
+            "fieldPath": "inferenceResultId",
+            "columnName": "inferenceResultId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "surveyId",
+            "columnName": "surveyId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "userId",
+            "columnName": "userId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "username",
+            "columnName": "username",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "claimedAt",
+            "columnName": "claimedAt",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isMine",
+            "columnName": "isMine",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isActive",
+            "columnName": "isActive",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "inferenceResultId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_claim_surveyId",
+            "unique": false,
+            "columnNames": [
+              "surveyId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_claim_surveyId` ON `${TABLE_NAME}` (`surveyId`)"
+          }
+        ]
+      },
+      {
+        "tableName": "local_decision",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`inferenceResultId` INTEGER NOT NULL, `surveyId` INTEGER NOT NULL, `verdict` INTEGER NOT NULL, `detectionTagId` INTEGER, `capturedAt` TEXT NOT NULL, `evidencePhotoRowId` INTEGER, `synced` INTEGER NOT NULL, `syncedAt` TEXT, `syncFailedReason` TEXT, PRIMARY KEY(`inferenceResultId`))",
+        "fields": [
+          {
+            "fieldPath": "inferenceResultId",
+            "columnName": "inferenceResultId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "surveyId",
+            "columnName": "surveyId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "verdict",
+            "columnName": "verdict",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "detectionTagId",
+            "columnName": "detectionTagId",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "capturedAt",
+            "columnName": "capturedAt",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "evidencePhotoRowId",
+            "columnName": "evidencePhotoRowId",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "synced",
+            "columnName": "synced",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "syncedAt",
+            "columnName": "syncedAt",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "syncFailedReason",
+            "columnName": "syncFailedReason",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "inferenceResultId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_local_decision_surveyId",
+            "unique": false,
+            "columnNames": [
+              "surveyId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_local_decision_surveyId` ON `${TABLE_NAME}` (`surveyId`)"
+          }
+        ]
+      },
+      {
+        "tableName": "pending_photo_upload",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`rowId` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `surveyId` INTEGER NOT NULL, `inferenceResultId` INTEGER NOT NULL, `localFilePath` TEXT NOT NULL, `capturedAt` TEXT NOT NULL, `uploaded` INTEGER NOT NULL, `serverPhotoId` INTEGER, `uploadFailedReason` TEXT)",
+        "fields": [
+          {
+            "fieldPath": "rowId",
+            "columnName": "rowId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "surveyId",
+            "columnName": "surveyId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "inferenceResultId",
+            "columnName": "inferenceResultId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "localFilePath",
+            "columnName": "localFilePath",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "capturedAt",
+            "columnName": "capturedAt",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "uploaded",
+            "columnName": "uploaded",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "serverPhotoId",
+            "columnName": "serverPhotoId",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "uploadFailedReason",
+            "columnName": "uploadFailedReason",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "rowId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_pending_photo_upload_surveyId",
+            "unique": false,
+            "columnNames": [
+              "surveyId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_pending_photo_upload_surveyId` ON `${TABLE_NAME}` (`surveyId`)"
+          },
+          {
+            "name": "index_pending_photo_upload_inferenceResultId",
+            "unique": false,
+            "columnNames": [
+              "inferenceResultId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_pending_photo_upload_inferenceResultId` ON `${TABLE_NAME}` (`inferenceResultId`)"
+          }
+        ]
+      },
+      {
+        "tableName": "offline_bundle",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`rowId` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `manifestId` TEXT NOT NULL, `surveyId` INTEGER NOT NULL, `sourceVersion` TEXT NOT NULL, `radiusMetres` REAL NOT NULL, `minZoom` INTEGER NOT NULL, `maxZoom` INTEGER NOT NULL, `state` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, `totalBytes` INTEGER NOT NULL, `tileCount` INTEGER NOT NULL, `satelliteRegionCount` INTEGER NOT NULL, `candidateCount` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "rowId",
+            "columnName": "rowId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "manifestId",
+            "columnName": "manifestId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "surveyId",
+            "columnName": "surveyId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceVersion",
+            "columnName": "sourceVersion",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "radiusMetres",
+            "columnName": "radiusMetres",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "minZoom",
+            "columnName": "minZoom",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "maxZoom",
+            "columnName": "maxZoom",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "state",
+            "columnName": "state",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updatedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "totalBytes",
+            "columnName": "totalBytes",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "tileCount",
+            "columnName": "tileCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "satelliteRegionCount",
+            "columnName": "satelliteRegionCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "candidateCount",
+            "columnName": "candidateCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "rowId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_offline_bundle_manifestId",
+            "unique": true,
+            "columnNames": [
+              "manifestId"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_offline_bundle_manifestId` ON `${TABLE_NAME}` (`manifestId`)"
+          },
+          {
+            "name": "index_offline_bundle_surveyId",
+            "unique": false,
+            "columnNames": [
+              "surveyId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_offline_bundle_surveyId` ON `${TABLE_NAME}` (`surveyId`)"
+          },
+          {
+            "name": "index_offline_bundle_surveyId_sourceVersion",
+            "unique": false,
+            "columnNames": [
+              "surveyId",
+              "sourceVersion"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_offline_bundle_surveyId_sourceVersion` ON `${TABLE_NAME}` (`surveyId`, `sourceVersion`)"
+          },
+          {
+            "name": "index_offline_bundle_state",
+            "unique": false,
+            "columnNames": [
+              "state"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_offline_bundle_state` ON `${TABLE_NAME}` (`state`)"
+          }
+        ]
+      },
+      {
+        "tableName": "tile_manifest",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`rowId` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `manifestId` TEXT NOT NULL, `surveyId` INTEGER NOT NULL, `candidateId` INTEGER NOT NULL, `sourceVersion` TEXT NOT NULL, `radiusMetres` REAL NOT NULL, `zoom` INTEGER NOT NULL, `x` INTEGER NOT NULL, `y` INTEGER NOT NULL, `kind` TEXT NOT NULL, `expectedFormat` TEXT NOT NULL, `completed` INTEGER NOT NULL, `bytes` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "rowId",
+            "columnName": "rowId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "manifestId",
+            "columnName": "manifestId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "surveyId",
+            "columnName": "surveyId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "candidateId",
+            "columnName": "candidateId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceVersion",
+            "columnName": "sourceVersion",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "radiusMetres",
+            "columnName": "radiusMetres",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "zoom",
+            "columnName": "zoom",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "x",
+            "columnName": "x",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "y",
+            "columnName": "y",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "kind",
+            "columnName": "kind",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "expectedFormat",
+            "columnName": "expectedFormat",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "completed",
+            "columnName": "completed",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "bytes",
+            "columnName": "bytes",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "rowId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_tile_manifest_manifestId",
+            "unique": false,
+            "columnNames": [
+              "manifestId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_tile_manifest_manifestId` ON `${TABLE_NAME}` (`manifestId`)"
+          },
+          {
+            "name": "index_tile_manifest_surveyId",
+            "unique": false,
+            "columnNames": [
+              "surveyId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_tile_manifest_surveyId` ON `${TABLE_NAME}` (`surveyId`)"
+          },
+          {
+            "name": "index_tile_manifest_candidateId",
+            "unique": false,
+            "columnNames": [
+              "candidateId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_tile_manifest_candidateId` ON `${TABLE_NAME}` (`candidateId`)"
+          },
+          {
+            "name": "index_tile_manifest_manifestId_surveyId_candidateId_sourceVersion_radiusMetres_zoom_x_y_kind_expectedFormat",
+            "unique": true,
+            "columnNames": [
+              "manifestId",
+              "surveyId",
+              "candidateId",
+              "sourceVersion",
+              "radiusMetres",
+              "zoom",
+              "x",
+              "y",
+              "kind",
+              "expectedFormat"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_tile_manifest_manifestId_surveyId_candidateId_sourceVersion_radiusMetres_zoom_x_y_kind_expectedFormat` ON `${TABLE_NAME}` (`manifestId`, `surveyId`, `candidateId`, `sourceVersion`, `radiusMetres`, `zoom`, `x`, `y`, `kind`, `expectedFormat`)"
+          },
+          {
+            "name": "index_tile_manifest_manifestId_completed",
+            "unique": false,
+            "columnNames": [
+              "manifestId",
+              "completed"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_tile_manifest_manifestId_completed` ON `${TABLE_NAME}` (`manifestId`, `completed`)"
+          }
+        ]
+      },
+      {
+        "tableName": "candidate_crop_manifest",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`rowId` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `manifestId` TEXT NOT NULL, `surveyId` INTEGER NOT NULL, `candidateId` INTEGER NOT NULL, `sourceVersion` TEXT NOT NULL, `requestSignature` TEXT NOT NULL, `completed` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "rowId",
+            "columnName": "rowId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "manifestId",
+            "columnName": "manifestId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "surveyId",
+            "columnName": "surveyId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "candidateId",
+            "columnName": "candidateId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceVersion",
+            "columnName": "sourceVersion",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "requestSignature",
+            "columnName": "requestSignature",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "completed",
+            "columnName": "completed",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "rowId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_candidate_crop_manifest_manifestId",
+            "unique": false,
+            "columnNames": [
+              "manifestId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_candidate_crop_manifest_manifestId` ON `${TABLE_NAME}` (`manifestId`)"
+          },
+          {
+            "name": "index_candidate_crop_manifest_surveyId",
+            "unique": false,
+            "columnNames": [
+              "surveyId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_candidate_crop_manifest_surveyId` ON `${TABLE_NAME}` (`surveyId`)"
+          },
+          {
+            "name": "index_candidate_crop_manifest_candidateId",
+            "unique": false,
+            "columnNames": [
+              "candidateId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_candidate_crop_manifest_candidateId` ON `${TABLE_NAME}` (`candidateId`)"
+          },
+          {
+            "name": "index_candidate_crop_manifest_manifestId_surveyId_candidateId_sourceVersion_requestSignature",
+            "unique": true,
+            "columnNames": [
+              "manifestId",
+              "surveyId",
+              "candidateId",
+              "sourceVersion",
+              "requestSignature"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_candidate_crop_manifest_manifestId_surveyId_candidateId_sourceVersion_requestSignature` ON `${TABLE_NAME}` (`manifestId`, `surveyId`, `candidateId`, `sourceVersion`, `requestSignature`)"
+          },
+          {
+            "name": "index_candidate_crop_manifest_manifestId_completed",
+            "unique": false,
+            "columnNames": [
+              "manifestId",
+              "completed"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_candidate_crop_manifest_manifestId_completed` ON `${TABLE_NAME}` (`manifestId`, `completed`)"
+          }
+        ]
+      },
+      {
+        "tableName": "sync_run",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`surveyId` INTEGER NOT NULL, `phase` TEXT NOT NULL, `total` INTEGER NOT NULL, `done` INTEGER NOT NULL, PRIMARY KEY(`surveyId`))",
+        "fields": [
+          {
+            "fieldPath": "surveyId",
+            "columnName": "surveyId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "phase",
+            "columnName": "phase",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "total",
+            "columnName": "total",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "done",
+            "columnName": "done",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "surveyId"
+          ]
+        }
+      },
+      {
+        "tableName": "satellite_region",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`rowId` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `manifestId` TEXT NOT NULL, `surveyId` INTEGER NOT NULL, `sourceVersion` TEXT NOT NULL, `signature` TEXT NOT NULL, `completed` INTEGER NOT NULL, `pendingDeletion` INTEGER NOT NULL, `purgeCategory` TEXT, `lastAttemptTime` INTEGER)",
+        "fields": [
+          {
+            "fieldPath": "rowId",
+            "columnName": "rowId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "manifestId",
+            "columnName": "manifestId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "surveyId",
+            "columnName": "surveyId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceVersion",
+            "columnName": "sourceVersion",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "signature",
+            "columnName": "signature",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "completed",
+            "columnName": "completed",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "pendingDeletion",
+            "columnName": "pendingDeletion",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "purgeCategory",
+            "columnName": "purgeCategory",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "lastAttemptTime",
+            "columnName": "lastAttemptTime",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "rowId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_satellite_region_manifestId",
+            "unique": false,
+            "columnNames": [
+              "manifestId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_satellite_region_manifestId` ON `${TABLE_NAME}` (`manifestId`)"
+          },
+          {
+            "name": "index_satellite_region_surveyId_signature",
+            "unique": true,
+            "columnNames": [
+              "surveyId",
+              "signature"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_satellite_region_surveyId_signature` ON `${TABLE_NAME}` (`surveyId`, `signature`)"
+          },
+          {
+            "name": "index_satellite_region_manifestId_surveyId_sourceVersion_signature",
+            "unique": false,
+            "columnNames": [
+              "manifestId",
+              "surveyId",
+              "sourceVersion",
+              "signature"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_satellite_region_manifestId_surveyId_sourceVersion_signature` ON `${TABLE_NAME}` (`manifestId`, `surveyId`, `sourceVersion`, `signature`)"
+          },
+          {
+            "name": "index_satellite_region_pendingDeletion",
+            "unique": false,
+            "columnNames": [
+              "pendingDeletion"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_satellite_region_pendingDeletion` ON `${TABLE_NAME}` (`pendingDeletion`)"
+          },
+          {
+            "name": "index_satellite_region_manifestId_completed",
+            "unique": false,
+            "columnNames": [
+              "manifestId",
+              "completed"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_satellite_region_manifestId_completed` ON `${TABLE_NAME}` (`manifestId`, `completed`)"
+          }
+        ]
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '1dd708de118cb35f056b83ea31feccaf')"
+    ]
+  }
+}

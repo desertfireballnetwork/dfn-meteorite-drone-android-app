@@ -224,12 +224,12 @@ class RoomDaoTest {
             val bundle =
                 OfflineBundleEntity(
                     surveyId = 101L,
-                    created = "2026-07-24T12:00:00Z",
+                    createdAt = 0L,
                     totalBytes = 1024000L,
                     tileCount = 50,
                     satelliteRegionCount = 1,
                     candidateCount = 10,
-                    bufferMeters = 500.0f,
+                    radiusMetres = 500.0,
                 )
 
             val bundleId = offlineBundleDao.insert(bundle)

@@ -187,6 +187,123 @@ class PreDownloadStoragePreflightTest {
             )
         }
 
+    @Test
+    fun `replacement accounting credits confidently deletable local bytes`() =
+        runTest {
+            val available = 2L * GIB + 100L * MIB
+            stubSnapshot(available, 10L * GIB)
+            val classification =
+                ReplacementClassification(
+                    retained = emptySet(),
+                    missing = missingCrops(1),
+                    obsolete = emptySet(),
+                    clearCommands = emptyList(),
+                    confidentlyDeletableBytes = 10L * MIB,
+                )
+
+            val result = service.evaluateReplacement(classification)
+
+            assertTrue(result is PreDownloadPreflightResult.Allowed)
+            val estimate = result.estimate()
+            assertEquals(1L * MIB, estimate.incrementalRequiredBytes)
+            assertEquals(10L * MIB, estimate.confidentlyDeletableBytes)
+            assertEquals(
+                available + 10L * MIB - 1L * MIB,
+                estimate.expectedRemainingBytes,
+            )
+            verify(storageCoordinator).snapshot()
+            verifyNoMoreInteractions(storageCoordinator)
+        }
+
+    @Test
+    fun `replacement accounting counts retained items as present`() =
+        runTest {
+            val retained = missingCrops(1)
+            val missing = missingCrops(1, offset = 1)
+            val classification =
+                ReplacementClassification(
+                    retained = retained,
+                    missing = missing,
+                    obsolete = emptySet(),
+                    clearCommands = emptyList(),
+                    confidentlyDeletableBytes = 0L,
+                )
+            stubSnapshot(10L * GIB, 10L * GIB)
+
+            val result = service.evaluateReplacement(classification)
+
+            val inventory = result.estimate().inventory
+            assertEquals(0, inventory.geotiffPresentCount)
+            assertEquals(1, inventory.cropPresentCount)
+            assertEquals(1, inventory.cropMissingCount)
+            assertEquals(1L * MIB, result.estimate().incrementalRequiredBytes)
+        }
+
+    @Test
+    fun `pending mapbox deletion receives zero freed space credit`() =
+        runTest {
+            val obsoleteSatellite =
+                PreDownloadTargetKey.Satellite(SURVEY_ID, "src", "sat:old")
+            val missingSatellite =
+                PreDownloadTargetKey.Satellite(SURVEY_ID, "src", "sat:new")
+            val classification =
+                ReplacementClassifier.classify(
+                    target =
+                        PreDownloadTargetSet(
+                            emptyList(),
+                            emptyList(),
+                            listOf(missingSatellite),
+                        ),
+                    owned =
+                        listOf(
+                            PreDownloadOwnedPayload(
+                                obsoleteSatellite,
+                                valid = false,
+                                measuredDeletableBytes = 50L * MIB,
+                            ),
+                        ),
+                )
+            stubSnapshot(2L * GIB, 0L)
+
+            val result = service.evaluateReplacement(classification)
+
+            assertEquals(0L, result.estimate().confidentlyDeletableBytes)
+            assertEquals(
+                2L * GIB - 50L * MIB,
+                result.estimate().expectedRemainingBytes,
+            )
+        }
+
+    @Test
+    fun `replacement preflight crosses reserve boundary at exact value`() =
+        runTest {
+            val reserve = PreDownloadSpaceCalculator.MINIMUM_RESERVE_BYTES
+            val required = PreDownloadSpaceCalculator.CROP_ESTIMATE_BYTES
+            val deletable = 4L * MIB
+            val available = reserve + required - deletable
+            val classification =
+                ReplacementClassification(
+                    retained = emptySet(),
+                    missing = missingCrops(1),
+                    obsolete = emptySet(),
+                    clearCommands = emptyList(),
+                    confidentlyDeletableBytes = deletable,
+                )
+
+            stubSnapshot(available, 0L)
+            val equal = service.evaluateReplacement(classification)
+            assertTrue(equal is PreDownloadPreflightResult.Allowed)
+            assertEquals(reserve, equal.estimate().expectedRemainingBytes)
+
+            stubSnapshot(available - 1L, 0L)
+            val below = service.evaluateReplacement(classification)
+            assertTrue(below is PreDownloadPreflightResult.InsufficientDeviceSpace)
+
+            stubSnapshot(available + 1L, 0L)
+            val above = service.evaluateReplacement(classification)
+            assertTrue(above is PreDownloadPreflightResult.Allowed)
+        }
+
     private suspend fun stubCandidates(candidates: List<CandidateEntity>) {
         whenever(candidateDao.getCandidatesForSurvey(SURVEY_ID)).thenReturn(candidates)
         val claims = candidates.map { claim(it.inferenceResultId) }
@@ -252,8 +369,24 @@ class PreDownloadStoragePreflightTest {
 
     private fun emptyInventory(): PreDownloadInventory = PreDownloadInventory(0, 0, 0, 0, 0, 0)
 
+    private fun missingCrops(
+        count: Int,
+        offset: Int = 0,
+    ): Set<PreDownloadTargetKey> =
+        (1..count)
+            .map { index ->
+                val candidateId = (index + offset).toLong()
+                PreDownloadTargetKey.Crop(
+                    surveyId = SURVEY_ID,
+                    candidateId = candidateId,
+                    sourceVersion = "src",
+                    requestSignature = "crop:$SURVEY_ID:$candidateId",
+                )
+            }.toSet()
+
     private companion object {
         const val SURVEY_ID = 7L
+        const val MIB = 1024L * 1024L
         const val GIB = 1024L * 1024L * 1024L
     }
 }

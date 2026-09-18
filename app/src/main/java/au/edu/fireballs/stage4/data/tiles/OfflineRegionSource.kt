@@ -3,6 +3,7 @@ package au.edu.fireballs.stage4.data.tiles
 import android.os.Handler
 import android.os.Looper
 import com.mapbox.bindgen.Expected
+import com.mapbox.bindgen.ExpectedFactory
 import com.mapbox.maps.AsyncOperationResultCallback
 import com.mapbox.maps.OfflineRegion
 import com.mapbox.maps.OfflineRegionCreateCallback
@@ -19,6 +20,16 @@ interface OfflineRegionHandle {
     fun purge(callback: AsyncOperationResultCallback)
 
     val identifier: Long
+
+    val metadata: ByteArray?
+        get() = null
+
+    fun setMetadata(
+        metadata: ByteArray,
+        callback: AsyncOperationResultCallback,
+    ) {
+        callback.run(ExpectedFactory.createNone())
+    }
 }
 
 class MapboxOfflineRegionHandle(
@@ -38,6 +49,16 @@ class MapboxOfflineRegionHandle(
 
     override val identifier: Long
         get() = region.identifier
+
+    override val metadata: ByteArray?
+        get() = region.metadata
+
+    override fun setMetadata(
+        metadata: ByteArray,
+        callback: AsyncOperationResultCallback,
+    ) {
+        region.setMetadata(metadata, callback)
+    }
 }
 
 interface OfflineRegionSource {
