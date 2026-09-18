@@ -309,7 +309,12 @@ class CandidateViewModelTest {
             viewModel.submitVerdict(true, null)
             advanceUntilIdle()
 
-            val row = db.localDecisionDao().getVerdict(42L).first()
+            val row =
+                withContext(Dispatchers.Default) {
+                    withTimeout(15_000) {
+                        db.localDecisionDao().getVerdict(42L).first { it != null }
+                    }
+                }
             assertEquals(42L, row?.inferenceResultId)
             assertEquals(10L, row?.surveyId)
             assertEquals(true, row?.verdict)
