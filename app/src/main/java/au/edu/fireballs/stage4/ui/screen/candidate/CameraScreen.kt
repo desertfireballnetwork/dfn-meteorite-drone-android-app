@@ -39,6 +39,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import au.edu.fireballs.stage4.data.repository.ActiveEvidenceCapture
 import kotlinx.coroutines.launch
 import java.io.File
 import kotlin.coroutines.resume
@@ -157,7 +158,9 @@ private suspend fun captureImage(
     context: Context,
     imageCapture: ImageCapture,
 ): Uri? {
-    val tempFile = File.createTempFile("evidence_capture_", ".jpg", context.cacheDir)
+    val captureDir = File(context.cacheDir, "evidence").apply { mkdirs() }
+    val tempFile = File.createTempFile("evidence_capture_", ".jpg", captureDir)
+    ActiveEvidenceCapture.mark(tempFile.absolutePath)
     val outputOptions =
         ImageCapture
             .OutputFileOptions
@@ -183,6 +186,8 @@ private suspend fun captureImage(
         Log.w("CameraScreen", "Image capture failed", e)
         tempFile.delete()
         null
+    } finally {
+        ActiveEvidenceCapture.clear(tempFile.absolutePath)
     }
 }
 
