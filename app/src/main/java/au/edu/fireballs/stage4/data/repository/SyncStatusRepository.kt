@@ -160,12 +160,15 @@ fun resolveSyncStatus(input: SyncResolutionInput): SyncResolution {
                 selectedWorkId = selected.id,
                 status = DurableSyncStatus.Running(selected.id, run?.progress),
             )
-        SyncWorkState.Enqueued,
-        SyncWorkState.Blocked,
-        ->
+        SyncWorkState.Enqueued ->
             SyncResolution(
                 selectedWorkId = selected.id,
                 status = resolveEnqueuedStatus(selected, input, run),
+            )
+        SyncWorkState.Blocked ->
+            SyncResolution(
+                selectedWorkId = null,
+                status = pendingStatus(input.pending),
             )
         SyncWorkState.Failed,
         SyncWorkState.Cancelled,
@@ -222,7 +225,6 @@ private fun ActiveSyncRun.matches(workId: UUID): Boolean =
 private fun selectSyncWork(workInfos: List<SyncWorkSnapshot>): SyncWorkSnapshot? {
     workInfos.filter { it.state == SyncWorkState.Running }.latestByListIndex()?.let { return it }
     workInfos.filter { it.state == SyncWorkState.Enqueued }.latestByListIndex()?.let { return it }
-    workInfos.filter { it.state == SyncWorkState.Blocked }.latestByListIndex()?.let { return it }
     return workInfos.filter { it.state.isTerminal }.maxWithOrNull(terminalComparator)
 }
 

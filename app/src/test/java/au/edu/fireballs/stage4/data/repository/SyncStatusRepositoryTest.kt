@@ -85,7 +85,7 @@ class SyncStatusRepositoryTest {
     }
 
     @Test
-    fun `blocked is selected ahead of terminal`() {
+    fun `blocked does not supersede terminal work`() {
         val resolution =
             resolveSyncStatus(
                 input(
@@ -98,8 +98,8 @@ class SyncStatusRepositoryTest {
                 ),
             )
 
-        assertEquals(workB, resolution.selectedWorkId)
-        assertEquals(DurableSyncStatus.WaitingForNetwork(workB, 0, 0), resolution.status)
+        assertEquals(workA, resolution.selectedWorkId)
+        assertEquals(DurableSyncStatus.Complete(workA), resolution.status)
     }
 
     @Test
@@ -368,7 +368,7 @@ class SyncStatusRepositoryTest {
     }
 
     @Test
-    fun `offline blocked resolves to waiting for network`() {
+    fun `blocked only is ignored and resolves to idle`() {
         val resolution =
             resolveSyncStatus(
                 input(
@@ -377,7 +377,8 @@ class SyncStatusRepositoryTest {
                 ),
             )
 
-        assertEquals(DurableSyncStatus.WaitingForNetwork(workA, 0, 0), resolution.status)
+        assertEquals(null, resolution.selectedWorkId)
+        assertEquals(DurableSyncStatus.Idle, resolution.status)
     }
 
     @Test
@@ -440,7 +441,7 @@ class SyncStatusRepositoryTest {
     }
 
     @Test
-    fun `online blocked with a matching run resolves to running`() {
+    fun `blocked only with a matching run does not consume the run`() {
         val progress = SyncProgress(SyncPhase.Photo, done = 2, total = 8)
         val resolution =
             resolveSyncStatus(
@@ -451,7 +452,8 @@ class SyncStatusRepositoryTest {
                 ),
             )
 
-        assertEquals(DurableSyncStatus.Running(workA, progress), resolution.status)
+        assertEquals(null, resolution.selectedWorkId)
+        assertEquals(DurableSyncStatus.Idle, resolution.status)
     }
 
     @Test
