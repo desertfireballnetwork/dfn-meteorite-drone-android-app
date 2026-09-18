@@ -93,6 +93,8 @@ class EvidencePhotoRepository
                     target.delete()
                     if (deleteSource) deleteSourceFile(uri)
                     throw e
+                } finally {
+                    uri.path?.let(ActiveEvidenceCapture::clear)
                 }
             }
 

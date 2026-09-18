@@ -166,8 +166,9 @@ private suspend fun captureImage(
             .OutputFileOptions
             .Builder(tempFile)
             .build()
-    return try {
-        suspendCoroutine { continuation ->
+    var retained = false
+    try {
+        return suspendCoroutine { continuation ->
             imageCapture.takePicture(
                 outputOptions,
                 ContextCompat.getMainExecutor(context),
@@ -181,14 +182,20 @@ private suspend fun captureImage(
                     }
                 },
             )
-        }
+        }.also { retained = true }
     } catch (e: ImageCaptureException) {
         Log.w("CameraScreen", "Image capture failed", e)
-        tempFile.delete()
-        null
+        return null
     } finally {
-        ActiveEvidenceCapture.clear(tempFile.absolutePath)
+        if (!retained) {
+            releaseCapturedFile(tempFile)
+        }
     }
+}
+
+private fun releaseCapturedFile(file: File) {
+    file.delete()
+    ActiveEvidenceCapture.clear(file.absolutePath)
 }
 
 internal fun resolveCaptureResult(
@@ -196,7 +203,10 @@ internal fun resolveCaptureResult(
     cancelled: Boolean,
 ): Uri? {
     if (uri == null || cancelled) {
-        if (uri != null) File(uri.path.orEmpty()).delete()
+        uri?.path?.let { path ->
+            File(path).delete()
+            ActiveEvidenceCapture.clear(path)
+        }
         return null
     }
     return uri

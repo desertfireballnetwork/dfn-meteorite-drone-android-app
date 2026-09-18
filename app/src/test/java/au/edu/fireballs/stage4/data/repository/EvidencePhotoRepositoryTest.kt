@@ -40,6 +40,7 @@ class EvidencePhotoRepositoryTest {
 
     @Before
     fun setUp() {
+        ActiveEvidenceCapture.reset()
         context = ApplicationProvider.getApplicationContext()
         db =
             Room
@@ -54,6 +55,7 @@ class EvidencePhotoRepositoryTest {
 
     @After
     fun tearDown() {
+        ActiveEvidenceCapture.reset()
         db.close()
     }
 
@@ -231,6 +233,29 @@ class EvidencePhotoRepositoryTest {
 
             assertTrue(result.isFailure)
             assertFalse(file.exists())
+        }
+
+    @Test
+    fun saveLocally_releasesActiveCaptureRegistration() =
+        runTest(testDispatcher) {
+            val file = File(context.cacheDir, "source_active_capture.jpg")
+            Bitmap.createBitmap(100, 100, Bitmap.Config.ARGB_8888).apply {
+                file.outputStream().use { compress(Bitmap.CompressFormat.JPEG, 90, it) }
+                recycle()
+            }
+            val uri = Uri.fromFile(file)
+            val path = requireNotNull(uri.path)
+            ActiveEvidenceCapture.mark(path)
+            assertTrue(ActiveEvidenceCapture.isActive(path))
+
+            repository.saveLocally(
+                uri,
+                surveyId = 10L,
+                inferenceResultId = 42L,
+                deleteSource = true,
+            )
+
+            assertFalse(ActiveEvidenceCapture.isActive(path))
         }
 
     @Test
