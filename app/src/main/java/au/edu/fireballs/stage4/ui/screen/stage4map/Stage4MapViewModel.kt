@@ -8,17 +8,19 @@ import au.edu.fireballs.stage4.data.local.dao.ClaimDao
 import au.edu.fireballs.stage4.data.local.dao.LocalDecisionDao
 import au.edu.fireballs.stage4.data.local.dao.OfflineBundleDao
 import au.edu.fireballs.stage4.data.repository.CandidateImageRepository
+import au.edu.fireballs.stage4.data.repository.DurableSyncStatus
 import au.edu.fireballs.stage4.data.repository.NetworkState
 import au.edu.fireballs.stage4.data.repository.NetworkStateRepository
 import au.edu.fireballs.stage4.data.repository.Stage4FetchResult
 import au.edu.fireballs.stage4.data.repository.Stage4Repository
+import au.edu.fireballs.stage4.data.repository.SyncStatusSource
+import au.edu.fireballs.stage4.data.repository.isSyncGated
 import au.edu.fireballs.stage4.data.tiles.AuthenticatedTileHttpInterceptor
 import au.edu.fireballs.stage4.data.tiles.TileStore
 import au.edu.fireballs.stage4.domain.model.MapCameraTarget
 import au.edu.fireballs.stage4.domain.model.Stage4Candidate
 import au.edu.fireballs.stage4.domain.model.Stage4State
 import au.edu.fireballs.stage4.domain.model.resolveInitialCamera
-import au.edu.fireballs.stage4.sync.SyncWorker
 import au.edu.fireballs.stage4.ui.screen.basecamp.PreDownloadWorkManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -73,18 +75,6 @@ sealed interface Stage4MapUiState {
     ) : Stage4MapUiState
 
     data object AuthExpired : Stage4MapUiState
-}
-
-sealed interface SyncStatus {
-    data object Idle : SyncStatus
-
-    data object Syncing : SyncStatus
-
-    data object Complete : SyncStatus
-
-    data object Failed : SyncStatus
-
-    data object AuthExpired : SyncStatus
 }
 
 sealed interface ConnectionBannerState {
@@ -176,6 +166,7 @@ class Stage4MapViewModel
         private val syncWorkManager: SyncWorkManager,
         private val networkStateRepository: NetworkStateRepository,
         private val preDownloadWorkManager: PreDownloadWorkManager,
+        private val syncStatusSource: SyncStatusSource,
     ) : ViewModel() {
         init {
             tileHttpInterceptor.onAuthLost = { authExpiredFlow.value = true }
@@ -254,8 +245,16 @@ class Stage4MapViewModel
         private val _syncStatus = MutableStateFlow<SyncStatus>(SyncStatus.Idle)
         val syncStatus: StateFlow<SyncStatus> = _syncStatus.asStateFlow()
 
-        private var syncObserveJob: Job? = null
-        private var observedWorkId: java.util.UUID? = null
+        init {
+            viewModelScope.launch {
+                syncStatusSource.status.collect { status ->
+                    if (status is DurableSyncStatus.SessionExpired) {
+                        authExpiredFlow.value = true
+                    }
+                    _syncStatus.value = status.toMapSyncStatus()
+                }
+            }
+        }
 
         @OptIn(ExperimentalCoroutinesApi::class)
         val uiState: StateFlow<Stage4MapUiState> =
@@ -502,39 +501,9 @@ class Stage4MapViewModel
         ): String = candidateImageRepository.getCandidateTileUrlPattern(surveyId, candidateId)
 
         fun syncNow() {
-            val request = syncWorkManager.enqueueSync()
-            if (observedWorkId != null) {
-                _syncStatus.value = SyncStatus.Syncing
+            if (syncStatusSource.status.value.isSyncGated) {
                 return
             }
-            observedWorkId = request.id
-            syncObserveJob?.cancel()
-            syncObserveJob =
-                viewModelScope.launch {
-                    syncWorkManager
-                        .getWorkInfoByIdFlow(request.id)
-                        .collect { info -> info?.let { handleSyncInfo(it) } }
-                }
-        }
-
-        private fun handleSyncInfo(info: WorkInfo) {
-            _syncStatus.value =
-                when (info.state) {
-                    WorkInfo.State.ENQUEUED, WorkInfo.State.RUNNING -> SyncStatus.Syncing
-                    WorkInfo.State.SUCCEEDED -> {
-                        observedWorkId = null
-                        if (info.outputData.getBoolean(SyncWorker.KEY_AUTH_EXPIRED, false)) {
-                            authExpiredFlow.value = true
-                            SyncStatus.AuthExpired
-                        } else {
-                            SyncStatus.Complete
-                        }
-                    }
-                    WorkInfo.State.FAILED, WorkInfo.State.CANCELLED -> {
-                        observedWorkId = null
-                        SyncStatus.Failed
-                    }
-                    WorkInfo.State.BLOCKED -> _syncStatus.value
-                }
+            syncWorkManager.enqueueSync()
         }
     }

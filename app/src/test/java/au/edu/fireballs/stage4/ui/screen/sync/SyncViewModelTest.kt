@@ -1,23 +1,21 @@
 package au.edu.fireballs.stage4.ui.screen.sync
 
 import androidx.lifecycle.viewModelScope
-import androidx.work.Data
-import androidx.work.WorkInfo
-import androidx.work.workDataOf
 import au.edu.fireballs.stage4.data.local.LocalDecisionEntity
 import au.edu.fireballs.stage4.data.local.PendingPhotoUploadEntity
-import au.edu.fireballs.stage4.data.local.SyncRunEntity
 import au.edu.fireballs.stage4.data.local.dao.LocalDecisionDao
 import au.edu.fireballs.stage4.data.local.dao.PendingPhotoUploadDao
-import au.edu.fireballs.stage4.data.local.dao.SyncRunDao
+import au.edu.fireballs.stage4.data.repository.DurableSyncStatus
 import au.edu.fireballs.stage4.data.repository.SelectedSurveyRepository
-import au.edu.fireballs.stage4.sync.SyncOrchestrator
-import au.edu.fireballs.stage4.sync.SyncWorker
+import au.edu.fireballs.stage4.data.repository.SyncCompletion
+import au.edu.fireballs.stage4.data.repository.SyncPhase
+import au.edu.fireballs.stage4.data.repository.SyncProgress
+import au.edu.fireballs.stage4.data.repository.SyncStatusSource
 import au.edu.fireballs.stage4.ui.screen.stage4map.SyncWorkManager
-import au.edu.fireballs.stage4.ui.screen.stage4map.WorkManagerSyncWorkManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.resetMain
@@ -35,38 +33,44 @@ import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 import java.util.UUID
 
+private class FakeSyncStatusSource(
+    initial: DurableSyncStatus = DurableSyncStatus.Idle,
+) : SyncStatusSource {
+    override val status = MutableStateFlow(initial)
+    override val completions = MutableSharedFlow<SyncCompletion>()
+}
+
 /**
  * SyncUiState -> test traceability matrix.
  *
  * | SyncUiState | Test |
  * |---|---|
- * | Idle | `idle when no survey selected even with pending rows`, `idle when no pending rows and no work` |
- * | Pending | `pending when rows exist and no work running`, `pending when work succeeds but rows still pending` |
- * | Running | `running when work running shows progress from persisted run entity`, `running preferred over stale completed work`, `enqueued preferred over stale completed work` |
- * | Resuming | `running when work enqueued with no persisted run shows resuming`, `resume after session expired transitions to resuming then running` |
- * | Failed | `failed when work fails and failed rows present` |
- * | SessionExpired | `session expired when work succeeds with auth expired flag` |
- * | Complete | `complete when work succeeds with no pending rows` |
- * | Restart restoration | `restart restores running progress from persisted run entity` |
- * | Survey scoping | `dao flows are queried with the selected survey id`, `dao flows are not queried when no survey selected` |
- * | Actions | `syncNow enqueues via sync work manager`, `deleteDecision calls dao`, `deletePhoto calls dao` |
+ * | Idle | `idle when no survey selected even with pending rows`, `idle when idle status` |
+ * | Pending | `pending maps durable pending` |
+ * | WaitingForNetwork | `waiting for network maps durable waiting` |
+ * | Running | `running maps durable running with progress` |
+ * | Resuming | `resuming maps durable resuming` |
+ * | Complete | `complete maps durable complete` |
+ * | Failed | `failed maps durable failed` |
+ * | SessionExpired | `session expired maps durable session expired` |
+ * | Manual gating | `syncNow rejected while gated`, `stale manual callback rejected` |
+ * | Delete gating | `delete rejected while gated`, `stale delete callback performs no mutation` |
+ * | Survey scoping | `dao flows are queried with the selected survey id` |
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class SyncViewModelTest {
     private val testDispatcher = StandardTestDispatcher()
     private val localDecisionDao: LocalDecisionDao = mock()
     private val pendingPhotoUploadDao: PendingPhotoUploadDao = mock()
-    private val syncRunDao: SyncRunDao = mock()
     private val selectedSurveyRepository: SelectedSurveyRepository = mock()
     private val syncWorkManager: SyncWorkManager = mock()
+    private val syncStatusSource = FakeSyncStatusSource()
 
     private val selectedSurveyId = MutableStateFlow<Long?>(null)
     private val unsyncedCount = MutableStateFlow(0)
     private val notUploadedCount = MutableStateFlow(0)
     private val failedDecisions = MutableStateFlow<List<LocalDecisionEntity>>(emptyList())
     private val failedPhotos = MutableStateFlow<List<PendingPhotoUploadEntity>>(emptyList())
-    private val syncRun = MutableStateFlow<SyncRunEntity?>(null)
-    private val workInfos = MutableStateFlow<List<WorkInfo>>(emptyList())
 
     private lateinit var viewModel: SyncViewModel
 
@@ -78,12 +82,6 @@ class SyncViewModelTest {
         whenever(pendingPhotoUploadDao.getNotUploadedCount(any())).thenReturn(notUploadedCount)
         whenever(localDecisionDao.getUnsyncedFailed(any())).thenReturn(failedDecisions)
         whenever(pendingPhotoUploadDao.getNotUploadedFailed(any())).thenReturn(failedPhotos)
-        whenever(syncRunDao.observeRun(any())).thenReturn(syncRun)
-        whenever(
-            syncWorkManager.getWorkInfosForUniqueWorkFlow(
-                WorkManagerSyncWorkManager.UNIQUE_WORK_NAME,
-            ),
-        ).thenReturn(workInfos)
     }
 
     @After
@@ -98,51 +96,53 @@ class SyncViewModelTest {
         SyncViewModel(
             localDecisionDao,
             pendingPhotoUploadDao,
-            syncRunDao,
             selectedSurveyRepository,
             syncWorkManager,
+            syncStatusSource,
         )
 
-    private fun workInfo(
-        state: WorkInfo.State,
-        progress: Data = Data.EMPTY,
-        output: Data = Data.EMPTY,
-    ): WorkInfo =
-        WorkInfo(
-            id = UUID.randomUUID(),
-            state = state,
-            tags = emptySet(),
-            progress = progress,
-            outputData = output,
+    private fun settle() {
+        testDispatcher.scheduler.advanceUntilIdle()
+    }
+
+    private fun workId(): UUID = UUID.randomUUID()
+
+    private fun gatedStates(): List<DurableSyncStatus> =
+        listOf(
+            DurableSyncStatus.Running(workId(), SyncProgress(SyncPhase.Photo, 1, 2)),
+            DurableSyncStatus.Resuming(workId()),
+            DurableSyncStatus.WaitingForNetwork(workId(), 1, 1),
         )
 
     @Test
     fun `idle when no survey selected even with pending rows`() =
         runTest(testDispatcher) {
+            syncStatusSource.status.value = DurableSyncStatus.Pending(decisions = 5, photos = 3)
             unsyncedCount.value = 5
             notUploadedCount.value = 3
             viewModel = createViewModel()
-            testDispatcher.scheduler.advanceUntilIdle()
+            settle()
             assertEquals(SyncUiState.Idle, viewModel.uiState.value)
         }
 
     @Test
-    fun `idle when no pending rows and no work`() =
+    fun `idle when idle status`() =
         runTest(testDispatcher) {
             selectedSurveyId.value = 7L
             viewModel = createViewModel()
-            testDispatcher.scheduler.advanceUntilIdle()
+            settle()
             assertEquals(SyncUiState.Idle, viewModel.uiState.value)
         }
 
     @Test
-    fun `pending when rows exist and no work running`() =
+    fun `pending maps durable pending`() =
         runTest(testDispatcher) {
             selectedSurveyId.value = 7L
             unsyncedCount.value = 2
             notUploadedCount.value = 1
             viewModel = createViewModel()
-            testDispatcher.scheduler.advanceUntilIdle()
+            syncStatusSource.status.value = DurableSyncStatus.Pending(decisions = 2, photos = 1)
+            settle()
             val state = viewModel.uiState.value
             assertTrue(state is SyncUiState.Pending)
             assertEquals(2, (state as SyncUiState.Pending).summary.pendingDecisions)
@@ -150,112 +150,66 @@ class SyncViewModelTest {
         }
 
     @Test
-    fun `running when work running shows progress from persisted run entity`() =
+    fun `waiting for network maps durable waiting`() =
         runTest(testDispatcher) {
             selectedSurveyId.value = 7L
             viewModel = createViewModel()
-            testDispatcher.scheduler.advanceUntilIdle()
-            syncRun.value = SyncRunEntity(7L, SyncOrchestrator.PHASE_VERDICTS, 5, 3)
-            workInfos.value = listOf(workInfo(WorkInfo.State.RUNNING))
-            testDispatcher.scheduler.advanceUntilIdle()
+            syncStatusSource.status.value = DurableSyncStatus.WaitingForNetwork(workId(), 1, 1)
+            settle()
+            assertTrue(viewModel.uiState.value is SyncUiState.WaitingForNetwork)
+        }
+
+    @Test
+    fun `running maps durable running with progress`() =
+        runTest(testDispatcher) {
+            selectedSurveyId.value = 7L
+            viewModel = createViewModel()
+            val progress = SyncProgress(SyncPhase.Decision, done = 3, total = 5)
+            syncStatusSource.status.value = DurableSyncStatus.Running(workId(), progress)
+            settle()
             val state = viewModel.uiState.value
             assertTrue(state is SyncUiState.Running)
-            assertEquals(3, (state as SyncUiState.Running).done)
-            assertEquals(5, state.total)
-            assertEquals(SyncOrchestrator.PHASE_VERDICTS, state.phase)
+            assertEquals(progress, (state as SyncUiState.Running).progress)
         }
 
     @Test
-    fun `running when work enqueued with no persisted run shows resuming`() =
+    fun `resuming maps durable resuming`() =
         runTest(testDispatcher) {
             selectedSurveyId.value = 7L
             viewModel = createViewModel()
-            testDispatcher.scheduler.advanceUntilIdle()
-            workInfos.value = listOf(workInfo(WorkInfo.State.ENQUEUED))
-            testDispatcher.scheduler.advanceUntilIdle()
-            assertEquals(SyncUiState.Resuming, viewModel.uiState.value)
+            syncStatusSource.status.value = DurableSyncStatus.Resuming(workId())
+            settle()
+            assertTrue(viewModel.uiState.value is SyncUiState.Resuming)
         }
 
     @Test
-    fun `restart restores running progress from persisted run entity`() =
-        runTest(testDispatcher) {
-            selectedSurveyId.value = 7L
-            syncRun.value = SyncRunEntity(7L, SyncOrchestrator.PHASE_VERDICTS, 5, 3)
-            viewModel = createViewModel()
-            testDispatcher.scheduler.advanceUntilIdle()
-            workInfos.value = listOf(workInfo(WorkInfo.State.ENQUEUED))
-            testDispatcher.scheduler.advanceUntilIdle()
-            val state = viewModel.uiState.value
-            assertTrue(state is SyncUiState.Running)
-            assertEquals(3, (state as SyncUiState.Running).done)
-            assertEquals(5, state.total)
-            assertEquals(SyncOrchestrator.PHASE_VERDICTS, state.phase)
-        }
-
-    @Test
-    fun `complete when work succeeds with no pending rows`() =
+    fun `complete maps durable complete`() =
         runTest(testDispatcher) {
             selectedSurveyId.value = 7L
             viewModel = createViewModel()
-            testDispatcher.scheduler.advanceUntilIdle()
-            workInfos.value = listOf(workInfo(WorkInfo.State.SUCCEEDED))
-            testDispatcher.scheduler.advanceUntilIdle()
+            syncStatusSource.status.value = DurableSyncStatus.Complete(workId())
+            settle()
             assertEquals(SyncUiState.Complete, viewModel.uiState.value)
         }
 
     @Test
-    fun `pending when work succeeds but rows still pending`() =
+    fun `failed maps durable failed`() =
         runTest(testDispatcher) {
             selectedSurveyId.value = 7L
-            unsyncedCount.value = 1
             viewModel = createViewModel()
-            testDispatcher.scheduler.advanceUntilIdle()
-            workInfos.value = listOf(workInfo(WorkInfo.State.SUCCEEDED))
-            testDispatcher.scheduler.advanceUntilIdle()
-            assertTrue(viewModel.uiState.value is SyncUiState.Pending)
+            syncStatusSource.status.value = DurableSyncStatus.Failed(workId(), "boom")
+            settle()
+            assertTrue(viewModel.uiState.value is SyncUiState.Failed)
         }
 
     @Test
-    fun `session expired when work succeeds with auth expired flag`() =
+    fun `session expired maps durable session expired`() =
         runTest(testDispatcher) {
             selectedSurveyId.value = 7L
             viewModel = createViewModel()
-            testDispatcher.scheduler.advanceUntilIdle()
-            workInfos.value =
-                listOf(
-                    workInfo(
-                        WorkInfo.State.SUCCEEDED,
-                        output = workDataOf(SyncWorker.KEY_AUTH_EXPIRED to true),
-                    ),
-                )
-            testDispatcher.scheduler.advanceUntilIdle()
+            syncStatusSource.status.value = DurableSyncStatus.SessionExpired(workId())
+            settle()
             assertEquals(SyncUiState.SessionExpired, viewModel.uiState.value)
-        }
-
-    @Test
-    fun `failed when work fails and failed rows present`() =
-        runTest(testDispatcher) {
-            selectedSurveyId.value = 7L
-            val decision =
-                LocalDecisionEntity(
-                    inferenceResultId = 1L,
-                    surveyId = 7L,
-                    verdict = true,
-                    detectionTagId = null,
-                    capturedAt = "2026-09-02T12:00:00Z",
-                    evidencePhotoRowId = null,
-                    synced = false,
-                    syncFailedReason = "Server returned code: 500",
-                )
-            failedDecisions.value = listOf(decision)
-            unsyncedCount.value = 1
-            viewModel = createViewModel()
-            testDispatcher.scheduler.advanceUntilIdle()
-            workInfos.value = listOf(workInfo(WorkInfo.State.FAILED))
-            testDispatcher.scheduler.advanceUntilIdle()
-            val state = viewModel.uiState.value
-            assertTrue(state is SyncUiState.Failed)
-            assertEquals(listOf(decision), (state as SyncUiState.Failed).summary.failedDecisions)
         }
 
     @Test
@@ -263,7 +217,7 @@ class SyncViewModelTest {
         runTest(testDispatcher) {
             selectedSurveyId.value = 7L
             viewModel = createViewModel()
-            testDispatcher.scheduler.advanceUntilIdle()
+            settle()
             verify(localDecisionDao).getUnsyncedCount(7L)
             verify(pendingPhotoUploadDao).getNotUploadedCount(7L)
             verify(localDecisionDao).getUnsyncedFailed(7L)
@@ -271,75 +225,7 @@ class SyncViewModelTest {
         }
 
     @Test
-    fun `dao flows are not queried when no survey selected`() =
-        runTest(testDispatcher) {
-            viewModel = createViewModel()
-            testDispatcher.scheduler.advanceUntilIdle()
-            verify(localDecisionDao, never()).getUnsyncedCount(any())
-            verify(pendingPhotoUploadDao, never()).getNotUploadedCount(any())
-        }
-
-    @Test
-    fun `resume after session expired transitions to resuming then running`() =
-        runTest(testDispatcher) {
-            selectedSurveyId.value = 7L
-            viewModel = createViewModel()
-            testDispatcher.scheduler.advanceUntilIdle()
-            workInfos.value =
-                listOf(
-                    workInfo(
-                        WorkInfo.State.SUCCEEDED,
-                        output = workDataOf(SyncWorker.KEY_AUTH_EXPIRED to true),
-                    ),
-                )
-            testDispatcher.scheduler.advanceUntilIdle()
-            assertEquals(SyncUiState.SessionExpired, viewModel.uiState.value)
-
-            workInfos.value = listOf(workInfo(WorkInfo.State.ENQUEUED))
-            testDispatcher.scheduler.advanceUntilIdle()
-            assertEquals(SyncUiState.Resuming, viewModel.uiState.value)
-
-            syncRun.value = SyncRunEntity(7L, SyncOrchestrator.PHASE_VERDICTS, 2, 1)
-            workInfos.value = listOf(workInfo(WorkInfo.State.RUNNING))
-            testDispatcher.scheduler.advanceUntilIdle()
-            assertTrue(viewModel.uiState.value is SyncUiState.Running)
-        }
-
-    @Test
-    fun `running preferred over stale completed work`() =
-        runTest(testDispatcher) {
-            selectedSurveyId.value = 7L
-            viewModel = createViewModel()
-            testDispatcher.scheduler.advanceUntilIdle()
-            syncRun.value = SyncRunEntity(7L, SyncOrchestrator.PHASE_PHOTOS, 2, 1)
-            workInfos.value =
-                listOf(
-                    workInfo(WorkInfo.State.SUCCEEDED),
-                    workInfo(WorkInfo.State.RUNNING),
-                )
-            testDispatcher.scheduler.advanceUntilIdle()
-            val state = viewModel.uiState.value
-            assertTrue(state is SyncUiState.Running)
-            assertEquals(SyncOrchestrator.PHASE_PHOTOS, (state as SyncUiState.Running).phase)
-        }
-
-    @Test
-    fun `enqueued preferred over stale completed work`() =
-        runTest(testDispatcher) {
-            selectedSurveyId.value = 7L
-            viewModel = createViewModel()
-            testDispatcher.scheduler.advanceUntilIdle()
-            workInfos.value =
-                listOf(
-                    workInfo(WorkInfo.State.SUCCEEDED),
-                    workInfo(WorkInfo.State.ENQUEUED),
-                )
-            testDispatcher.scheduler.advanceUntilIdle()
-            assertEquals(SyncUiState.Resuming, viewModel.uiState.value)
-        }
-
-    @Test
-    fun `syncNow enqueues via sync work manager`() =
+    fun `syncNow enqueues when idle`() =
         runTest(testDispatcher) {
             viewModel = createViewModel()
             viewModel.syncNow()
@@ -347,20 +233,71 @@ class SyncViewModelTest {
         }
 
     @Test
-    fun `deleteDecision calls dao`() =
+    fun `syncNow rejected while gated`() =
         runTest(testDispatcher) {
             viewModel = createViewModel()
-            viewModel.deleteDecision(42L)
-            testDispatcher.scheduler.advanceUntilIdle()
-            verify(localDecisionDao).deleteByInferenceResultId(42L)
+            gatedStates().forEach { status ->
+                syncStatusSource.status.value = status
+                viewModel.syncNow()
+            }
+            verify(syncWorkManager, never()).enqueueSync()
         }
 
     @Test
-    fun `deletePhoto calls dao`() =
+    fun `stale manual callback rejected after transition into gated state`() =
         runTest(testDispatcher) {
             viewModel = createViewModel()
+            viewModel.syncNow()
+            syncStatusSource.status.value = DurableSyncStatus.Running(workId(), null)
+            viewModel.syncNow()
+            verify(syncWorkManager).enqueueSync()
+        }
+
+    @Test
+    fun `deleteDecision rejected while gated`() =
+        runTest(testDispatcher) {
+            viewModel = createViewModel()
+            gatedStates().forEach { status ->
+                syncStatusSource.status.value = status
+                viewModel.deleteDecision(42L)
+            }
+            settle()
+            verify(localDecisionDao, never()).deleteByInferenceResultId(any())
+        }
+
+    @Test
+    fun `deletePhoto rejected while gated`() =
+        runTest(testDispatcher) {
+            viewModel = createViewModel()
+            gatedStates().forEach { status ->
+                syncStatusSource.status.value = status
+                viewModel.deletePhoto(9L)
+            }
+            settle()
+            verify(pendingPhotoUploadDao, never()).deleteByRowId(any())
+        }
+
+    @Test
+    fun `stale delete callback performs no repository mutation`() =
+        runTest(testDispatcher) {
+            viewModel = createViewModel()
+            viewModel.deleteDecision(1L)
+            settle()
+            syncStatusSource.status.value = DurableSyncStatus.WaitingForNetwork(workId(), 1, 1)
+            viewModel.deleteDecision(2L)
+            settle()
+            verify(localDecisionDao).deleteByInferenceResultId(1L)
+            verify(localDecisionDao, never()).deleteByInferenceResultId(2L)
+        }
+
+    @Test
+    fun `delete and sync succeed when status is idle`() =
+        runTest(testDispatcher) {
+            viewModel = createViewModel()
+            viewModel.deleteDecision(42L)
             viewModel.deletePhoto(9L)
-            testDispatcher.scheduler.advanceUntilIdle()
+            settle()
+            verify(localDecisionDao).deleteByInferenceResultId(42L)
             verify(pendingPhotoUploadDao).deleteByRowId(9L)
         }
 }

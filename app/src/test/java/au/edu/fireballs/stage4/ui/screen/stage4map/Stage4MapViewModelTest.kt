@@ -1,9 +1,6 @@
 package au.edu.fireballs.stage4.ui.screen.stage4map
 
-import androidx.work.Data
 import androidx.work.OneTimeWorkRequestBuilder
-import androidx.work.WorkInfo
-import androidx.work.workDataOf
 import au.edu.fireballs.stage4.data.local.ClaimEntity
 import au.edu.fireballs.stage4.data.local.LocalDecisionEntity
 import au.edu.fireballs.stage4.data.local.OfflineBundleEntity
@@ -11,10 +8,13 @@ import au.edu.fireballs.stage4.data.local.dao.ClaimDao
 import au.edu.fireballs.stage4.data.local.dao.LocalDecisionDao
 import au.edu.fireballs.stage4.data.local.dao.OfflineBundleDao
 import au.edu.fireballs.stage4.data.repository.CandidateImageRepository
+import au.edu.fireballs.stage4.data.repository.DurableSyncStatus
 import au.edu.fireballs.stage4.data.repository.NetworkState
 import au.edu.fireballs.stage4.data.repository.NetworkStateRepository
 import au.edu.fireballs.stage4.data.repository.Stage4FetchResult
 import au.edu.fireballs.stage4.data.repository.Stage4Repository
+import au.edu.fireballs.stage4.data.repository.SyncCompletion
+import au.edu.fireballs.stage4.data.repository.SyncStatusSource
 import au.edu.fireballs.stage4.data.tiles.AuthenticatedTileHttpInterceptor
 import au.edu.fireballs.stage4.data.tiles.TileStore
 import au.edu.fireballs.stage4.domain.model.BoundingBox
@@ -28,7 +28,6 @@ import au.edu.fireballs.stage4.sync.SyncWorker
 import au.edu.fireballs.stage4.ui.screen.basecamp.PreDownloadWorkManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.launch
@@ -48,10 +47,14 @@ import org.mockito.kotlin.any
 import org.mockito.kotlin.argumentCaptor
 import org.mockito.kotlin.eq
 import org.mockito.kotlin.mock
+import org.mockito.kotlin.never
 import org.mockito.kotlin.times
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 import java.io.File
+import java.util.UUID
+
+private val WORK_ID: UUID = UUID.randomUUID()
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class Stage4MapViewModelTest {
@@ -69,6 +72,7 @@ class Stage4MapViewModelTest {
     private val networkStateRepository: NetworkStateRepository = mock()
     private val preDownloadWorkManager: PreDownloadWorkManager = mock()
     private val networkStateFlow = MutableStateFlow<NetworkState>(NetworkState.Online)
+    private val syncStatusSource = FakeSyncStatusSource()
     private lateinit var viewModel: Stage4MapViewModel
 
     @Before
@@ -124,6 +128,7 @@ class Stage4MapViewModelTest {
                     syncWorkManager,
                     networkStateRepository,
                     preDownloadWorkManager,
+                    syncStatusSource,
                 )
 
             assertEquals(Stage4MapUiState.Loading, viewModel.uiState.value)
@@ -148,6 +153,7 @@ class Stage4MapViewModelTest {
                     syncWorkManager,
                     networkStateRepository,
                     preDownloadWorkManager,
+                    syncStatusSource,
                 )
             val collectJob =
                 backgroundScope.launch(testDispatcher) {
@@ -224,6 +230,7 @@ class Stage4MapViewModelTest {
                     syncWorkManager,
                     networkStateRepository,
                     preDownloadWorkManager,
+                    syncStatusSource,
                 )
             val collectJob =
                 backgroundScope.launch(testDispatcher) {
@@ -262,6 +269,7 @@ class Stage4MapViewModelTest {
                     syncWorkManager,
                     networkStateRepository,
                     preDownloadWorkManager,
+                    syncStatusSource,
                 )
             val collectJob =
                 backgroundScope.launch(testDispatcher) {
@@ -302,6 +310,7 @@ class Stage4MapViewModelTest {
                     syncWorkManager,
                     networkStateRepository,
                     preDownloadWorkManager,
+                    syncStatusSource,
                 )
             val collectJob =
                 backgroundScope.launch(testDispatcher) {
@@ -336,6 +345,7 @@ class Stage4MapViewModelTest {
                     syncWorkManager,
                     networkStateRepository,
                     preDownloadWorkManager,
+                    syncStatusSource,
                 )
             val collectJob =
                 backgroundScope.launch(testDispatcher) {
@@ -373,6 +383,7 @@ class Stage4MapViewModelTest {
                     syncWorkManager,
                     networkStateRepository,
                     preDownloadWorkManager,
+                    syncStatusSource,
                 )
             val collectJob =
                 backgroundScope.launch(testDispatcher) {
@@ -410,6 +421,7 @@ class Stage4MapViewModelTest {
                     syncWorkManager,
                     networkStateRepository,
                     preDownloadWorkManager,
+                    syncStatusSource,
                 )
             val collectJob =
                 backgroundScope.launch(testDispatcher) {
@@ -443,6 +455,7 @@ class Stage4MapViewModelTest {
                     syncWorkManager,
                     networkStateRepository,
                     preDownloadWorkManager,
+                    syncStatusSource,
                 )
             val onAuthLostCaptor = argumentCaptor<() -> Unit>()
             verify(tileHttpInterceptor).onAuthLost = onAuthLostCaptor.capture()
@@ -482,6 +495,7 @@ class Stage4MapViewModelTest {
                     syncWorkManager,
                     networkStateRepository,
                     preDownloadWorkManager,
+                    syncStatusSource,
                 )
             val collectJob =
                 backgroundScope.launch(testDispatcher) {
@@ -522,6 +536,7 @@ class Stage4MapViewModelTest {
                     syncWorkManager,
                     networkStateRepository,
                     preDownloadWorkManager,
+                    syncStatusSource,
                 )
             val collectJob =
                 backgroundScope.launch(testDispatcher) {
@@ -565,6 +580,7 @@ class Stage4MapViewModelTest {
                     syncWorkManager,
                     networkStateRepository,
                     preDownloadWorkManager,
+                    syncStatusSource,
                 )
 
             val states = mutableListOf<Stage4MapUiState>()
@@ -607,6 +623,7 @@ class Stage4MapViewModelTest {
                     syncWorkManager,
                     networkStateRepository,
                     preDownloadWorkManager,
+                    syncStatusSource,
                 )
 
             val states = mutableListOf<Stage4MapUiState>()
@@ -656,6 +673,7 @@ class Stage4MapViewModelTest {
                     syncWorkManager,
                     networkStateRepository,
                     preDownloadWorkManager,
+                    syncStatusSource,
                 )
             val collectJob =
                 backgroundScope.launch(testDispatcher) {
@@ -704,6 +722,7 @@ class Stage4MapViewModelTest {
                     syncWorkManager,
                     networkStateRepository,
                     preDownloadWorkManager,
+                    syncStatusSource,
                 )
 
             val states = mutableListOf<Stage4MapUiState>()
@@ -746,6 +765,7 @@ class Stage4MapViewModelTest {
                     syncWorkManager,
                     networkStateRepository,
                     preDownloadWorkManager,
+                    syncStatusSource,
                 )
             val collectJob =
                 backgroundScope.launch(testDispatcher) {
@@ -817,6 +837,7 @@ class Stage4MapViewModelTest {
                     syncWorkManager,
                     networkStateRepository,
                     preDownloadWorkManager,
+                    syncStatusSource,
                 )
             val collectJob =
                 backgroundScope.launch(testDispatcher) {
@@ -838,127 +859,150 @@ class Stage4MapViewModelTest {
             collectJob.cancel()
         }
 
+    private fun createViewModel() {
+        viewModel =
+            Stage4MapViewModel(
+                repository,
+                claimDao,
+                localDecisionDao,
+                offlineBundleDao,
+                candidateImageRepository,
+                tileStore,
+                tileHttpInterceptor,
+                syncWorkManager,
+                networkStateRepository,
+                preDownloadWorkManager,
+                syncStatusSource,
+            )
+    }
+
     @Test
-    fun `syncNow enqueues sync and tracks work status`() =
+    fun `syncStatus maps idle`() =
         runTest(testDispatcher) {
-            val request = OneTimeWorkRequestBuilder<SyncWorker>().build()
-            val workInfoFlow = MutableSharedFlow<WorkInfo>(extraBufferCapacity = 4)
-            whenever(syncWorkManager.enqueueSync()).thenReturn(request)
-            whenever(syncWorkManager.getWorkInfoByIdFlow(request.id)).thenReturn(workInfoFlow)
+            createViewModel()
+            advanceUntilIdle()
+            assertEquals(SyncStatus.Idle, viewModel.syncStatus.value)
+        }
 
-            viewModel =
-                Stage4MapViewModel(
-                    repository,
-                    claimDao,
-                    localDecisionDao,
-                    offlineBundleDao,
-                    candidateImageRepository,
-                    tileStore,
-                    tileHttpInterceptor,
-                    syncWorkManager,
-                    networkStateRepository,
-                    preDownloadWorkManager,
+    @Test
+    fun `syncStatus maps pending`() =
+        runTest(testDispatcher) {
+            createViewModel()
+            syncStatusSource.status.value =
+                DurableSyncStatus.Pending(decisions = 2, photos = 1)
+            advanceUntilIdle()
+            assertEquals(SyncStatus.Pending, viewModel.syncStatus.value)
+        }
+
+    @Test
+    fun `syncStatus maps running`() =
+        runTest(testDispatcher) {
+            createViewModel()
+            syncStatusSource.status.value =
+                DurableSyncStatus.Running(workId = WORK_ID, progress = null)
+            advanceUntilIdle()
+            assertEquals(SyncStatus.Running, viewModel.syncStatus.value)
+        }
+
+    @Test
+    fun `syncStatus maps resuming`() =
+        runTest(testDispatcher) {
+            createViewModel()
+            syncStatusSource.status.value = DurableSyncStatus.Resuming(WORK_ID)
+            advanceUntilIdle()
+            assertEquals(SyncStatus.Resuming, viewModel.syncStatus.value)
+        }
+
+    @Test
+    fun `syncStatus maps waiting for network`() =
+        runTest(testDispatcher) {
+            createViewModel()
+            syncStatusSource.status.value =
+                DurableSyncStatus.WaitingForNetwork(
+                    workId = WORK_ID,
+                    decisions = 1,
+                    photos = 0,
                 )
-
-            viewModel.syncNow()
             advanceUntilIdle()
-            verify(syncWorkManager).enqueueSync()
+            assertEquals(SyncStatus.WaitingForNetwork, viewModel.syncStatus.value)
+        }
 
-            workInfoFlow.tryEmit(
-                WorkInfo(request.id, WorkInfo.State.RUNNING, emptySet(), Data.EMPTY, Data.EMPTY),
-            )
+    @Test
+    fun `syncStatus maps failed`() =
+        runTest(testDispatcher) {
+            createViewModel()
+            syncStatusSource.status.value = DurableSyncStatus.Failed(WORK_ID, "boom")
             advanceUntilIdle()
-            assertEquals(SyncStatus.Syncing, viewModel.syncStatus.value)
+            assertEquals(SyncStatus.Failed, viewModel.syncStatus.value)
+        }
 
-            workInfoFlow.tryEmit(
-                WorkInfo(request.id, WorkInfo.State.SUCCEEDED, emptySet(), Data.EMPTY, Data.EMPTY),
-            )
+    @Test
+    fun `syncStatus maps complete`() =
+        runTest(testDispatcher) {
+            createViewModel()
+            syncStatusSource.status.value = DurableSyncStatus.Complete(WORK_ID)
             advanceUntilIdle()
             assertEquals(SyncStatus.Complete, viewModel.syncStatus.value)
         }
 
     @Test
-    fun `syncNow surfaces auth expired when worker reports auth expiry`() =
+    fun `syncStatus maps session expired and routes auth expired`() =
         runTest(testDispatcher) {
-            val request = OneTimeWorkRequestBuilder<SyncWorker>().build()
-            val workInfoFlow = MutableSharedFlow<WorkInfo>(extraBufferCapacity = 4)
-            whenever(syncWorkManager.enqueueSync()).thenReturn(request)
-            whenever(syncWorkManager.getWorkInfoByIdFlow(request.id)).thenReturn(workInfoFlow)
-
-            viewModel =
-                Stage4MapViewModel(
-                    repository,
-                    claimDao,
-                    localDecisionDao,
-                    offlineBundleDao,
-                    candidateImageRepository,
-                    tileStore,
-                    tileHttpInterceptor,
-                    syncWorkManager,
-                    networkStateRepository,
-                    preDownloadWorkManager,
-                )
+            createViewModel()
             val collectJob =
                 backgroundScope.launch(testDispatcher) {
                     viewModel.uiState.collect {}
                 }
-
-            viewModel.syncNow()
+            syncStatusSource.status.value = DurableSyncStatus.SessionExpired(WORK_ID)
             advanceUntilIdle()
-
-            workInfoFlow.tryEmit(
-                WorkInfo(
-                    request.id,
-                    WorkInfo.State.SUCCEEDED,
-                    emptySet(),
-                    workDataOf(SyncWorker.KEY_AUTH_EXPIRED to true),
-                    Data.EMPTY,
-                ),
-            )
-            advanceUntilIdle()
-
             assertEquals(SyncStatus.AuthExpired, viewModel.syncStatus.value)
             assertTrue(viewModel.uiState.value is Stage4MapUiState.AuthExpired)
             collectJob.cancel()
         }
 
     @Test
-    fun `syncNow while sync already running keeps status Syncing`() =
+    fun `syncNow enqueues sync when not gated`() =
         runTest(testDispatcher) {
-            val request = OneTimeWorkRequestBuilder<SyncWorker>().build()
-            val workInfoFlow = MutableSharedFlow<WorkInfo>(extraBufferCapacity = 4)
-            whenever(syncWorkManager.enqueueSync()).thenReturn(request)
-            whenever(syncWorkManager.getWorkInfoByIdFlow(request.id)).thenReturn(workInfoFlow)
-
-            viewModel =
-                Stage4MapViewModel(
-                    repository,
-                    claimDao,
-                    localDecisionDao,
-                    offlineBundleDao,
-                    candidateImageRepository,
-                    tileStore,
-                    tileHttpInterceptor,
-                    syncWorkManager,
-                    networkStateRepository,
-                    preDownloadWorkManager,
-                )
-
+            whenever(syncWorkManager.enqueueSync())
+                .thenReturn(OneTimeWorkRequestBuilder<SyncWorker>().build())
+            createViewModel()
             viewModel.syncNow()
             advanceUntilIdle()
             verify(syncWorkManager).enqueueSync()
+        }
 
-            workInfoFlow.tryEmit(
-                WorkInfo(request.id, WorkInfo.State.RUNNING, emptySet(), Data.EMPTY, Data.EMPTY),
-            )
+    @Test
+    fun `syncNow is ignored while running`() =
+        runTest(testDispatcher) {
+            createViewModel()
+            syncStatusSource.status.value = DurableSyncStatus.Running(WORK_ID, null)
             advanceUntilIdle()
-            assertEquals(SyncStatus.Syncing, viewModel.syncStatus.value)
-
             viewModel.syncNow()
             advanceUntilIdle()
+            verify(syncWorkManager, never()).enqueueSync()
+        }
 
-            assertEquals(SyncStatus.Syncing, viewModel.syncStatus.value)
-            verify(syncWorkManager, times(2)).enqueueSync()
+    @Test
+    fun `syncNow is ignored while resuming`() =
+        runTest(testDispatcher) {
+            createViewModel()
+            syncStatusSource.status.value = DurableSyncStatus.Resuming(WORK_ID)
+            advanceUntilIdle()
+            viewModel.syncNow()
+            advanceUntilIdle()
+            verify(syncWorkManager, never()).enqueueSync()
+        }
+
+    @Test
+    fun `syncNow is ignored while waiting for network`() =
+        runTest(testDispatcher) {
+            createViewModel()
+            syncStatusSource.status.value =
+                DurableSyncStatus.WaitingForNetwork(WORK_ID, decisions = 1, photos = 0)
+            advanceUntilIdle()
+            viewModel.syncNow()
+            advanceUntilIdle()
+            verify(syncWorkManager, never()).enqueueSync()
         }
 
     @Test
@@ -1095,6 +1139,7 @@ class Stage4MapViewModelTest {
                     syncWorkManager,
                     networkStateRepository,
                     preDownloadWorkManager,
+                    syncStatusSource,
                 )
             val collectJob =
                 backgroundScope.launch(testDispatcher) {
@@ -1153,6 +1198,7 @@ class Stage4MapViewModelTest {
                 syncWorkManager,
                 networkStateRepository,
                 preDownloadWorkManager,
+                syncStatusSource,
             )
         viewModel.openSurvey(7L)
     }
@@ -1175,4 +1221,10 @@ class Stage4MapViewModelTest {
             claimedByMe = false,
             claimedByOther = false,
         )
+
+    private class FakeSyncStatusSource : SyncStatusSource {
+        override val status = MutableStateFlow<DurableSyncStatus>(DurableSyncStatus.Idle)
+
+        override val completions = emptyFlow<SyncCompletion>()
+    }
 }

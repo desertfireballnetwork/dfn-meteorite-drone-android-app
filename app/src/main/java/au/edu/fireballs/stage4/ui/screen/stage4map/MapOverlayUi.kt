@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.CircularProgressIndicator
@@ -26,10 +27,15 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
 internal const val OVERLAY_PADDING_DP = 12
+
+internal const val MAP_SYNC_BUTTON_TAG = "map-sync-button"
+
+internal const val MAP_SYNC_PROGRESS_TAG = "map-sync-progress"
 
 @Composable
 internal fun MapTopOverlay(
@@ -112,36 +118,71 @@ private fun SurveyInfoChip(loaded: Stage4MapUiState.Loaded) {
 }
 
 @Composable
-private fun SyncButton(
+internal fun SyncButton(
     status: SyncStatus,
     onSync: () -> Unit,
 ) {
     when (status) {
-        SyncStatus.Idle ->
-            FilledTonalIconButton(onClick = onSync) {
+        SyncStatus.Idle,
+        SyncStatus.Pending,
+        ->
+            FilledTonalIconButton(
+                onClick = onSync,
+                modifier = Modifier.testTag(MAP_SYNC_BUTTON_TAG),
+            ) {
                 Icon(imageVector = Icons.Default.Sync, contentDescription = "Sync pending")
             }
 
-        SyncStatus.Syncing ->
-            FilledTonalIconButton(onClick = onSync, enabled = false) {
+        SyncStatus.Running,
+        SyncStatus.Resuming,
+        ->
+            FilledTonalIconButton(
+                onClick = onSync,
+                enabled = false,
+                modifier = Modifier.testTag(MAP_SYNC_BUTTON_TAG),
+            ) {
                 CircularProgressIndicator(
-                    modifier = Modifier.size(18.dp),
+                    modifier =
+                        Modifier
+                            .size(18.dp)
+                            .testTag(MAP_SYNC_PROGRESS_TAG),
                     strokeWidth = 2.dp,
                 )
             }
 
+        SyncStatus.WaitingForNetwork ->
+            FilledTonalIconButton(
+                onClick = onSync,
+                enabled = false,
+                modifier = Modifier.testTag(MAP_SYNC_BUTTON_TAG),
+            ) {
+                Icon(
+                    imageVector = Icons.Default.CloudOff,
+                    contentDescription = "Waiting for network",
+                )
+            }
+
         SyncStatus.Complete ->
-            FilledTonalIconButton(onClick = onSync) {
+            FilledTonalIconButton(
+                onClick = onSync,
+                modifier = Modifier.testTag(MAP_SYNC_BUTTON_TAG),
+            ) {
                 Icon(imageVector = Icons.Default.Check, contentDescription = "Sync complete")
             }
 
         SyncStatus.Failed ->
-            FilledTonalIconButton(onClick = onSync) {
+            FilledTonalIconButton(
+                onClick = onSync,
+                modifier = Modifier.testTag(MAP_SYNC_BUTTON_TAG),
+            ) {
                 Icon(imageVector = Icons.Default.Error, contentDescription = "Sync failed")
             }
 
         SyncStatus.AuthExpired ->
-            FilledTonalIconButton(onClick = onSync) {
+            FilledTonalIconButton(
+                onClick = onSync,
+                modifier = Modifier.testTag(MAP_SYNC_BUTTON_TAG),
+            ) {
                 Icon(imageVector = Icons.Default.Error, contentDescription = "Session expired")
             }
     }

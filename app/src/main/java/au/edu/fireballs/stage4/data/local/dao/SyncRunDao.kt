@@ -14,6 +14,9 @@ interface SyncRunDao {
     @Query("SELECT * FROM sync_run WHERE surveyId = :surveyId")
     fun observeRun(surveyId: Long): Flow<SyncRunEntity?>
 
+    @Query("SELECT * FROM sync_run LIMIT 1")
+    fun observeCurrentRun(): Flow<SyncRunEntity?>
+
     @Query("DELETE FROM sync_run WHERE surveyId = :surveyId")
     suspend fun clear(surveyId: Long)
 }
