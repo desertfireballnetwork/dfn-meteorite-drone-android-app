@@ -58,9 +58,10 @@ android {
         }
         val productionServerUrl =
             providers
-                .provider {
-                    localProps.getProperty("PRODUCTION_SERVER_URL", "")
-                }.getOrElse("")
+                .gradleProperty("PRODUCTION_SERVER_URL")
+                .orElse(providers.environmentVariable("ORG_GRADLE_PROJECT_PRODUCTION_SERVER_URL"))
+                .orElse(providers.provider { localProps.getProperty("PRODUCTION_SERVER_URL", "") })
+                .getOrElse("")
         val devServerUrl =
             providers
                 .provider {

@@ -27,12 +27,13 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Populate Gradle properties with Mapbox tokens
+      - name: Populate Gradle properties with Mapbox tokens and server URL
         run: |
           mkdir -p ~/.gradle
           echo "MAPBOX_DOWNLOADS_TOKEN=${{ secrets.MAPBOX_DOWNLOADS_TOKEN }}" >> ~/.gradle/gradle.properties
           echo "MAPBOX_ACCESS_TOKEN=${{ secrets.MAPBOX_ACCESS_TOKEN }}" >> ~/.gradle/gradle.properties
 
+          echo "PRODUCTION_SERVER_URL=${{ secrets.PRODUCTION_SERVER_URL }}" >> ~/.gradle/gradle.properties
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
@@ -46,8 +47,7 @@ jobs:
           name: test-reports
           path: app/build/reports/tests/test/**
 
-      - name: Upload debug APK on failure
-        if: failure()
+      - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
           name: debug-apk
