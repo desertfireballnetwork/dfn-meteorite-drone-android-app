@@ -179,7 +179,9 @@ class BasecampViewModel
                     candidate.geoCentroid?.let { isPointInPolygon(it, vertices) } == true
                 }
             val eligible =
-                contained.filter { !it.claimedByMe && !it.claimedByOther }
+                contained
+                    .filter { !it.claimedByMe && !it.claimedByOther }
+                    .distinctBy { it.inferenceResultId }
             polygonVerticesFlow.value = null
             if (eligible.isEmpty()) {
                 emitMessage("No unclaimed candidates inside the drawn region")

@@ -1,6 +1,7 @@
 package au.edu.fireballs.stage4.data.tiles
 
 import au.edu.fireballs.stage4.BuildConfig
+import au.edu.fireballs.stage4.data.repository.PreDownloadTargetKey
 import java.util.concurrent.atomic.AtomicBoolean
 
 class OfflineManagerWrapper(
@@ -13,6 +14,7 @@ class OfflineManagerWrapper(
         maxZoom: Int,
         progressCb: (Double) -> Unit,
         completionCb: (Result<Unit>) -> Unit,
+        target: PreDownloadTargetKey.Satellite,
     ) {
         validateZooms(minZoom, maxZoom)
         require(maxTilesPerRegion > 0) { "maxTilesPerRegion must be positive" }
@@ -35,7 +37,8 @@ class OfflineManagerWrapper(
 
         fun report(progress: Double) {
             val clamped = progress.coerceIn(0.0, 1.0)
-            if (clamped > lastProgress) {
+            val stepped = (clamped * PROGRESS_STEPS).toInt()
+            if (stepped > (lastProgress * PROGRESS_STEPS).toInt()) {
                 lastProgress = clamped
                 progressCb(clamped)
             }
@@ -102,6 +105,7 @@ class OfflineManagerWrapper(
                             }
                         }
                     },
+                    target,
                 )
             }
         }
@@ -196,5 +200,6 @@ class OfflineManagerWrapper(
 
     companion object {
         private const val MAX_ZOOM = 22
+        private const val PROGRESS_STEPS = 100.0
     }
 }

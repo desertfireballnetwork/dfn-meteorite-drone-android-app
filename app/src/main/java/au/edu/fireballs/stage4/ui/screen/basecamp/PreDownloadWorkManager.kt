@@ -13,13 +13,12 @@ import javax.inject.Inject
 
 interface PreDownloadWorkManager {
     companion object {
-        const val UNIQUE_WORK_PREFIX = "pre_download_"
+        const val UNIQUE_WORK_NAME = "pre_download"
 
         fun inputData(
             surveyId: Long,
             bufferMeters: Float,
             geotiffRadiusMeters: Float,
-            manifestId: String? = null,
         ): Data =
             Data
                 .Builder()
@@ -28,8 +27,7 @@ interface PreDownloadWorkManager {
                 .putFloat(
                     PreDownloadWorker.KEY_GEOTIFF_RADIUS_METERS,
                     geotiffRadiusMeters,
-                ).putString(PreDownloadWorker.KEY_MANIFEST_ID, manifestId)
-                .build()
+                ).build()
     }
 
     fun enqueueUniqueWork(

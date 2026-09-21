@@ -305,6 +305,49 @@ class BasecampViewModelTest {
         }
 
     @Test
+    fun `commitPolygon deduplicates candidates listed in more than one verdict bucket`() =
+        runTest(testDispatcher) {
+            val duplicate = candidate(1L, GeoCoordinate(0.0, 0.0))
+            val fixture =
+                Stage4State(
+                    survey = Stage4Survey(id = 7L, eventId = "DN240703-02", tilesetId = null),
+                    base = null,
+                    surveyedAreas = emptyList(),
+                    unprocessedCandidates = emptyList(),
+                    yesMeteorites = listOf(duplicate),
+                    noMeteorites = listOf(duplicate),
+                    detectionTags = emptyList(),
+                    userLocations = emptyList(),
+                    showGeolocationAccuracyCircle = false,
+                    latestTaskCreated = "2026-08-26T00:00:00Z",
+                )
+            whenever(stage4Repository.getCandidatesState(7L))
+                .thenReturn(Stage4FetchResult.Success(fixture))
+
+            viewModel =
+                BasecampViewModel(
+                    stage4Repository,
+                    claimRepository,
+                    surveyRepository,
+                    selectedSurveyRepository,
+                )
+            val collectJob = backgroundScope.launch(testDispatcher) { viewModel.uiState.collect {} }
+            viewModel.openSurvey(7L)
+            advanceUntilIdle()
+
+            viewModel.startPolygon()
+            viewModel.onPolygonVertex(GeoCoordinate(-5.0, -5.0))
+            viewModel.onPolygonVertex(GeoCoordinate(-5.0, 5.0))
+            viewModel.onPolygonVertex(GeoCoordinate(5.0, 5.0))
+            viewModel.onPolygonVertex(GeoCoordinate(5.0, -5.0))
+            viewModel.commitPolygon()
+            advanceUntilIdle()
+
+            verify(claimRepository).claim(listOf(1L))
+            collectJob.cancel()
+        }
+
+    @Test
     fun `commitPolygon with fewer than three vertices does not claim`() =
         runTest(testDispatcher) {
             val fixture = state(candidate(1L, GeoCoordinate(0.0, 0.0)))

@@ -5,6 +5,7 @@ import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequest
 import androidx.work.Operation
 import androidx.work.WorkInfo
+import androidx.work.workDataOf
 import au.edu.fireballs.stage4.data.repository.ClaimRepository
 import au.edu.fireballs.stage4.data.repository.ClaimResult
 import au.edu.fireballs.stage4.data.repository.PreDownloadInventory
@@ -16,12 +17,11 @@ import au.edu.fireballs.stage4.data.tiles.BufferRadiusRepository
 import au.edu.fireballs.stage4.data.tiles.GeotiffRadiusRepository
 import au.edu.fireballs.stage4.sync.PreDownloadOrchestrator
 import au.edu.fireballs.stage4.sync.PreDownloadWorker
-import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -85,7 +85,6 @@ class PreDownloadViewModelTest {
         viewModel =
             PreDownloadViewModel(
                 claimRepository,
-                mockk(relaxed = true),
                 stage4Repository,
                 bufferRadiusRepository,
                 geotiffRadiusRepository,
@@ -175,7 +174,7 @@ class PreDownloadViewModelTest {
             advanceUntilIdle()
 
             val enqueued = workManager.enqueued.single()
-            assertEquals("pre_download_7", enqueued.first)
+            assertEquals("pre_download", enqueued.first)
             assertEquals(ExistingWorkPolicy.REPLACE, workManager.lastPolicy)
             assertEquals(
                 7L,
@@ -284,7 +283,7 @@ class PreDownloadViewModelTest {
             viewModel.cancel()
             advanceUntilIdle()
 
-            assertEquals(listOf("pre_download_7"), workManager.cancelled)
+            assertEquals(listOf("pre_download"), workManager.cancelled)
             assertTrue(viewModel.uiState.value is PreDownloadUiState.Cancelled)
         }
 
@@ -317,6 +316,38 @@ class PreDownloadViewModelTest {
             assertTrue(done.reDownloadRecommended)
         }
 
+    @Test
+    fun `openSurvey re-attaches to a running download`() =
+        runTest(testDispatcher) {
+            workManager.setUniqueWork(
+                listOf(
+                    workInfo(
+                        UUID.randomUUID(),
+                        WorkInfo.State.RUNNING,
+                        progress =
+                            workDataOf(
+                                PreDownloadOrchestrator.KEY_DONE to 3,
+                                PreDownloadOrchestrator.KEY_TOTAL to 10,
+                                PreDownloadOrchestrator.KEY_PHASE to
+                                    PreDownloadOrchestrator.PHASE_TILES,
+                                PreDownloadOrchestrator.KEY_PHASE_INDEX to 2,
+                                PreDownloadOrchestrator.KEY_PHASE_COUNT to 4,
+                            ),
+                    ),
+                ),
+            )
+
+            viewModel.openSurvey(7L)
+            advanceUntilIdle()
+
+            val running = viewModel.uiState.value as PreDownloadUiState.Running
+            assertEquals(PreDownloadOrchestrator.PHASE_TILES, running.phase)
+            assertEquals(3, running.done)
+            assertEquals(10, running.total)
+            assertEquals(2, running.phaseIndex)
+            assertEquals(4, running.phaseCount)
+        }
+
     private fun workInfo(
         id: UUID,
         state: WorkInfo.State,
@@ -344,8 +375,14 @@ class PreDownloadViewModelTest {
         override fun getWorkInfoByIdFlow(id: UUID): Flow<WorkInfo> =
             flows[id] ?: MutableSharedFlow()
 
+        private val uniqueInfos = MutableStateFlow<List<WorkInfo>>(emptyList())
+
+        fun setUniqueWork(infos: List<WorkInfo>) {
+            uniqueInfos.value = infos
+        }
+
         override fun getWorkInfosForUniqueWorkFlow(uniqueWorkName: String): Flow<List<WorkInfo>> =
-            emptyFlow()
+            uniqueInfos
 
         override fun cancelUniqueWork(uniqueWorkName: String): Operation {
             cancelled.add(uniqueWorkName)

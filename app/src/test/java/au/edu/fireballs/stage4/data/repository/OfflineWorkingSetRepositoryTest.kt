@@ -237,19 +237,16 @@ class OfflineWorkingSetRepositoryTest {
     fun completionRefusesMissingAndOnlyCompleteClearsActiveState() =
         runTest {
             val key = tile(1L)
-            val started =
-                repository.beginReplacement(
-                    target(),
-                    classification(missing = setOf(key)),
-                    "manifest",
-                ) as ReplacementBeginResult.Started
+            repository.beginReplacement(
+                target(),
+                classification(missing = setOf(key)),
+                "manifest",
+            )
 
-            assertFalse(started.session.isOfflineReady)
             assertEquals(
                 ReplacementCompletionResult.Refused(1),
                 repository.completeReplacement("manifest"),
             )
-            assertTrue(repository.activeReplacement() != null)
             writeTile(key)
             repository.markItemComplete("manifest", key)
 
@@ -258,61 +255,20 @@ class OfflineWorkingSetRepositoryTest {
                 repository.completeReplacement("manifest"),
             )
             assertEquals("COMPLETE", bundle("manifest")?.state)
-            assertNull(repository.activeReplacement())
-            assertTrue(repository.resume("manifest")?.session?.isOfflineReady == true)
-        }
-
-    @Test
-    fun resumeUsesPersistedGraphCleansTempsReconcilesAndRetriesPurges() =
-        runTest {
-            val wrapper = missingOfflineRegionWrapper()
-            every { wrapper.purgeExact(any(), any()) } answers {
-                val target = firstArg<PreDownloadTargetKey.Satellite>()
-                val callback = secondArg<(OfflineRegionPurgeResult) -> Unit>()
-                callback(OfflineRegionPurgeResult.ConfirmedAbsent(target))
-            }
-            repository = createRepository(UnconfinedTestDispatcher(), wrapper)
-            val present = tile(1L)
-            val absent = crop(2L)
-            repository.beginReplacement(
-                target(),
-                classification(missing = setOf(present, absent)),
-                "manifest",
-            )
-            writeTile(present)
-            createTileTemp()
-            createCropTemp()
-            database.satelliteRegionDao().upsert(
-                SatelliteRegionEntity(
-                    manifestId = "obsolete",
-                    surveyId = 1L,
-                    sourceVersion = "v1",
-                    signature = "pending",
-                    completed = true,
-                    pendingDeletion = true,
-                ),
-            )
-
-            val resumed = repository.resume("manifest")!!
-
-            assertEquals(WorkingSetState.INCOMPLETE, resumed.session.state)
-            assertTrue(resumed.removedTemporaryFiles >= 2)
-            assertEquals(1, resumed.promotedItems)
-            assertEquals(setOf(absent), resumed.session.missing)
-            assertEquals(1, resumed.retriedPurges)
-            assertEquals(0, resumed.pendingPurgeCount)
         }
 
     @Test
     fun claimChangesCannotMutatePersistedManifest() =
         runTest {
-            repository.beginReplacement(
-                target(),
-                classification(missing = setOf(tile(41L))),
-                "immutable",
-            )
+            val session =
+                (
+                    repository.beginReplacement(
+                        target(),
+                        classification(missing = setOf(tile(41L))),
+                        "immutable",
+                    ) as ReplacementBeginResult.Started
+                ).session
             database.claimDao().deleteAll()
-            val session = repository.activeReplacement()!!
 
             assertEquals("immutable", session.manifestId)
             assertEquals(setOf(tile(41L)), session.missing)

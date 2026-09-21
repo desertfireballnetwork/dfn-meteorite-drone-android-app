@@ -155,15 +155,12 @@ class OfflineWorkingSetRepository(
                 ReplacementBeginResult.Started(
                     ReplacementSession(
                         manifestId = manifestId,
-                        surveyId = target.surveyId,
                         sourceVersion = target.sourceVersion,
                         state = WorkingSetState.REPLACING,
                         requiredCount = required.size,
-                        retainedCount = retained.size,
                         missing = classification.missing,
                         obsolete = classification.obsolete,
                         clearCommands = classification.clearCommands,
-                        pendingPurgeCount = 0,
                     ),
                 )
             }
@@ -443,136 +440,6 @@ class OfflineWorkingSetRepository(
             }
         }
 
-    suspend fun activeReplacement(): ReplacementSession? =
-        withContext(ioDispatcher) {
-            val bundle =
-                offlineBundleDao
-                    .getAll()
-                    .firstOrNull {
-                        it.state == WorkingSetState.REPLACING.value ||
-                            it.state == WorkingSetState.INCOMPLETE.value
-                    }
-            bundle?.let { sessionFor(it) }
-        }
-
-    suspend fun resume(manifestId: String): ReplacementResume? =
-        withContext(ioDispatcher) {
-            val bundle = offlineBundleDao.getByManifestId(manifestId)
-            if (bundle == null) {
-                return@withContext null
-            }
-            if (bundle.state == WorkingSetState.REPLACING.value) {
-                database.withTransaction {
-                    offlineBundleDao.updateState(
-                        manifestId,
-                        WorkingSetState.INCOMPLETE.value,
-                        System.currentTimeMillis(),
-                    )
-                }
-            }
-            val removedTemporaryFiles =
-                tileStore.removeOrphanedTempFiles() +
-                    candidateImageRepository.removeOrphanedTempFiles()
-            var promotedItems = 0
-            var demotedItems = 0
-            tileManifestDao.getForManifest(manifestId).forEach { row ->
-                val key = row.toTargetKey()
-                val valid =
-                    tileStore.isValidTile(
-                        key.surveyId,
-                        key.candidateId,
-                        key.zoom,
-                        key.x,
-                        key.y,
-                    )
-                when {
-                    valid && !row.completed -> {
-                        database.withTransaction {
-                            tileManifestDao.updateCompletion(
-                                manifestId,
-                                row.rowId,
-                                true,
-                                tileStore.fileLength(
-                                    key.surveyId,
-                                    key.candidateId,
-                                    key.zoom,
-                                    key.x,
-                                    key.y,
-                                ) ?: row.bytes,
-                            )
-                        }
-                        promotedItems++
-                    }
-
-                    !valid && row.completed -> {
-                        database.withTransaction {
-                            tileManifestDao.updateCompletion(
-                                manifestId,
-                                row.rowId,
-                                false,
-                                row.bytes,
-                            )
-                        }
-                        demotedItems++
-                    }
-                }
-            }
-            candidateCropManifestDao.getForManifest(manifestId).forEach { row ->
-                val valid =
-                    candidateImageRepository.isValidCrop(row.surveyId, row.candidateId)
-                when {
-                    valid && !row.completed -> {
-                        database.withTransaction {
-                            candidateCropManifestDao.updateCompletion(
-                                manifestId,
-                                row.rowId,
-                                true,
-                            )
-                        }
-                        promotedItems++
-                    }
-
-                    !valid && row.completed -> {
-                        database.withTransaction {
-                            candidateCropManifestDao.updateCompletion(
-                                manifestId,
-                                row.rowId,
-                                false,
-                            )
-                        }
-                        demotedItems++
-                    }
-                }
-            }
-            var retriedPurges = 0
-            satelliteRegionDao.getPendingDeletion().forEach { row ->
-                when (val result = purgeTarget(row.toTargetKey())) {
-                    is OfflineRegionPurgeResult.Purged,
-                    is OfflineRegionPurgeResult.ConfirmedAbsent,
-                    -> {
-                        satelliteRegionDao.removePurged(row.rowId)
-                        retriedPurges++
-                    }
-
-                    is OfflineRegionPurgeResult.RetryableFailure ->
-                        satelliteRegionDao.recordPurgeAttempt(
-                            row.rowId,
-                            result.category.name,
-                            result.attemptTimeMillis,
-                        )
-                }
-            }
-            val refreshed = offlineBundleDao.getByManifestId(manifestId) ?: bundle
-            ReplacementResume(
-                session = sessionFor(refreshed),
-                removedTemporaryFiles = removedTemporaryFiles,
-                promotedItems = promotedItems,
-                demotedItems = demotedItems,
-                retriedPurges = retriedPurges,
-                pendingPurgeCount = satelliteRegionDao.getPendingDeletion().size,
-            )
-        }
-
     private suspend fun completeTile(
         manifestId: String,
         key: PreDownloadTargetKey.Tile,
@@ -701,42 +568,6 @@ class OfflineWorkingSetRepository(
         }
         return ReplacementClassifier.classify(target, owned)
     }
-
-    private suspend fun sessionFor(bundle: OfflineBundleEntity): ReplacementSession {
-        val missing = collectMissing(bundle.manifestId)
-        val required =
-            tileManifestDao.getForManifest(bundle.manifestId).size +
-                candidateCropManifestDao.getForManifest(bundle.manifestId).size +
-                satelliteRegionDao.getForManifest(bundle.manifestId).size
-        return ReplacementSession(
-            manifestId = bundle.manifestId,
-            surveyId = bundle.surveyId,
-            sourceVersion = bundle.sourceVersion,
-            state = WorkingSetState.from(bundle.state),
-            requiredCount = required,
-            retainedCount = (required - missing.size).coerceAtLeast(0),
-            missing = missing,
-            obsolete = emptySet(),
-            clearCommands = emptyList(),
-            pendingPurgeCount = satelliteRegionDao.getPendingDeletion().size,
-        )
-    }
-
-    private suspend fun collectMissing(manifestId: String): Set<PreDownloadTargetKey> =
-        buildSet {
-            tileManifestDao
-                .getForManifest(manifestId)
-                .filterNot { it.completed }
-                .forEach { add(it.toTargetKey()) }
-            candidateCropManifestDao
-                .getForManifest(manifestId)
-                .filterNot { it.completed }
-                .forEach { add(it.toTargetKey()) }
-            satelliteRegionDao
-                .getForManifest(manifestId)
-                .filterNot { it.completed }
-                .forEach { add(it.toTargetKey()) }
-        }
 
     private suspend fun missingCount(manifestId: String): Int =
         tileManifestDao.countIncomplete(manifestId) +
