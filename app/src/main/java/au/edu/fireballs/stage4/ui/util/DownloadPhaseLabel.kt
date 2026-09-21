@@ -7,5 +7,6 @@ internal fun downloadPhaseLabel(phase: String?): String =
         PreDownloadOrchestrator.PHASE_SATELLITE -> "Downloading satellite imagery"
         PreDownloadOrchestrator.PHASE_TILES -> "Downloading survey tiles"
         PreDownloadOrchestrator.PHASE_CROPS -> "Downloading candidate crops"
+        PreDownloadOrchestrator.PHASE_FINALISING -> "Finalising download"
         else -> "Downloading offline data"
     }

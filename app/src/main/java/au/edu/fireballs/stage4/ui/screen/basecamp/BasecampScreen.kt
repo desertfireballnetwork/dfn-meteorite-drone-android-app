@@ -396,13 +396,6 @@ private fun DownloadDialog(
                                     style = MaterialTheme.typography.bodyMedium,
                                 )
                             }
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Button(
-                                onClick = onStart,
-                                enabled = state.canStart,
-                            ) {
-                                Text(text = if (state.isStale) "Re-download" else "Download")
-                            }
                         }
                     }
 
@@ -414,21 +407,30 @@ private fun DownloadDialog(
                                 0
                             }
                         Column {
+                            if (state.phaseCount > 0 && state.phaseIndex > 0) {
+                                Text(
+                                    text = "Phase ${state.phaseIndex} of ${state.phaseCount}",
+                                    style = MaterialTheme.typography.labelMedium,
+                                )
+                            }
                             Text(text = downloadPhaseLabel(state.phase))
                             Spacer(modifier = Modifier.height(8.dp))
-                            LinearProgressIndicator(
-                                progress = {
-                                    if (state.total > 0) {
-                                        state.done.toFloat() / state.total
-                                    } else {
-                                        0f
-                                    }
-                                },
-                                modifier = Modifier.fillMaxWidth(),
-                            )
+                            if (state.total > 0) {
+                                LinearProgressIndicator(
+                                    progress = { state.done.toFloat() / state.total },
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                            } else {
+                                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                            }
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
-                                text = "$percent%",
+                                text =
+                                    if (state.total > 0) {
+                                        "$percent%"
+                                    } else {
+                                        "Working…"
+                                    },
                                 style = MaterialTheme.typography.bodySmall,
                             )
                         }
@@ -453,29 +455,47 @@ private fun DownloadDialog(
                         }
                     }
 
-                    is PreDownloadUiState.Error -> {
-                        Column {
-                            Text(text = state.message)
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Button(onClick = onStart) {
-                                Text(text = "Retry")
-                            }
-                        }
-                    }
+                    is PreDownloadUiState.Error -> Text(text = state.message)
                     is PreDownloadUiState.Cancelled -> Text(text = "Download cancelled")
                 }
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text(text = "Done")
+            when (state) {
+                is PreDownloadUiState.Ready ->
+                    TextButton(onClick = onStart, enabled = state.canStart) {
+                        Text(text = if (state.isStale) "Re-download" else "Download")
+                    }
+
+                is PreDownloadUiState.Running ->
+                    TextButton(onClick = onCancel) {
+                        Text(text = "Cancel download")
+                    }
+
+                is PreDownloadUiState.Error ->
+                    TextButton(onClick = onStart) {
+                        Text(text = "Retry")
+                    }
+
+                else ->
+                    TextButton(onClick = onDismiss) {
+                        Text(text = "Done")
+                    }
             }
         },
         dismissButton = {
-            if (state is PreDownloadUiState.Running) {
-                TextButton(onClick = onCancel) {
-                    Text(text = "Cancel")
-                }
+            when (state) {
+                is PreDownloadUiState.Running ->
+                    TextButton(onClick = onDismiss) {
+                        Text(text = "Hide")
+                    }
+
+                is PreDownloadUiState.Ready, is PreDownloadUiState.Error ->
+                    TextButton(onClick = onDismiss) {
+                        Text(text = "Close")
+                    }
+
+                else -> Unit
             }
         },
     )

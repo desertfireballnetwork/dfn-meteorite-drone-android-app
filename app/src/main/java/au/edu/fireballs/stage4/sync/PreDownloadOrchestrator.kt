@@ -398,13 +398,32 @@ class PreDownloadOrchestrator(
         progress: suspend (Data) -> Unit,
         manifestId: String?,
     ): PreDownloadOutcome {
+        val phases =
+            buildList {
+                if (satelliteWork.isNotEmpty()) add(PHASE_SATELLITE)
+                if (tileTotal > 0) add(PHASE_TILES)
+                if (cropTotal > 0) add(PHASE_CROPS)
+                add(PHASE_FINALISING)
+            }
+        val phaseProgress: suspend (Data) -> Unit = { data ->
+            val phase = data.getString(KEY_PHASE)
+            progress(
+                Data
+                    .Builder()
+                    .putAll(data)
+                    .putInt(KEY_PHASE_INDEX, phases.indexOf(phase) + 1)
+                    .putInt(KEY_PHASE_COUNT, phases.size)
+                    .build(),
+            )
+        }
+
         if (satelliteWork.isNotEmpty()) {
             val satelliteResult =
                 downloadSatellite(
                     surveyId = surveyId,
                     regions = satelliteWork,
                     total = satelliteTileTotal,
-                    progress = progress,
+                    progress = phaseProgress,
                 )
             if (satelliteResult.isFailure) {
                 val cause = satelliteResult.exceptionOrNull()
@@ -421,22 +440,30 @@ class PreDownloadOrchestrator(
                 surveyId = surveyId,
                 candidateTiles = candidateTiles,
                 total = tileTotal,
-                progress = progress,
+                progress = phaseProgress,
             )
         if (tileCount != tileTotal) {
             return failure("Tile download failed")
         }
-        val derivedTileCount = precomputeLowZoomTiles(surveyId, candidates)
         val cropCount =
             downloadCrops(
                 surveyId = surveyId,
                 candidates = missingCrops,
                 total = cropTotal,
-                progress = progress,
+                progress = phaseProgress,
             )
         if (cropCount != missingCrops.size) {
             return failure("Crop download failed")
         }
+
+        val derivedTileCount = precomputeLowZoomTiles(surveyId, candidates, phaseProgress)
+        phaseProgress(
+            workDataOf(
+                KEY_DONE to 0,
+                KEY_TOTAL to 0,
+                KEY_PHASE to PHASE_FINALISING,
+            ),
+        )
 
         val builder =
             Data
@@ -589,12 +616,13 @@ class PreDownloadOrchestrator(
     private suspend fun precomputeLowZoomTiles(
         surveyId: Long,
         candidates: List<PreDownloadTargetCandidate>,
+        progress: suspend (Data) -> Unit,
     ): Int =
         withContext(ioDispatcher) {
             val minZoom = LowZoomTileCompositor.MIN_ZOOM
             val sourceZoom = LowZoomTileCompositor.SOURCE_ZOOM
             var written = 0
-            candidates.forEach { candidate ->
+            candidates.forEachIndexed { index, candidate ->
                 for (zoom in minZoom until sourceZoom) {
                     lowZoomCompositor
                         .parentTiles(
@@ -625,6 +653,13 @@ class PreDownloadOrchestrator(
                             }
                         }
                 }
+                progress(
+                    workDataOf(
+                        KEY_DONE to index + 1,
+                        KEY_TOTAL to candidates.size,
+                        KEY_PHASE to PHASE_FINALISING,
+                    ),
+                )
             }
             written
         }
@@ -823,9 +858,12 @@ class PreDownloadOrchestrator(
         const val KEY_DONE = "done"
         const val KEY_TOTAL = "total"
         const val KEY_PHASE = "phase"
+        const val KEY_PHASE_INDEX = "phaseIndex"
+        const val KEY_PHASE_COUNT = "phaseCount"
         const val PHASE_SATELLITE = "satellite"
         const val PHASE_TILES = "tiles"
         const val PHASE_CROPS = "crops"
+        const val PHASE_FINALISING = "finalising"
 
         private const val LOG_TAG = "PreDownloadOrchestrator"
         private const val TILE_CONCURRENCY = 6

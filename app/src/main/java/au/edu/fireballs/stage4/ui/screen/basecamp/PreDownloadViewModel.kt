@@ -23,6 +23,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -49,6 +50,8 @@ sealed interface PreDownloadUiState {
         val done: Int,
         val total: Int,
         val phase: String,
+        val phaseIndex: Int,
+        val phaseCount: Int,
     ) : PreDownloadUiState
 
     data class Done(
@@ -98,6 +101,10 @@ class PreDownloadViewModel
             observeJob?.cancel()
             observeJob = null
             viewModelScope.launch {
+                if (reattachToActiveDownload()) {
+                    return@launch
+                }
+                _uiState.value = PreDownloadUiState.Idle
                 claimRepository.refreshClaimsToRoom(surveyId)
                 val claimed = claimRepository.countActiveClaimedCandidates(surveyId)
                 val isStale = isLocalDataStale(surveyId)
@@ -132,6 +139,29 @@ class PreDownloadViewModel
             }
         }
 
+        private suspend fun reattachToActiveDownload(): Boolean {
+            val workName = PreDownloadWorkManager.UNIQUE_WORK_NAME
+            val active =
+                preDownloadWorkManager
+                    .getWorkInfosForUniqueWorkFlow(workName)
+                    .firstOrNull()
+                    .orEmpty()
+                    .firstOrNull {
+                        it.state == WorkInfo.State.ENQUEUED ||
+                            it.state == WorkInfo.State.RUNNING
+                    }
+            if (active == null) {
+                return false
+            }
+            observeJob =
+                viewModelScope.launch {
+                    preDownloadWorkManager
+                        .getWorkInfosForUniqueWorkFlow(workName)
+                        .collect { infos -> infos.firstOrNull()?.let { handleWorkInfo(it) } }
+                }
+            return true
+        }
+
         fun startDownload() {
             val currentSurveyId = surveyId
             if (currentSurveyId < 0L) return
@@ -148,7 +178,7 @@ class PreDownloadViewModel
                         ),
                     ).build()
             preDownloadWorkManager.enqueueUniqueWork(
-                uniqueWorkName = uniqueWorkName(currentSurveyId),
+                uniqueWorkName = PreDownloadWorkManager.UNIQUE_WORK_NAME,
                 existingWorkPolicy = ExistingWorkPolicy.REPLACE,
                 request = request,
             )
@@ -166,7 +196,7 @@ class PreDownloadViewModel
             if (currentSurveyId < 0L) return
             observeJob?.cancel()
             observeJob = null
-            preDownloadWorkManager.cancelUniqueWork(uniqueWorkName(currentSurveyId))
+            preDownloadWorkManager.cancelUniqueWork(PreDownloadWorkManager.UNIQUE_WORK_NAME)
             _uiState.value = PreDownloadUiState.Cancelled
         }
 
@@ -180,6 +210,16 @@ class PreDownloadViewModel
                             phase =
                                 info.progress.getString(PreDownloadOrchestrator.KEY_PHASE)
                                     ?: "",
+                            phaseIndex =
+                                info.progress.getInt(
+                                    PreDownloadOrchestrator.KEY_PHASE_INDEX,
+                                    0,
+                                ),
+                            phaseCount =
+                                info.progress.getInt(
+                                    PreDownloadOrchestrator.KEY_PHASE_COUNT,
+                                    0,
+                                ),
                         )
 
                 WorkInfo.State.SUCCEEDED -> {
@@ -313,7 +353,4 @@ class PreDownloadViewModel
                 "%.1f %s".format(value, units[unit])
             }
         }
-
-        private fun uniqueWorkName(surveyId: Long): String =
-            PreDownloadWorkManager.UNIQUE_WORK_PREFIX + surveyId
     }

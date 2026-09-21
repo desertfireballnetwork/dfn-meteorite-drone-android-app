@@ -353,7 +353,7 @@ class Stage4MapViewModel
                         combine(
                             networkStateRepository.networkState,
                             preDownloadWorkManager.getWorkInfosForUniqueWorkFlow(
-                                PreDownloadWorkManager.UNIQUE_WORK_PREFIX + surveyId,
+                                PreDownloadWorkManager.UNIQUE_WORK_NAME,
                             ),
                         ) { network, workInfos ->
                             val downloading =
