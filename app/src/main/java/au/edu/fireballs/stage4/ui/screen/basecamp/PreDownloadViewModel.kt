@@ -7,7 +7,6 @@ import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkInfo
 import au.edu.fireballs.stage4.data.repository.ClaimRepository
-import au.edu.fireballs.stage4.data.repository.OfflineWorkingSetRepository
 import au.edu.fireballs.stage4.data.repository.PreDownloadPreflightResult
 import au.edu.fireballs.stage4.data.repository.PreDownloadSpaceEstimate
 import au.edu.fireballs.stage4.data.repository.PreDownloadStoragePreflight
@@ -79,17 +78,12 @@ class PreDownloadViewModel
     @Inject
     constructor(
         private val claimRepository: ClaimRepository,
-        private val workingSetRepository: OfflineWorkingSetRepository,
         private val stage4Repository: Stage4Repository,
         private val bufferRadiusRepository: BufferRadiusRepository,
         private val geotiffRadiusRepository: GeotiffRadiusRepository,
         private val preflight: PreDownloadStoragePreflight,
         private val preDownloadWorkManager: PreDownloadWorkManager,
     ) : ViewModel() {
-        private val _workingSetState =
-            MutableStateFlow<WorkingSetUiState>(WorkingSetUiState.None)
-        val workingSetState: StateFlow<WorkingSetUiState> = _workingSetState.asStateFlow()
-
         private val _uiState = MutableStateFlow<PreDownloadUiState>(PreDownloadUiState.Idle)
         val uiState: StateFlow<PreDownloadUiState> = _uiState.asStateFlow()
 
@@ -104,15 +98,6 @@ class PreDownloadViewModel
             observeJob?.cancel()
             observeJob = null
             viewModelScope.launch {
-                when (val active = workingSetRepository.activeReplacement()) {
-                    null -> _workingSetState.value = WorkingSetUiState.None
-                    else ->
-                        _workingSetState.value =
-                            WorkingSetUiState.ResumeAvailable(
-                                manifestId = active.manifestId,
-                                missingCount = active.missingCount,
-                            )
-                }
                 claimRepository.refreshClaimsToRoom(surveyId)
                 val claimed = claimRepository.countActiveClaimedCandidates(surveyId)
                 val isStale = isLocalDataStale(surveyId)
@@ -160,34 +145,6 @@ class PreDownloadViewModel
                             bufferMeters = bufferMeters,
                             geotiffRadiusMeters = geotiffRadiusMeters,
                             manifestId = null,
-                        ),
-                    ).build()
-            preDownloadWorkManager.enqueueUniqueWork(
-                uniqueWorkName = uniqueWorkName(currentSurveyId),
-                existingWorkPolicy = ExistingWorkPolicy.REPLACE,
-                request = request,
-            )
-            observeJob?.cancel()
-            observeJob =
-                viewModelScope.launch {
-                    preDownloadWorkManager
-                        .getWorkInfoByIdFlow(request.id)
-                        .collect { info -> info?.let { handleWorkInfo(it) } }
-                }
-        }
-
-        fun resumeReplacement(manifestId: String) {
-            val currentSurveyId = surveyId
-            if (currentSurveyId < 0L) return
-            val request =
-                OneTimeWorkRequestBuilder<PreDownloadWorker>()
-                    .setInputData(
-                        PreDownloadWorkManager.inputData(
-                            surveyId = currentSurveyId,
-                            bufferMeters = bufferRadiusRepository.getBufferRadiusMeters(),
-                            geotiffRadiusMeters =
-                                geotiffRadiusRepository.getRadiusMeters(),
-                            manifestId = manifestId,
                         ),
                     ).build()
             preDownloadWorkManager.enqueueUniqueWork(
