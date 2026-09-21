@@ -4,8 +4,11 @@ import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import au.edu.fireballs.stage4.data.local.Stage4Database
+import au.edu.fireballs.stage4.data.repository.SelectedSurveyRepository
 import au.edu.fireballs.stage4.data.tiles.OfflineRegionWrapper
 import au.edu.fireballs.stage4.data.tiles.TileStore
+import io.mockk.coEvery
+import io.mockk.mockk
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runCurrent
@@ -32,6 +35,7 @@ class AccountManagerTest {
     private lateinit var cookieJar: PersistentCookieJar
     private lateinit var offlineRegionWrapper: OfflineRegionWrapper
     private lateinit var accountManager: AccountManager
+    private lateinit var selectedSurveyRepository: SelectedSurveyRepository
 
     private val testDispatcher = UnconfinedTestDispatcher()
     private val testUrl: HttpUrl = "https://example.com/".toHttpUrl()
@@ -65,6 +69,9 @@ class AccountManagerTest {
         offlineRegionWrapper = mock(OfflineRegionWrapper::class.java)
         answerPurgeWith(Result.success(Unit))
 
+        selectedSurveyRepository = mockk()
+        coEvery { selectedSurveyRepository.clear() } returns Unit
+
         accountManager =
             AccountManager(
                 cookieJar = cookieJar,
@@ -72,6 +79,7 @@ class AccountManagerTest {
                 database = database,
                 tileStore = TileStore(File.createTempFile("am-tiles", "").parentFile),
                 offlineRegionWrapper = offlineRegionWrapper,
+                selectedSurveyRepository = selectedSurveyRepository,
                 ioDispatcher = testDispatcher,
             )
     }

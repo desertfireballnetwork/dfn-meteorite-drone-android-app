@@ -1,7 +1,11 @@
 package au.edu.fireballs.stage4.data.remote
 
+import au.edu.fireballs.stage4.data.repository.SelectedSurveyRepository
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
+import io.mockk.coEvery
+import io.mockk.coVerify
+import io.mockk.mockk
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
 import okhttp3.CookieJar
@@ -24,6 +28,7 @@ class AuthRepositoryTest {
     private lateinit var authRepository: AuthRepository
     private lateinit var cookieJar: CookieJar
     private lateinit var baseUrl: HttpUrl
+    private lateinit var selectedSurveyRepository: SelectedSurveyRepository
     private val testDispatcher = UnconfinedTestDispatcher()
 
     @Before
@@ -65,7 +70,16 @@ class AuthRepositoryTest {
                 .build()
 
         val authService = retrofit.create(AuthService::class.java)
-        authRepository = AuthRepository(authService, cookieJar, baseUrl, testDispatcher)
+        selectedSurveyRepository = mockk()
+        coEvery { selectedSurveyRepository.setUsername(any()) } returns Unit
+        authRepository =
+            AuthRepository(
+                authService,
+                cookieJar,
+                baseUrl,
+                selectedSurveyRepository,
+                testDispatcher,
+            )
     }
 
     @After
@@ -92,6 +106,7 @@ class AuthRepositoryTest {
             val result = authRepository.login("testuser", "correctpassword")
 
             assertTrue(result is AuthResult.Success)
+            coVerify { selectedSurveyRepository.setUsername("testuser") }
 
             val getRequest = mockWebServer.takeRequest()
             assertEquals("/accounts/login/", getRequest.path)

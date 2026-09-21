@@ -54,6 +54,7 @@ class SettingsViewModelTest {
     private lateinit var accountManager: AccountManager
     private lateinit var selectedSurveyRepository: SelectedSurveyRepository
     private val syncStatus = MutableStateFlow<DurableSyncStatus>(DurableSyncStatus.Idle)
+    private val usernameFlow = MutableStateFlow<String?>(null)
 
     @Before
     fun setUp() {
@@ -69,6 +70,7 @@ class SettingsViewModelTest {
         coEvery { syncStatusSource.status } returns syncStatus
         accountManager = mockk()
         selectedSurveyRepository = mockk()
+        coEvery { selectedSurveyRepository.username } returns usernameFlow
     }
 
     @After
@@ -507,6 +509,22 @@ class SettingsViewModelTest {
             viewModel.onLogoutCancelled()
             assertFalse(viewModel.uiState.value.showLogoutConfirmation)
             coVerify(exactly = 0) { accountManager.logout() }
+        }
+
+    @Test
+    fun `username is observed from repository and updates UI state`() =
+        runTest {
+            coEvery { storageCoordinator.snapshot() } returns snapshot()
+            usernameFlow.value = "initial_user"
+            val viewModel = createEnteredViewModel()
+            advanceUntilIdle()
+
+            assertEquals("initial_user", viewModel.uiState.value.username)
+
+            usernameFlow.value = "updated_user"
+            advanceUntilIdle()
+
+            assertEquals("updated_user", viewModel.uiState.value.username)
         }
 
     private fun createEnteredViewModel() =

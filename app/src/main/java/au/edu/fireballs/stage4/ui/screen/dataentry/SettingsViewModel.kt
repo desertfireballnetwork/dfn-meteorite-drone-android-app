@@ -65,6 +65,7 @@ data class SettingsUiState(
     val clear: SettingsClearUiState = SettingsClearUiState(),
     val isLoggingOut: Boolean = false,
     val showLogoutConfirmation: Boolean = false,
+    val username: String? = null,
 )
 
 @HiltViewModel
@@ -99,6 +100,15 @@ class SettingsViewModel
         init {
             observeStorageMutations()
             observeClearGating()
+            observeUsername()
+        }
+
+        private fun observeUsername() {
+            viewModelScope.launch {
+                selectedSurveyRepository.username.collect { name ->
+                    _uiState.update { it.copy(username = name) }
+                }
+            }
         }
 
         fun load() {

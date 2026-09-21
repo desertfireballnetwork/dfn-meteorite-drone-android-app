@@ -314,8 +314,14 @@ internal fun SettingsContent(
             if (uiState.isLoggingOut) {
                 CircularProgressIndicator(modifier = Modifier.size(24.dp))
             } else {
+                val logoutText =
+                    if (uiState.username != null) {
+                        "Logout (${uiState.username})"
+                    } else {
+                        "Logout"
+                    }
                 Text(
-                    text = "Logout",
+                    text = logoutText,
                     color = MaterialTheme.colorScheme.error,
                 )
             }
