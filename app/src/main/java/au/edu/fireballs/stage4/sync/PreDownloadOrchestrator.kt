@@ -20,7 +20,6 @@ import au.edu.fireballs.stage4.data.repository.PreDownloadTargetKey
 import au.edu.fireballs.stage4.data.repository.PreDownloadTargetPlanner
 import au.edu.fireballs.stage4.data.repository.PreDownloadTargetSet
 import au.edu.fireballs.stage4.data.repository.ReplacementBeginResult
-import au.edu.fireballs.stage4.data.repository.ReplacementClassification
 import au.edu.fireballs.stage4.data.repository.ReplacementCompletionResult
 import au.edu.fireballs.stage4.data.repository.ReplacementPruneResult
 import au.edu.fireballs.stage4.data.repository.ReplacementTarget
@@ -99,7 +98,6 @@ class PreDownloadOrchestrator(
     suspend fun run(
         surveyId: Long,
         bufferMeters: Float,
-        manifestId: String? = null,
         progress: suspend (Data) -> Unit,
     ): PreDownloadOutcome {
         val locallyCachedTask = surveyDao.getById(surveyId)?.latestTaskCreated
@@ -153,7 +151,6 @@ class PreDownloadOrchestrator(
                     bufferMeters,
                     replacementRequired,
                     sourceVersion,
-                    manifestId,
                     progress,
                 )
             } else {
@@ -163,7 +160,6 @@ class PreDownloadOrchestrator(
                         bufferMeters,
                         replacementRequired,
                         sourceVersion,
-                        manifestId,
                         progress,
                     )
                 }
@@ -182,7 +178,6 @@ class PreDownloadOrchestrator(
         bufferMeters: Float,
         forceRefresh: Boolean,
         sourceVersion: String,
-        manifestId: String?,
         progress: suspend (Data) -> Unit,
     ): PreDownloadOutcome {
         val candidates = buildCandidates(surveyId)
@@ -221,62 +216,50 @@ class PreDownloadOrchestrator(
                     },
             )
 
-        val activeManifestId = manifestId ?: UUID.randomUUID().toString()
+        val activeManifestId = UUID.randomUUID().toString()
+        val inspected = workingSetRepository.inspectTarget(targetSet)
+        val replacementTarget =
+            ReplacementTarget(
+                surveyId = surveyId,
+                sourceVersion = sourceVersion,
+                radiusMetres = satelliteRadius,
+                minZoom = PreDownloadTargetPlanner.SATELLITE_MIN_ZOOM,
+                maxZoom = PreDownloadTargetPlanner.SATELLITE_MAX_ZOOM,
+                candidateCount = candidates.size,
+            )
         val classification =
-            if (manifestId == null) {
-                val inspected = workingSetRepository.inspectTarget(targetSet)
-                val target =
-                    ReplacementTarget(
-                        surveyId = surveyId,
-                        sourceVersion = sourceVersion,
-                        radiusMetres = satelliteRadius,
-                        minZoom = PreDownloadTargetPlanner.SATELLITE_MIN_ZOOM,
-                        maxZoom = PreDownloadTargetPlanner.SATELLITE_MAX_ZOOM,
-                        candidateCount = candidates.size,
+            when (
+                val begin =
+                    workingSetRepository.beginReplacement(
+                        replacementTarget,
+                        inspected,
+                        activeManifestId,
                     )
-                when (
-                    val begin =
-                        workingSetRepository.beginReplacement(target, inspected, activeManifestId)
-                ) {
-                    is ReplacementBeginResult.ConflictingReplacement ->
-                        return failureWithCode(
-                            CODE_REPLACEMENT_CONFLICT,
-                            "Another replacement is in progress",
-                        )
+            ) {
+                is ReplacementBeginResult.ConflictingReplacement ->
+                    return failureWithCode(
+                        CODE_REPLACEMENT_CONFLICT,
+                        "Another replacement is in progress",
+                    )
 
-                    is ReplacementBeginResult.Started -> {
-                        when (workingSetRepository.pruneObsolete(begin.session)) {
-                            is ReplacementPruneResult.LocalDeletionFailed ->
-                                return failureWithCode(
-                                    CODE_REPLACEMENT_FAILED,
-                                    "Failed to remove obsolete content",
-                                )
+                is ReplacementBeginResult.Started -> {
+                    when (workingSetRepository.pruneObsolete(begin.session)) {
+                        is ReplacementPruneResult.LocalDeletionFailed ->
+                            return failureWithCode(
+                                CODE_REPLACEMENT_FAILED,
+                                "Failed to remove obsolete content",
+                            )
 
-                            ReplacementPruneResult.ManifestUnavailable ->
-                                return failureWithCode(
-                                    CODE_REPLACEMENT_FAILED,
-                                    "Replacement manifest unavailable",
-                                )
+                        ReplacementPruneResult.ManifestUnavailable ->
+                            return failureWithCode(
+                                CODE_REPLACEMENT_FAILED,
+                                "Replacement manifest unavailable",
+                            )
 
-                            is ReplacementPruneResult.Completed -> Unit
-                        }
-                        inspected
+                        is ReplacementPruneResult.Completed -> Unit
                     }
+                    inspected
                 }
-            } else {
-                val resumed =
-                    workingSetRepository.resume(manifestId)
-                        ?: return failureWithCode(
-                            CODE_REPLACEMENT_FAILED,
-                            "Replacement not found",
-                        )
-                ReplacementClassification(
-                    retained = emptySet(),
-                    missing = resumed.session.missing,
-                    obsolete = emptySet(),
-                    clearCommands = emptyList(),
-                    confidentlyDeletableBytes = 0L,
-                )
             }
 
         val missing = classification.missing
@@ -333,7 +316,6 @@ class PreDownloadOrchestrator(
                 cropTotal = cropTotal,
                 reDownloadRecommended = forceRefresh,
                 progress = progress,
-                manifestId = activeManifestId,
             )
         if (outcome !is PreDownloadOutcome.Success) {
             return outcome
@@ -396,7 +378,6 @@ class PreDownloadOrchestrator(
         cropTotal: Int,
         reDownloadRecommended: Boolean,
         progress: suspend (Data) -> Unit,
-        manifestId: String?,
     ): PreDownloadOutcome {
         val phases =
             buildList {
@@ -468,7 +449,6 @@ class PreDownloadOrchestrator(
         val builder =
             Data
                 .Builder()
-                .putString(KEY_MANIFEST_ID, manifestId)
                 .putLong(KEY_BUNDLE_ID, 0L)
                 .putInt(KEY_TILE_COUNT, tileCount + derivedTileCount)
                 .putInt(KEY_CROP_COUNT, cropCount)
@@ -845,7 +825,6 @@ class PreDownloadOrchestrator(
         const val CODE_REPLACEMENT_CONFLICT = "REPLACEMENT_CONFLICT"
         const val CODE_REPLACEMENT_FAILED = "REPLACEMENT_FAILED"
         const val CODE_SATELLITE_FAILED = "SATELLITE_DOWNLOAD_FAILED"
-        const val KEY_MANIFEST_ID = "manifestId"
         const val TILE_KIND_SOURCE = "SOURCE"
         const val TILE_FORMAT_GEOTIFF = "geotiff"
         const val KEY_BUNDLE_ID = "bundleId"

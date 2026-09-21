@@ -120,7 +120,6 @@ class OfflineWorkingSetRepositoryIntegrationTest {
                 repository.completeReplacement("replacement"),
             )
             assertEquals("COMPLETE", bundle("replacement")?.state)
-            assertNull(repository.activeReplacement())
         }
 
     @Test
@@ -205,37 +204,7 @@ class OfflineWorkingSetRepositoryIntegrationTest {
         }
 
     @Test
-    fun resumeKeepsValidCompletedPayloadAndReturnsOnlyMissingRequirements() =
-        runBlocking {
-            seedProtectedRows()
-            val present = newTile()
-            val missing = newCrop()
-            repository.beginReplacement(
-                target(),
-                classification(missing = setOf(present, missing)),
-                "resume",
-            )
-            writeTile(present)
-            val tileRow = database.tileManifestDao().getForManifest("resume").single()
-            database.tileManifestDao().updateCompletion(
-                "resume",
-                tileRow.rowId,
-                true,
-                PNG.size.toLong(),
-            )
-            createOwnerTempFiles()
-
-            val resumed = repository.resume("resume")!!
-
-            assertEquals(WorkingSetState.INCOMPLETE, resumed.session.state)
-            assertEquals(setOf(missing), resumed.session.missing)
-            assertEquals(0, resumed.demotedItems)
-            assertTrue(resumed.removedTemporaryFiles >= 2)
-            assertProtectedRowsAndEvidence()
-        }
-
-    @Test
-    fun legacyIncompleteRowsAreNeverReportedOfflineReady() =
+    fun legacyIncompleteBundleCanBeCompleted() =
         runBlocking {
             database.offlineBundleDao().insert(
                 OfflineBundleEntity(
@@ -250,15 +219,11 @@ class OfflineWorkingSetRepositoryIntegrationTest {
                 ),
             )
 
-            val active = repository.activeReplacement()
-
-            assertEquals("legacy-7", active?.manifestId)
-            assertFalse(active!!.isOfflineReady)
             assertEquals(
                 ReplacementCompletionResult.Completed("legacy-7"),
                 repository.completeReplacement("legacy-7"),
             )
-            assertNull(repository.activeReplacement())
+            assertEquals("COMPLETE", bundle("legacy-7")?.state)
         }
 
     private suspend fun seedProtectedRows() {

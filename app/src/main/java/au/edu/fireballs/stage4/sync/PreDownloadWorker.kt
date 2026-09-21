@@ -49,7 +49,6 @@ class PreDownloadWorker
         @IoDispatcher private val ioDispatcher: CoroutineDispatcher,
     ) : CoroutineWorker(appContext, params) {
         override suspend fun doWork(): Result {
-            val manifestId = inputData.getString(KEY_MANIFEST_ID)
             val surveyId = inputData.getLong(KEY_SURVEY_ID, -1L)
             if (surveyId < 0L) {
                 return Result.failure()
@@ -86,7 +85,7 @@ class PreDownloadWorker
                 )
             return when (
                 val outcome =
-                    orchestrator.run(surveyId, bufferMeters, manifestId) { setProgress(it) }
+                    orchestrator.run(surveyId, bufferMeters) { setProgress(it) }
             ) {
                 is PreDownloadOutcome.Success -> Result.success(outcome.outputData)
                 is PreDownloadOutcome.Failure -> Result.failure(outcome.outputData)
@@ -94,7 +93,6 @@ class PreDownloadWorker
         }
 
         companion object {
-            const val KEY_MANIFEST_ID = "manifestId"
             const val KEY_SURVEY_ID = "surveyId"
             const val KEY_BUFFER_METERS = "bufferMeters"
             const val KEY_GEOTIFF_RADIUS_METERS = "geotiffRadiusMeters"

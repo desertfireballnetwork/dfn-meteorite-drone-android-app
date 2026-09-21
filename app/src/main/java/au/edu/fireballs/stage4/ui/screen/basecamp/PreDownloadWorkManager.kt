@@ -19,7 +19,6 @@ interface PreDownloadWorkManager {
             surveyId: Long,
             bufferMeters: Float,
             geotiffRadiusMeters: Float,
-            manifestId: String? = null,
         ): Data =
             Data
                 .Builder()
@@ -28,8 +27,7 @@ interface PreDownloadWorkManager {
                 .putFloat(
                     PreDownloadWorker.KEY_GEOTIFF_RADIUS_METERS,
                     geotiffRadiusMeters,
-                ).putString(PreDownloadWorker.KEY_MANIFEST_ID, manifestId)
-                .build()
+                ).build()
     }
 
     fun enqueueUniqueWork(

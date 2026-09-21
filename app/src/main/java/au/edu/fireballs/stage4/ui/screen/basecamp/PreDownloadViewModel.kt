@@ -174,7 +174,6 @@ class PreDownloadViewModel
                             surveyId = currentSurveyId,
                             bufferMeters = bufferMeters,
                             geotiffRadiusMeters = geotiffRadiusMeters,
-                            manifestId = null,
                         ),
                     ).build()
             preDownloadWorkManager.enqueueUniqueWork(

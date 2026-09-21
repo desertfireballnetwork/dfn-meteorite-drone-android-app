@@ -307,9 +307,6 @@ class PreDownloadWorkerTest {
                 "Repository owns persistence (no legacy bundle insert)",
                 offlineBundleDao.inserted.isEmpty(),
             )
-            assertFalse(
-                output.getString(PreDownloadOrchestrator.KEY_MANIFEST_ID).isNullOrEmpty(),
-            )
         }
 
     @Test
