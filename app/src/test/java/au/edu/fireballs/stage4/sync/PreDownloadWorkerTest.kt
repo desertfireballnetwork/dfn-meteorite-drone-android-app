@@ -45,6 +45,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import okhttp3.MediaType
 import okhttp3.MediaType.Companion.toMediaType
@@ -881,6 +882,111 @@ class PreDownloadWorkerTest {
                 "Expected underlying cause in message but got " +
                     output.getString(PreDownloadOrchestrator.KEY_ERROR),
                 output.getString(PreDownloadOrchestrator.KEY_ERROR)?.contains("boom") == true,
+            )
+        }
+
+    @Test
+    fun satellitePhaseReportsTileProgressBeforeCompletion() =
+        runTest {
+            val candidateDao = FakeCandidateDao(listOf(candidate(1L, 0.0, 0.0)))
+            val claimDao = FakeClaimDao()
+            val surveyDao = FakeSurveyDao(latestTaskCreated = null)
+            val tileStore = TileStore(Files.createTempDirectory("tiles").toFile())
+
+            val stage4Service = mock(Stage4Service::class.java)
+            `when`(stage4Service.getClaims(SURVEY_ID.toString(), true))
+                .thenReturn(
+                    ListClaimsResponseDto(
+                        listOf(
+                            ClaimDto(
+                                inferenceResultId = 1L,
+                                userId = 2L,
+                                username = "me",
+                                claimedAt = "2026-01-01T00:00:00Z",
+                                isMe = true,
+                            ),
+                        ),
+                    ),
+                )
+            val claimRepository =
+                ClaimRepository(
+                    stage4Service,
+                    claimDao,
+                    testDispatcher,
+                )
+
+            val stage4Repository = mock(Stage4Repository::class.java)
+            `when`(stage4Repository.fetchLatestTaskCreated(SURVEY_ID)).thenReturn(null)
+
+            val tileService = mock(TileService::class.java)
+            `when`(
+                tileService.getCandidateTile(
+                    anyLong(),
+                    anyLong(),
+                    anyInt(),
+                    anyInt(),
+                    anyInt(),
+                ),
+            ).thenReturn(
+                Response.success(
+                    byteArrayOf(1, 2, 3).toResponseBody("image/png".toMediaType()),
+                ),
+            )
+            `when`(tileService.getCandidateCrop(anyLong()))
+                .thenReturn(
+                    Response.success(
+                        validJpeg.toResponseBody("image/jpeg".toMediaType()),
+                    ),
+                )
+
+            val offlineManagerWrapper = mock(OfflineManagerWrapper::class.java)
+            doAnswer { invocation ->
+                val progressCb = invocation.getArgument<(Double) -> Unit>(3)
+                val completionCb =
+                    invocation.getArgument<(Result<Unit>) -> Unit>(4)
+                progressCb(0.5)
+                completionCb(Result.success(Unit))
+            }.`when`(offlineManagerWrapper)
+                .splitAndDownload(
+                    any(),
+                    any(),
+                    any(),
+                    any(),
+                    any(),
+                )
+
+            val orchestrator =
+                PreDownloadOrchestrator(
+                    claimRepository = claimRepository,
+                    stage4Repository = stage4Repository,
+                    workingSetRepository = workingSetRepository,
+                    candidateDao = candidateDao,
+                    claimDao = claimDao,
+                    surveyDao = surveyDao,
+                    tileStore = tileStore,
+                    lowZoomCompositor = noOpCompositor,
+                    tileService = tileService,
+                    offlineManagerWrapper = offlineManagerWrapper,
+                    candidateImageRepository = candidateImageRepository,
+                    geotiffRadiusRepository = geotiffRadiusRepository,
+                    satelliteRegionStore = satelliteRegionStore,
+                    ioDispatcher = testDispatcher,
+                )
+
+            val progressUpdates = mutableListOf<Data>()
+            orchestrator.run(SURVEY_ID, BUFFER_METERS) { progressUpdates.add(it) }
+            advanceUntilIdle()
+
+            val satelliteDone =
+                progressUpdates
+                    .filter {
+                        it.getString(PreDownloadOrchestrator.KEY_PHASE) ==
+                            PreDownloadOrchestrator.PHASE_SATELLITE
+                    }.map { it.getInt(PreDownloadOrchestrator.KEY_DONE, -1) }
+
+            assertTrue(
+                "Expected satellite progress to advance above 0 mid-phase, got $satelliteDone",
+                satelliteDone.any { it > 0 },
             )
         }
 

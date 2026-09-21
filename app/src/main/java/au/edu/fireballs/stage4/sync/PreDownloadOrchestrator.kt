@@ -309,9 +309,11 @@ class PreDownloadOrchestrator(
                     ) in missing
                 }.map { SatelliteWork(it.bbox, it.signature) }
         val satelliteTotal = satelliteWork.size
+        val satelliteTileTotal =
+            satelliteWork.sumOf { work -> estimateSatelliteTiles(work.bbox) }.toInt()
         val tileTotal = candidateTiles.sumOf { it.tiles.size }
         val cropTotal = missingCrops.size
-        val total = satelliteTotal + tileTotal + cropTotal
+        val total = satelliteTileTotal + tileTotal + cropTotal
 
         val outcome =
             acquireSurvey(
@@ -321,6 +323,7 @@ class PreDownloadOrchestrator(
                 candidateTiles = candidateTiles,
                 missingCrops = missingCrops,
                 satelliteTotal = satelliteTotal,
+                satelliteTileTotal = satelliteTileTotal,
                 tileTotal = tileTotal,
                 total = total,
                 reDownloadRecommended = forceRefresh,
@@ -383,6 +386,7 @@ class PreDownloadOrchestrator(
         candidateTiles: List<CandidateTiles>,
         missingCrops: List<PreDownloadTargetCandidate>,
         satelliteTotal: Int,
+        satelliteTileTotal: Int,
         tileTotal: Int,
         total: Int,
         reDownloadRecommended: Boolean,
@@ -411,7 +415,7 @@ class PreDownloadOrchestrator(
             downloadTiles(
                 surveyId = surveyId,
                 candidateTiles = candidateTiles,
-                offset = satelliteTotal,
+                offset = satelliteTileTotal,
                 total = total,
                 progress = progress,
             )
@@ -423,7 +427,7 @@ class PreDownloadOrchestrator(
             downloadCrops(
                 surveyId = surveyId,
                 candidates = missingCrops,
-                offset = satelliteTotal + tileTotal,
+                offset = satelliteTileTotal + tileTotal,
                 total = total,
                 progress = progress,
             )
@@ -472,8 +476,9 @@ class PreDownloadOrchestrator(
         total: Int,
         progress: suspend (Data) -> Unit,
     ): Result<Unit> {
-        var completed = 0
+        var completedTiles = 0
         for (region in regions) {
+            val clusterTiles = estimateSatelliteTiles(region.bbox).toInt()
             val result =
                 suspendCancellableCoroutine<Result<Unit>> { cont ->
                     val scope = CoroutineScope(cont.context)
@@ -481,11 +486,13 @@ class PreDownloadOrchestrator(
                         clusterBboxes = listOf(region.bbox),
                         minZoom = PreDownloadTargetPlanner.SATELLITE_MIN_ZOOM,
                         maxZoom = PreDownloadTargetPlanner.SATELLITE_MAX_ZOOM,
-                        progressCb = { p ->
+                        progressCb = { fraction ->
                             scope.launch {
                                 progress(
                                     workDataOf(
-                                        KEY_DONE to completed + p.toInt(),
+                                        KEY_DONE to
+                                            completedTiles +
+                                            (fraction.coerceIn(0.0, 1.0) * clusterTiles).toInt(),
                                         KEY_TOTAL to total,
                                         KEY_PHASE to PHASE_SATELLITE,
                                     ),
@@ -509,10 +516,10 @@ class PreDownloadOrchestrator(
                 )
             }
             satelliteRegionStore.markCompleted(surveyId, region.signature)
-            completed++
+            completedTiles += clusterTiles
             progress(
                 workDataOf(
-                    KEY_DONE to completed,
+                    KEY_DONE to completedTiles,
                     KEY_TOTAL to total,
                     KEY_PHASE to PHASE_SATELLITE,
                 ),
@@ -520,6 +527,18 @@ class PreDownloadOrchestrator(
         }
         return Result.success(Unit)
     }
+
+    private fun estimateSatelliteTiles(bbox: Bbox): Long =
+        (PreDownloadTargetPlanner.SATELLITE_MIN_ZOOM..PreDownloadTargetPlanner.SATELLITE_MAX_ZOOM)
+            .sumOf { zoom ->
+                TileMath.tileCountForBbox(
+                    bbox.minLat,
+                    bbox.minLon,
+                    bbox.maxLat,
+                    bbox.maxLon,
+                    zoom,
+                )
+            }
 
     private suspend fun downloadTiles(
         surveyId: Long,

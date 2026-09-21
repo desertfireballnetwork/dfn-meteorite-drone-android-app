@@ -67,6 +67,7 @@ import au.edu.fireballs.stage4.domain.model.GeoCoordinate
 import au.edu.fireballs.stage4.domain.model.Stage4Candidate
 import au.edu.fireballs.stage4.domain.model.Stage4State
 import au.edu.fireballs.stage4.domain.model.resolveInitialCamera
+import au.edu.fireballs.stage4.sync.PreDownloadOrchestrator
 import au.edu.fireballs.stage4.ui.screen.stage4map.BaseMarker
 import au.edu.fireballs.stage4.ui.screen.stage4map.LayerToggleState
 import au.edu.fireballs.stage4.ui.screen.stage4map.marker.CandidateMarkers
@@ -418,8 +419,14 @@ private fun DownloadDialog(
                     }
 
                     is PreDownloadUiState.Running -> {
+                        val percent =
+                            if (state.total > 0) {
+                                (state.done.toLong() * 100 / state.total).toInt()
+                            } else {
+                                0
+                            }
                         Column {
-                            Text(text = state.phase)
+                            Text(text = downloadPhaseLabel(state.phase))
                             Spacer(modifier = Modifier.height(8.dp))
                             LinearProgressIndicator(
                                 progress = {
@@ -433,7 +440,7 @@ private fun DownloadDialog(
                             )
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
-                                text = "${state.done} / ${state.total}",
+                                text = "$percent%",
                                 style = MaterialTheme.typography.bodySmall,
                             )
                         }
@@ -950,3 +957,11 @@ private fun ClaimRow(
         }
     }
 }
+
+private fun downloadPhaseLabel(phase: String): String =
+    when (phase) {
+        PreDownloadOrchestrator.PHASE_SATELLITE -> "Downloading satellite imagery"
+        PreDownloadOrchestrator.PHASE_TILES -> "Downloading survey tiles"
+        PreDownloadOrchestrator.PHASE_CROPS -> "Downloading candidate crops"
+        else -> "Downloading"
+    }

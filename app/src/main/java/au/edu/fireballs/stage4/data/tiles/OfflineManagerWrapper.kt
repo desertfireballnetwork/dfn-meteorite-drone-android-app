@@ -35,7 +35,8 @@ class OfflineManagerWrapper(
 
         fun report(progress: Double) {
             val clamped = progress.coerceIn(0.0, 1.0)
-            if (clamped > lastProgress) {
+            val stepped = (clamped * PROGRESS_STEPS).toInt()
+            if (stepped > (lastProgress * PROGRESS_STEPS).toInt()) {
                 lastProgress = clamped
                 progressCb(clamped)
             }
@@ -196,5 +197,6 @@ class OfflineManagerWrapper(
 
     companion object {
         private const val MAX_ZOOM = 22
+        private const val PROGRESS_STEPS = 100.0
     }
 }
