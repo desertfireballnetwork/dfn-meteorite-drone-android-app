@@ -2,6 +2,7 @@ package au.edu.fireballs.stage4.data.tiles
 
 import android.os.Handler
 import android.os.Looper
+import au.edu.fireballs.stage4.BuildConfig
 import com.mapbox.bindgen.Expected
 import com.mapbox.bindgen.ExpectedFactory
 import com.mapbox.maps.AsyncOperationResultCallback
@@ -72,8 +73,11 @@ interface OfflineRegionSource {
 
 class MapboxOfflineRegionSource(
     private val mainHandler: Handler = Handler(Looper.getMainLooper()),
+    private val maxMapboxTiles: Long = BuildConfig.MAPBOX_MAX_TILES_DEVICE,
 ) : OfflineRegionSource {
-    private val manager by lazy { OfflineRegionManager() }
+    private val manager by lazy {
+        OfflineRegionManager().also { it.setOfflineMapboxTileCountLimit(maxMapboxTiles) }
+    }
 
     override fun createOfflineRegion(
         definition: OfflineRegionTilePyramidDefinition,
