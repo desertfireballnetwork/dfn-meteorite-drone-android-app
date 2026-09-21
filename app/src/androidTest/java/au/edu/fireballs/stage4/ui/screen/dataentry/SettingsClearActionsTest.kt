@@ -237,6 +237,9 @@ class SettingsClearActionsTest {
                         pendingCategory = null
                         onCancel()
                     },
+                    onLogoutRequested = {},
+                    onLogoutConfirmed = {},
+                    onLogoutCancelled = {},
                 )
             }
         }

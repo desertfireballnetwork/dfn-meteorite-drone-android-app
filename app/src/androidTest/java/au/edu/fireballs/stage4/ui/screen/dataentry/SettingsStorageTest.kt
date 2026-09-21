@@ -198,6 +198,9 @@ class SettingsStorageTest {
                         onClearRequested = {},
                         onClearConfirmed = {},
                         onClearCancelled = {},
+                        onLogoutRequested = {},
+                        onLogoutConfirmed = {},
+                        onLogoutCancelled = {},
                         modifier = Modifier.height(360.dp),
                     )
                 }
@@ -227,6 +230,9 @@ class SettingsStorageTest {
                     onClearRequested = {},
                     onClearConfirmed = {},
                     onClearCancelled = {},
+                    onLogoutRequested = {},
+                    onLogoutConfirmed = {},
+                    onLogoutCancelled = {},
                 )
             }
         }

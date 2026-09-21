@@ -28,7 +28,7 @@ class AccountManager
             return cookies.any { it.name == "sessionid" && it.value.isNotBlank() }
         }
 
-        suspend fun logout() =
+        suspend fun logout(): Unit =
             withContext(ioDispatcher) {
                 var primary: Throwable? = null
                 try {

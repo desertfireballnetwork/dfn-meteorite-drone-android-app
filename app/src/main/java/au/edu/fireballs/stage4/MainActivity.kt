@@ -385,7 +385,13 @@ private fun MainScaffold(
             }
 
             composable("settings") {
-                SettingsScreen()
+                SettingsScreen(
+                    onLogout = {
+                        navController.navigate("login") {
+                            popUpTo(0) { inclusive = true }
+                        }
+                    },
+                )
             }
         }
     }
