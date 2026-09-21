@@ -5,19 +5,24 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -35,6 +40,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavDestination.Companion.hierarchy
@@ -79,6 +85,7 @@ class MainActivity : ComponentActivity() {
                     color = MaterialTheme.colorScheme.background,
                 ) {
                     val authState by viewModel.authState.collectAsStateWithLifecycle()
+                    val selectedSurveyId by viewModel.selectedSurveyId.collectAsStateWithLifecycle()
 
                     when (authState) {
                         is AuthState.Loading -> {
@@ -92,10 +99,12 @@ class MainActivity : ComponentActivity() {
 
                         is AuthState.Resolved -> {
                             val startDestination =
-                                if ((authState as AuthState.Resolved).isSignedIn) {
-                                    "map"
-                                } else {
+                                if (!(authState as AuthState.Resolved).isSignedIn) {
                                     "login"
+                                } else if (selectedSurveyId == null) {
+                                    "surveys"
+                                } else {
+                                    "map"
                                 }
 
                             val navController = rememberNavController()
@@ -130,11 +139,35 @@ private data class TopLevelDestination(
 
 private val topLevelDestinations =
     listOf(
+        TopLevelDestination("surveys", "Surveys", Icons.AutoMirrored.Filled.List),
         TopLevelDestination("map", "Map", Icons.Filled.Map),
         TopLevelDestination("sync", "Sync", Icons.Filled.Sync),
         TopLevelDestination("basecamp", "Basecamp", Icons.Outlined.Home),
         TopLevelDestination("settings", "Settings", Icons.Filled.Settings),
     )
+
+@Composable
+private fun NoSurveySelectedPlaceholder(navController: NavHostController) {
+    Column(
+        modifier = Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(text = "No survey selected", style = MaterialTheme.typography.titleMedium)
+        Spacer(modifier = Modifier.height(16.dp))
+        Button(onClick = {
+            navController.navigate("surveys") {
+                popUpTo(navController.graph.findStartDestination().id) {
+                    saveState = true
+                }
+                launchSingleTop = true
+                restoreState = true
+            }
+        }) {
+            Text(text = "Go to Surveys")
+        }
+    }
+}
 
 internal fun pendingSyncRoute(selectedSurveyId: Long?): String =
     if (selectedSurveyId != null) "sync" else "map"
@@ -256,7 +289,37 @@ private fun MainScaffold(
                     viewModel = loginViewModel,
                     onLoginSuccess = {
                         viewModel.resumeSyncIfNeeded()
+                        navController.navigate("surveys") {
+                            popUpTo(0) { inclusive = true }
+                        }
+                    },
+                )
+            }
+
+            composable("surveys") {
+                SurveyListScreen(
+                    onSurveySelected = { id ->
+                        viewModel.setSelectedSurvey(id)
                         navController.navigate("map") {
+                            popUpTo(navController.graph.findStartDestination().id) {
+                                saveState = true
+                            }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    },
+                    onBasecampSelected = { id ->
+                        viewModel.setSelectedSurvey(id)
+                        navController.navigate("basecamp") {
+                            popUpTo(navController.graph.findStartDestination().id) {
+                                saveState = true
+                            }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    },
+                    onAuthExpired = {
+                        navController.navigate("login") {
                             popUpTo(0) { inclusive = true }
                         }
                     },
@@ -285,26 +348,7 @@ private fun MainScaffold(
                         pendingCount = pendingBadgeCount,
                     )
                 } else {
-                    SurveyListScreen(
-                        onSurveySelected = { id ->
-                            viewModel.setSelectedSurvey(id)
-                        },
-                        onBasecampSelected = { id ->
-                            viewModel.setSelectedSurvey(id)
-                            navController.navigate("basecamp") {
-                                popUpTo(navController.graph.findStartDestination().id) {
-                                    saveState = true
-                                }
-                                launchSingleTop = true
-                                restoreState = true
-                            }
-                        },
-                        onAuthExpired = {
-                            navController.navigate("login") {
-                                popUpTo(0) { inclusive = true }
-                            }
-                        },
-                    )
+                    NoSurveySelectedPlaceholder(navController)
                 }
             }
 
@@ -336,26 +380,7 @@ private fun MainScaffold(
                         },
                     )
                 } else {
-                    SurveyListScreen(
-                        onSurveySelected = { id ->
-                            viewModel.setSelectedSurvey(id)
-                            navController.navigate("map") {
-                                popUpTo(navController.graph.findStartDestination().id) {
-                                    saveState = true
-                                }
-                                launchSingleTop = true
-                                restoreState = true
-                            }
-                        },
-                        onBasecampSelected = { id ->
-                            viewModel.setSelectedSurvey(id)
-                        },
-                        onAuthExpired = {
-                            navController.navigate("login") {
-                                popUpTo(0) { inclusive = true }
-                            }
-                        },
-                    )
+                    NoSurveySelectedPlaceholder(navController)
                 }
             }
 

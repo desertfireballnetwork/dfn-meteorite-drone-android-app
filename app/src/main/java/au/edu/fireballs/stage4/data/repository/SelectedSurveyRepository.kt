@@ -26,6 +26,12 @@ class SelectedSurveyRepository
             }
         }
 
+        suspend fun clear() {
+            dataStore.edit { preferences ->
+                preferences.remove(KEY_SELECTED_SURVEY_ID)
+            }
+        }
+
         companion object {
             val KEY_SELECTED_SURVEY_ID = longPreferencesKey("selected_survey_id")
         }
