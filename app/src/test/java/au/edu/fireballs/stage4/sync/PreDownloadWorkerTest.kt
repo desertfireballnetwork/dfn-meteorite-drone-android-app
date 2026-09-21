@@ -245,6 +245,7 @@ class PreDownloadWorkerTest {
                     any(),
                     any(),
                     any(),
+                    any(),
                 )
 
             val orchestrator =
@@ -282,6 +283,7 @@ class PreDownloadWorkerTest {
 
             verify(stage4Service).getClaims(SURVEY_ID.toString(), true)
             verify(offlineManagerWrapper).splitAndDownload(
+                any(),
                 any(),
                 any(),
                 any(),
@@ -374,6 +376,7 @@ class PreDownloadWorkerTest {
                 completionCb(Result.success(Unit))
             }.`when`(offlineManagerWrapper)
                 .splitAndDownload(
+                    any(),
                     any(),
                     any(),
                     any(),
@@ -544,7 +547,7 @@ class PreDownloadWorkerTest {
             doAnswer { invocation ->
                 invocation.getArgument<(Result<Unit>) -> Unit>(4)(Result.success(Unit))
             }.`when`(offlineManagerWrapper)
-                .splitAndDownload(any(), any(), any(), any(), any())
+                .splitAndDownload(any(), any(), any(), any(), any(), any())
 
             val orchestrator =
                 PreDownloadOrchestrator(
@@ -769,6 +772,7 @@ class PreDownloadWorkerTest {
                     any(),
                     any(),
                     any(),
+                    any(),
                 )
 
             val orchestrator =
@@ -845,6 +849,7 @@ class PreDownloadWorkerTest {
                 )
             }.`when`(offlineManagerWrapper)
                 .splitAndDownload(
+                    any(),
                     any(),
                     any(),
                     any(),
@@ -953,6 +958,7 @@ class PreDownloadWorkerTest {
                     any(),
                     any(),
                     any(),
+                    any(),
                 )
 
             val orchestrator =
@@ -1049,6 +1055,7 @@ class PreDownloadWorkerTest {
                     any(),
                     any(),
                     any(),
+                    any(),
                 )
 
             val orchestrator =
@@ -1128,7 +1135,7 @@ class PreDownloadWorkerTest {
                     invocation.getArgument<(Result<Unit>) -> Unit>(4)
                 completionCb(Result.success(Unit))
             }.`when`(offlineManagerWrapper)
-                .splitAndDownload(any(), any(), any(), any(), any())
+                .splitAndDownload(any(), any(), any(), any(), any(), any())
 
             val orchestrator =
                 PreDownloadOrchestrator(
@@ -1228,6 +1235,7 @@ class PreDownloadWorkerTest {
                     any(),
                     any(),
                     any(),
+                    any(),
                 )
 
             val orchestrator =
@@ -1319,6 +1327,7 @@ class PreDownloadWorkerTest {
                 completionCb(Result.success(Unit))
             }.`when`(offlineManagerWrapper)
                 .splitAndDownload(
+                    any(),
                     any(),
                     any(),
                     any(),

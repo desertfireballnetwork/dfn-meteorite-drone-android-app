@@ -92,6 +92,7 @@ class PreDownloadOrchestrator(
     private data class SatelliteWork(
         val bbox: Bbox,
         val signature: String,
+        val target: PreDownloadTargetKey.Satellite,
     )
 
     @Suppress("TooGenericExceptionCaught", "SwallowedException")
@@ -301,19 +302,23 @@ class PreDownloadOrchestrator(
             }
         val satelliteWork =
             satelliteTargets
-                .filter { target ->
-                    PreDownloadTargetKey.Satellite(
-                        surveyId,
-                        sourceVersion,
-                        target.signature,
-                    ) in missing
-                }.map { SatelliteWork(it.bbox, it.signature) }
+                .map { target ->
+                    SatelliteWork(
+                        bbox = target.bbox,
+                        signature = target.signature,
+                        target =
+                            PreDownloadTargetKey.Satellite(
+                                surveyId,
+                                sourceVersion,
+                                target.signature,
+                            ),
+                    )
+                }.filter { it.target in missing }
         val satelliteTotal = satelliteWork.size
         val satelliteTileTotal =
             satelliteWork.sumOf { work -> estimateSatelliteTiles(work.bbox) }.toInt()
         val tileTotal = candidateTiles.sumOf { it.tiles.size }
         val cropTotal = missingCrops.size
-        val total = satelliteTileTotal + tileTotal + cropTotal
 
         val outcome =
             acquireSurvey(
@@ -325,7 +330,7 @@ class PreDownloadOrchestrator(
                 satelliteTotal = satelliteTotal,
                 satelliteTileTotal = satelliteTileTotal,
                 tileTotal = tileTotal,
-                total = total,
+                cropTotal = cropTotal,
                 reDownloadRecommended = forceRefresh,
                 progress = progress,
                 manifestId = activeManifestId,
@@ -388,7 +393,7 @@ class PreDownloadOrchestrator(
         satelliteTotal: Int,
         satelliteTileTotal: Int,
         tileTotal: Int,
-        total: Int,
+        cropTotal: Int,
         reDownloadRecommended: Boolean,
         progress: suspend (Data) -> Unit,
         manifestId: String?,
@@ -398,7 +403,7 @@ class PreDownloadOrchestrator(
                 downloadSatellite(
                     surveyId = surveyId,
                     regions = satelliteWork,
-                    total = total,
+                    total = satelliteTileTotal,
                     progress = progress,
                 )
             if (satelliteResult.isFailure) {
@@ -415,8 +420,7 @@ class PreDownloadOrchestrator(
             downloadTiles(
                 surveyId = surveyId,
                 candidateTiles = candidateTiles,
-                offset = satelliteTileTotal,
-                total = total,
+                total = tileTotal,
                 progress = progress,
             )
         if (tileCount != tileTotal) {
@@ -427,8 +431,7 @@ class PreDownloadOrchestrator(
             downloadCrops(
                 surveyId = surveyId,
                 candidates = missingCrops,
-                offset = satelliteTileTotal + tileTotal,
-                total = total,
+                total = cropTotal,
                 progress = progress,
             )
         if (cropCount != missingCrops.size) {
@@ -504,6 +507,7 @@ class PreDownloadOrchestrator(
                                 cont.resume(result)
                             }
                         },
+                        target = region.target,
                     )
                 }
             if (result.isFailure) {
@@ -543,7 +547,6 @@ class PreDownloadOrchestrator(
     private suspend fun downloadTiles(
         surveyId: Long,
         candidateTiles: List<CandidateTiles>,
-        offset: Int,
         total: Int,
         progress: suspend (Data) -> Unit,
     ): Int {
@@ -570,7 +573,7 @@ class PreDownloadOrchestrator(
                             }
                             progress(
                                 workDataOf(
-                                    KEY_DONE to offset + completed,
+                                    KEY_DONE to completed,
                                     KEY_TOTAL to total,
                                     KEY_PHASE to PHASE_TILES,
                                 ),
@@ -703,7 +706,6 @@ class PreDownloadOrchestrator(
     private suspend fun downloadCrops(
         surveyId: Long,
         candidates: List<PreDownloadTargetCandidate>,
-        offset: Int,
         total: Int,
         progress: suspend (Data) -> Unit,
     ): Int {
@@ -725,7 +727,7 @@ class PreDownloadOrchestrator(
                         }
                         progress(
                             workDataOf(
-                                KEY_DONE to offset + completed,
+                                KEY_DONE to completed,
                                 KEY_TOTAL to total,
                                 KEY_PHASE to PHASE_CROPS,
                             ),

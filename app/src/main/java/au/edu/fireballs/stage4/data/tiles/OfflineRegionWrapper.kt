@@ -219,20 +219,33 @@ class OfflineRegionWrapper(
                     }
                     return@getOfflineRegions
                 }
-            val owned = regions.firstOrNull { decodeOfflineRegionTarget(it.metadata) == target }
-            if (owned == null) {
+            val owned = regions.filter { decodeOfflineRegionTarget(it.metadata) == target }
+            if (owned.isEmpty()) {
                 mainHandler.post { callback(OfflineRegionPurgeResult.ConfirmedAbsent(target)) }
                 return@getOfflineRegions
             }
-            owned.purge { purgeResult ->
-                mainHandler.post {
-                    callback(
+            var remaining = owned.size
+            var failed = false
+            owned.forEach { region ->
+                region.purge { purgeResult ->
+                    mainHandler.post {
                         if (purgeResult.isError) {
-                            retryableFailure(target, OfflineRegionFailureCategory.PURGE_REJECTED)
-                        } else {
-                            OfflineRegionPurgeResult.Purged(target)
-                        },
-                    )
+                            failed = true
+                        }
+                        remaining--
+                        if (remaining == 0) {
+                            callback(
+                                if (failed) {
+                                    retryableFailure(
+                                        target,
+                                        OfflineRegionFailureCategory.PURGE_REJECTED,
+                                    )
+                                } else {
+                                    OfflineRegionPurgeResult.Purged(target)
+                                },
+                            )
+                        }
+                    }
                 }
             }
         }

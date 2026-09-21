@@ -1,6 +1,7 @@
 package au.edu.fireballs.stage4.data.tiles
 
 import au.edu.fireballs.stage4.BuildConfig
+import au.edu.fireballs.stage4.data.repository.PreDownloadTargetKey
 import java.util.concurrent.atomic.AtomicBoolean
 
 class OfflineManagerWrapper(
@@ -13,6 +14,7 @@ class OfflineManagerWrapper(
         maxZoom: Int,
         progressCb: (Double) -> Unit,
         completionCb: (Result<Unit>) -> Unit,
+        target: PreDownloadTargetKey.Satellite,
     ) {
         validateZooms(minZoom, maxZoom)
         require(maxTilesPerRegion > 0) { "maxTilesPerRegion must be positive" }
@@ -103,6 +105,7 @@ class OfflineManagerWrapper(
                             }
                         }
                     },
+                    target,
                 )
             }
         }

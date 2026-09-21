@@ -2,6 +2,7 @@ package au.edu.fireballs.stage4.data.tiles
 
 import android.os.Handler
 import android.os.Looper
+import au.edu.fireballs.stage4.data.repository.PreDownloadTargetKey
 import com.mapbox.bindgen.ExpectedFactory
 import com.mapbox.maps.AsyncOperationResultCallback
 import com.mapbox.maps.OfflineRegionDownloadState
@@ -25,6 +26,8 @@ class OfflineManagerWrapperTest {
         var observer: OfflineRegionObserver? = null
         var purgeCount = 0
 
+        override var metadata: ByteArray? = null
+
         override fun setOfflineRegionObserver(observer: OfflineRegionObserver) {
             this.observer = observer
         }
@@ -33,6 +36,14 @@ class OfflineManagerWrapperTest {
 
         override fun purge(callback: AsyncOperationResultCallback) {
             purgeCount++
+            callback.run(ExpectedFactory.createNone())
+        }
+
+        override fun setMetadata(
+            metadata: ByteArray,
+            callback: AsyncOperationResultCallback,
+        ) {
+            this.metadata = metadata
             callback.run(ExpectedFactory.createNone())
         }
 
@@ -88,6 +99,13 @@ class OfflineManagerWrapperTest {
         shadowOf(Looper.getMainLooper()).idle()
     }
 
+    private fun satelliteTarget(): PreDownloadTargetKey.Satellite =
+        PreDownloadTargetKey.Satellite(
+            surveyId = 1L,
+            sourceVersion = "v1",
+            signature = "sig",
+        )
+
     @Test
     fun regionWithinCapDownloadsOnce() {
         val (wrapper, source) = build(maxTilesPerRegion = 100)
@@ -99,7 +117,9 @@ class OfflineManagerWrapperTest {
             maxZoom = 2,
             progressCb = {},
             completionCb = { completions.add(it) },
+            target = satelliteTarget(),
         )
+        idleMain()
         assertEquals(1, source.handles.size)
         source.handles[0].observer?.statusChanged(statusWith(10, 10))
         idleMain()
@@ -120,7 +140,9 @@ class OfflineManagerWrapperTest {
             maxZoom = 5,
             progressCb = {},
             completionCb = { completions.add(it) },
+            target = satelliteTarget(),
         )
+        idleMain()
         assertEquals(1, source.handles.size)
         source.handles[0].observer?.statusChanged(statusWith(200, 0))
         idleMain()
@@ -149,7 +171,9 @@ class OfflineManagerWrapperTest {
             maxZoom = 2,
             progressCb = {},
             completionCb = { completions.add(it) },
+            target = satelliteTarget(),
         )
+        idleMain()
         val error = mock(OfflineRegionError::class.java)
         `when`(error.message).thenReturn("boom")
         source.handles[0].observer?.errorOccurred(error)
@@ -157,6 +181,26 @@ class OfflineManagerWrapperTest {
 
         assertEquals(1, completions.size)
         assertTrue(completions.single().isFailure)
+    }
+
+    @Test
+    fun splitChildrenCarryOwnershipMetadata() {
+        val (wrapper, source) = build(maxTilesPerRegion = 100)
+        wrapper.splitAndDownload(
+            clusterBboxes = listOf(Bbox(-85.0, -180.0, 85.0, 180.0)),
+            minZoom = 5,
+            maxZoom = 5,
+            progressCb = {},
+            completionCb = {},
+            target = satelliteTarget(),
+        )
+        idleMain()
+
+        assertTrue(source.handles.isNotEmpty())
+        assertEquals(
+            satelliteTarget(),
+            decodeOfflineRegionTarget(source.handles[0].metadata),
+        )
     }
 
     @Test
@@ -169,6 +213,7 @@ class OfflineManagerWrapperTest {
                 maxZoom = 5,
                 progressCb = {},
                 completionCb = {},
+                target = satelliteTarget(),
             )
         }
     }
@@ -183,6 +228,7 @@ class OfflineManagerWrapperTest {
                 maxZoom = 5,
                 progressCb = {},
                 completionCb = {},
+                target = satelliteTarget(),
             )
         }
     }
@@ -197,6 +243,7 @@ class OfflineManagerWrapperTest {
                 maxZoom = 5,
                 progressCb = {},
                 completionCb = {},
+                target = satelliteTarget(),
             )
         }
     }
