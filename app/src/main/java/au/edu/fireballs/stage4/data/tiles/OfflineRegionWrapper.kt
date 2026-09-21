@@ -84,14 +84,28 @@ class OfflineRegionWrapper(
         val definition =
             runCatching { definitionFactory(bbox, minZoom, maxZoom) }
                 .getOrElse { error ->
-                    operation.complete(Result.failure(error))
+                    operation.complete(
+                        Result.failure(
+                            IllegalStateException(
+                                "Failed to build offline region definition: ${error.message}",
+                                error,
+                            ),
+                        ),
+                    )
                     return
                 }
 
         source.createOfflineRegion(definition) { result ->
             val region =
                 result.getOrElse { error ->
-                    operation.complete(Result.failure(error))
+                    operation.complete(
+                        Result.failure(
+                            IllegalStateException(
+                                "Failed to create offline region: ${error.message}",
+                                error,
+                            ),
+                        ),
+                    )
                     return@createOfflineRegion
                 }
             operation.region = region
@@ -144,7 +158,9 @@ class OfflineRegionWrapper(
                 override fun errorOccurred(error: OfflineRegionError) {
                     operation.complete(
                         Result.failure(
-                            IllegalStateException(error.message),
+                            IllegalStateException(
+                                "Offline region error ${error.type}: ${error.message}",
+                            ),
                         ),
                     )
                 }

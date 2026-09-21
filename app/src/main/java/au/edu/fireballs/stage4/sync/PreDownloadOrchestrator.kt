@@ -1,5 +1,6 @@
 package au.edu.fireballs.stage4.sync
 
+import android.util.Log
 import androidx.work.Data
 import androidx.work.workDataOf
 import au.edu.fireballs.stage4.data.local.dao.CandidateDao
@@ -389,15 +390,20 @@ class PreDownloadOrchestrator(
         manifestId: String?,
     ): PreDownloadOutcome {
         if (satelliteWork.isNotEmpty()) {
-            val satelliteOk =
+            val satelliteResult =
                 downloadSatellite(
                     surveyId = surveyId,
                     regions = satelliteWork,
                     total = total,
                     progress = progress,
                 )
-            if (!satelliteOk) {
-                return failure("Satellite download failed")
+            if (satelliteResult.isFailure) {
+                val cause = satelliteResult.exceptionOrNull()
+                Log.w(LOG_TAG, "Satellite download failed", cause)
+                return failureWithCode(
+                    CODE_SATELLITE_FAILED,
+                    "Satellite download failed: ${cause?.message ?: "unknown cause"}",
+                )
             }
         }
 
@@ -465,7 +471,7 @@ class PreDownloadOrchestrator(
         regions: List<SatelliteWork>,
         total: Int,
         progress: suspend (Data) -> Unit,
-    ): Boolean {
+    ): Result<Unit> {
         var completed = 0
         for (region in regions) {
             val result =
@@ -498,7 +504,9 @@ class PreDownloadOrchestrator(
                 if (error != null && error.isStorageFull()) {
                     throw StorageFullException(error)
                 }
-                return false
+                return Result.failure(
+                    error ?: IllegalStateException("Satellite download failed"),
+                )
             }
             satelliteRegionStore.markCompleted(surveyId, region.signature)
             completed++
@@ -510,7 +518,7 @@ class PreDownloadOrchestrator(
                 ),
             )
         }
-        return true
+        return Result.success(Unit)
     }
 
     private suspend fun downloadTiles(
@@ -780,6 +788,7 @@ class PreDownloadOrchestrator(
         const val CODE_STORAGE_FULL_WHILE_WRITING = "STORAGE_FULL_WHILE_WRITING"
         const val CODE_REPLACEMENT_CONFLICT = "REPLACEMENT_CONFLICT"
         const val CODE_REPLACEMENT_FAILED = "REPLACEMENT_FAILED"
+        const val CODE_SATELLITE_FAILED = "SATELLITE_DOWNLOAD_FAILED"
         const val KEY_MANIFEST_ID = "manifestId"
         const val TILE_KIND_SOURCE = "SOURCE"
         const val TILE_FORMAT_GEOTIFF = "geotiff"
@@ -797,6 +806,7 @@ class PreDownloadOrchestrator(
         const val PHASE_TILES = "tiles"
         const val PHASE_CROPS = "crops"
 
+        private const val LOG_TAG = "PreDownloadOrchestrator"
         private const val TILE_CONCURRENCY = 6
         private const val MAX_TILE_ATTEMPTS = 3
         private const val READ_BUFFER_BYTES = 8 * 1024

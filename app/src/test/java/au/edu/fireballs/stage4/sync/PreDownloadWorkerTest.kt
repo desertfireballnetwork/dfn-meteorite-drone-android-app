@@ -801,6 +801,90 @@ class PreDownloadWorkerTest {
         }
 
     @Test
+    fun satelliteFailureSurfacesCauseInOutcome() =
+        runTest {
+            val candidateDao = FakeCandidateDao(listOf(candidate(1L, 0.0, 0.0)))
+            val claimDao = FakeClaimDao()
+            val surveyDao = FakeSurveyDao(latestTaskCreated = null)
+            val tileStore = TileStore(Files.createTempDirectory("tiles").toFile())
+
+            val stage4Service = mock(Stage4Service::class.java)
+            `when`(stage4Service.getClaims(SURVEY_ID.toString(), true))
+                .thenReturn(
+                    ListClaimsResponseDto(
+                        listOf(
+                            ClaimDto(
+                                inferenceResultId = 1L,
+                                userId = 2L,
+                                username = "me",
+                                claimedAt = "2026-01-01T00:00:00Z",
+                                isMe = true,
+                            ),
+                        ),
+                    ),
+                )
+            val claimRepository =
+                ClaimRepository(
+                    stage4Service,
+                    claimDao,
+                    testDispatcher,
+                )
+
+            val stage4Repository = mock(Stage4Repository::class.java)
+            `when`(stage4Repository.fetchLatestTaskCreated(SURVEY_ID)).thenReturn(null)
+
+            val offlineManagerWrapper = mock(OfflineManagerWrapper::class.java)
+            doAnswer { invocation ->
+                val completionCb =
+                    invocation.getArgument<(Result<Unit>) -> Unit>(4)
+                completionCb(
+                    Result.failure(
+                        IllegalStateException("Offline region error CONNECTION: boom"),
+                    ),
+                )
+            }.`when`(offlineManagerWrapper)
+                .splitAndDownload(
+                    any(),
+                    any(),
+                    any(),
+                    any(),
+                    any(),
+                )
+
+            val orchestrator =
+                PreDownloadOrchestrator(
+                    claimRepository = claimRepository,
+                    stage4Repository = stage4Repository,
+                    workingSetRepository = workingSetRepository,
+                    candidateDao = candidateDao,
+                    claimDao = claimDao,
+                    surveyDao = surveyDao,
+                    tileStore = tileStore,
+                    lowZoomCompositor = noOpCompositor,
+                    tileService = mock(TileService::class.java),
+                    offlineManagerWrapper = offlineManagerWrapper,
+                    candidateImageRepository = candidateImageRepository,
+                    geotiffRadiusRepository = geotiffRadiusRepository,
+                    satelliteRegionStore = satelliteRegionStore,
+                    ioDispatcher = testDispatcher,
+                )
+
+            val outcome = orchestrator.run(SURVEY_ID, BUFFER_METERS) {}
+
+            assertTrue("Expected failure but got $outcome", outcome is PreDownloadOutcome.Failure)
+            val output = (outcome as PreDownloadOutcome.Failure).outputData
+            assertEquals(
+                PreDownloadOrchestrator.CODE_SATELLITE_FAILED,
+                output.getString(PreDownloadOrchestrator.KEY_ERROR_CODE),
+            )
+            assertTrue(
+                "Expected underlying cause in message but got " +
+                    output.getString(PreDownloadOrchestrator.KEY_ERROR),
+                output.getString(PreDownloadOrchestrator.KEY_ERROR)?.contains("boom") == true,
+            )
+        }
+
+    @Test
     fun progressReachesTotalAfterExhaustedTileAndCropFailures() =
         runTest {
             val candidateDao = FakeCandidateDao(listOf(candidate(1L, 0.0, 0.0)))
