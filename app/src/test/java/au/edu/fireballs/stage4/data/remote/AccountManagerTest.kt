@@ -8,6 +8,7 @@ import au.edu.fireballs.stage4.data.repository.SelectedSurveyRepository
 import au.edu.fireballs.stage4.data.tiles.OfflineRegionWrapper
 import au.edu.fireballs.stage4.data.tiles.TileStore
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.mockk
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -157,6 +158,7 @@ class AccountManagerTest {
 
             assertFalse(accountManager.isSignedIn())
             assertTrue(cookieJar.loadForRequest(testUrl).isEmpty())
+            coVerify { selectedSurveyRepository.clear() }
         }
 
     @Test
@@ -178,6 +180,7 @@ class AccountManagerTest {
 
             assertTrue(logoutJob.isCompleted)
             verify(offlineRegionWrapper).purgeAllRegions(any())
+            coVerify { selectedSurveyRepository.clear() }
         }
 
     @Test
@@ -204,5 +207,6 @@ class AccountManagerTest {
             assertTrue(thrown is IllegalStateException)
             assertFalse(accountManager.isSignedIn())
             assertTrue(cookieJar.loadForRequest(testUrl).isEmpty())
+            coVerify { selectedSurveyRepository.clear() }
         }
 }

@@ -14,4 +14,8 @@
     <string name="survey_stage4_not_ready">Stage 4 not ready</string>
     <string name="survey_active_badge">Active survey</string>
     <string name="retry">Retry</string>
+
+    <!-- Main Navigation / Placeholders -->
+    <string name="no_survey_selected">No survey selected</string>
+    <string name="go_to_surveys">Go to Surveys</string>
 </resources>

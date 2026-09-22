@@ -40,6 +40,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -153,7 +154,10 @@ private fun NoSurveySelectedPlaceholder(navController: NavHostController) {
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text(text = "No survey selected", style = MaterialTheme.typography.titleMedium)
+        Text(
+            text = stringResource(R.string.no_survey_selected),
+            style = MaterialTheme.typography.titleMedium,
+        )
         Spacer(modifier = Modifier.height(16.dp))
         Button(onClick = {
             navController.navigate("surveys") {
@@ -164,7 +168,7 @@ private fun NoSurveySelectedPlaceholder(navController: NavHostController) {
                 restoreState = true
             }
         }) {
-            Text(text = "Go to Surveys")
+            Text(text = stringResource(R.string.go_to_surveys))
         }
     }
 }

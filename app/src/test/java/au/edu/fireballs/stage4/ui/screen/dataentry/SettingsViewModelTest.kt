@@ -468,7 +468,6 @@ class SettingsViewModelTest {
     fun `logout requested updates state and confirmed executes cleanup and event`() =
         runTest {
             coEvery { storageCoordinator.snapshot() } returns snapshot()
-            coEvery { selectedSurveyRepository.clear() } just runs
             coEvery { accountManager.logout() } just runs
             val viewModel = createEnteredViewModel()
             advanceUntilIdle()
@@ -488,7 +487,6 @@ class SettingsViewModelTest {
 
             advanceUntilIdle()
 
-            coVerify(exactly = 1) { selectedSurveyRepository.clear() }
             coVerify(exactly = 1) { accountManager.logout() }
             assertTrue(eventReceived.isCompleted)
             assertFalse(viewModel.uiState.value.isLoggingOut)
@@ -509,6 +507,31 @@ class SettingsViewModelTest {
             viewModel.onLogoutCancelled()
             assertFalse(viewModel.uiState.value.showLogoutConfirmation)
             coVerify(exactly = 0) { accountManager.logout() }
+        }
+
+    @Test
+    fun `logout failure still resets loading state and emits event`() =
+        runTest {
+            coEvery { storageCoordinator.snapshot() } returns snapshot()
+            coEvery { accountManager.logout() } throws RuntimeException("logout failed")
+            val viewModel = createEnteredViewModel()
+            advanceUntilIdle()
+
+            val eventReceived = CompletableDeferred<Unit>()
+            val job =
+                launch {
+                    viewModel.logoutEvent.collect { eventReceived.complete(Unit) }
+                }
+
+            viewModel.onLogoutConfirmed()
+            assertTrue(viewModel.uiState.value.isLoggingOut)
+
+            advanceUntilIdle()
+
+            assertFalse(viewModel.uiState.value.isLoggingOut)
+            assertTrue(eventReceived.isCompleted)
+
+            job.cancel()
         }
 
     @Test
