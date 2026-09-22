@@ -215,16 +215,9 @@ class SettingsViewModel
                 )
             }
             viewModelScope.launch {
-                try {
-                    selectedSurveyRepository.clear()
-                    accountManager.logout()
-                    _logoutEvent.emit(Unit)
-                } catch (_: Exception) {
-                    // Log error if needed, but still allow logout to proceed if possible
-                    // or show error message. For now just clear state.
-                } finally {
-                    _uiState.update { it.copy(isLoggingOut = false) }
-                }
+                runCatching { accountManager.logout() }
+                _logoutEvent.emit(Unit)
+                _uiState.update { it.copy(isLoggingOut = false) }
             }
         }
 
