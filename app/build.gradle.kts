@@ -97,6 +97,15 @@ android {
         }
     }
 
+    packaging {
+        resources {
+            excludes += "META-INF/LICENSE.md"
+            excludes += "META-INF/LICENSE-notice.md"
+            excludes += "META-INF/AL2.0"
+            excludes += "META-INF/LGPL2.1"
+        }
+    }
+
     testOptions {
         unitTests {
             isReturnDefaultValues = true
@@ -168,6 +177,7 @@ dependencies {
     androidTestImplementation(libs.junit)
     androidTestImplementation(libs.room.testing)
     androidTestImplementation(libs.okhttp.mockwebserver)
+    androidTestImplementation(libs.mockk.android)
 
     testImplementation(libs.androidx.test.core)
     testImplementation(libs.junit)
