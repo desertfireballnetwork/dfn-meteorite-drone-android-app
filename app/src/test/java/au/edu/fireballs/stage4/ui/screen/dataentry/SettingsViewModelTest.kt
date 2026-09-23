@@ -2,7 +2,9 @@ package au.edu.fireballs.stage4.ui.screen.dataentry
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import au.edu.fireballs.stage4.data.remote.AccountManager
 import au.edu.fireballs.stage4.data.repository.DurableSyncStatus
+import au.edu.fireballs.stage4.data.repository.SelectedSurveyRepository
 import au.edu.fireballs.stage4.data.repository.StorageClearCategory
 import au.edu.fireballs.stage4.data.repository.StorageClearRepository
 import au.edu.fireballs.stage4.data.repository.StorageClearResult
@@ -14,11 +16,15 @@ import au.edu.fireballs.stage4.data.tiles.BufferRadiusRepository
 import au.edu.fireballs.stage4.ui.util.UiText
 import io.mockk.coEvery
 import io.mockk.coVerify
+import io.mockk.just
 import io.mockk.mockk
+import io.mockk.runs
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
@@ -45,7 +51,10 @@ class SettingsViewModelTest {
     private lateinit var storageCoordinator: StorageCoordinator
     private lateinit var storageClearRepository: StorageClearRepository
     private lateinit var syncStatusSource: SyncStatusSource
+    private lateinit var accountManager: AccountManager
+    private lateinit var selectedSurveyRepository: SelectedSurveyRepository
     private val syncStatus = MutableStateFlow<DurableSyncStatus>(DurableSyncStatus.Idle)
+    private val usernameFlow = MutableStateFlow<String?>(null)
 
     @Before
     fun setUp() {
@@ -59,6 +68,9 @@ class SettingsViewModelTest {
         storageClearRepository = mockk()
         syncStatusSource = mockk()
         coEvery { syncStatusSource.status } returns syncStatus
+        accountManager = mockk()
+        selectedSurveyRepository = mockk()
+        coEvery { selectedSurveyRepository.username } returns usernameFlow
     }
 
     @After
@@ -281,6 +293,8 @@ class SettingsViewModelTest {
                     storageCoordinator,
                     storageClearRepository,
                     syncStatusSource,
+                    accountManager,
+                    selectedSurveyRepository,
                 )
             advanceUntilIdle()
             coVerify(exactly = 0) { storageCoordinator.snapshot() }
@@ -450,12 +464,100 @@ class SettingsViewModelTest {
             }
         }
 
+    @Test
+    fun `logout requested updates state and confirmed executes cleanup and event`() =
+        runTest {
+            coEvery { storageCoordinator.snapshot() } returns snapshot()
+            coEvery { accountManager.logout() } just runs
+            val viewModel = createEnteredViewModel()
+            advanceUntilIdle()
+
+            viewModel.onLogoutRequested()
+            assertTrue(viewModel.uiState.value.showLogoutConfirmation)
+
+            val eventReceived = CompletableDeferred<Unit>()
+            val job =
+                launch {
+                    viewModel.logoutEvent.collect { eventReceived.complete(Unit) }
+                }
+
+            viewModel.onLogoutConfirmed()
+            assertTrue(viewModel.uiState.value.isLoggingOut)
+            assertFalse(viewModel.uiState.value.showLogoutConfirmation)
+
+            advanceUntilIdle()
+
+            coVerify(exactly = 1) { accountManager.logout() }
+            assertTrue(eventReceived.isCompleted)
+            assertFalse(viewModel.uiState.value.isLoggingOut)
+
+            job.cancel()
+        }
+
+    @Test
+    fun `logout cancelled resets state`() =
+        runTest {
+            coEvery { storageCoordinator.snapshot() } returns snapshot()
+            val viewModel = createEnteredViewModel()
+            advanceUntilIdle()
+
+            viewModel.onLogoutRequested()
+            assertTrue(viewModel.uiState.value.showLogoutConfirmation)
+
+            viewModel.onLogoutCancelled()
+            assertFalse(viewModel.uiState.value.showLogoutConfirmation)
+            coVerify(exactly = 0) { accountManager.logout() }
+        }
+
+    @Test
+    fun `logout failure still resets loading state and emits event`() =
+        runTest {
+            coEvery { storageCoordinator.snapshot() } returns snapshot()
+            coEvery { accountManager.logout() } throws RuntimeException("logout failed")
+            val viewModel = createEnteredViewModel()
+            advanceUntilIdle()
+
+            val eventReceived = CompletableDeferred<Unit>()
+            val job =
+                launch {
+                    viewModel.logoutEvent.collect { eventReceived.complete(Unit) }
+                }
+
+            viewModel.onLogoutConfirmed()
+            assertTrue(viewModel.uiState.value.isLoggingOut)
+
+            advanceUntilIdle()
+
+            assertFalse(viewModel.uiState.value.isLoggingOut)
+            assertTrue(eventReceived.isCompleted)
+
+            job.cancel()
+        }
+
+    @Test
+    fun `username is observed from repository and updates UI state`() =
+        runTest {
+            coEvery { storageCoordinator.snapshot() } returns snapshot()
+            usernameFlow.value = "initial_user"
+            val viewModel = createEnteredViewModel()
+            advanceUntilIdle()
+
+            assertEquals("initial_user", viewModel.uiState.value.username)
+
+            usernameFlow.value = "updated_user"
+            advanceUntilIdle()
+
+            assertEquals("updated_user", viewModel.uiState.value.username)
+        }
+
     private fun createEnteredViewModel() =
         SettingsViewModel(
             radiusRepository,
             storageCoordinator,
             storageClearRepository,
             syncStatusSource,
+            accountManager,
+            selectedSurveyRepository,
         ).also {
             it.refreshStorage()
         }

@@ -2,6 +2,7 @@ package au.edu.fireballs.stage4.data.remote
 
 import androidx.annotation.StringRes
 import au.edu.fireballs.stage4.R
+import au.edu.fireballs.stage4.data.repository.SelectedSurveyRepository
 import au.edu.fireballs.stage4.di.IoDispatcher
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.withContext
@@ -30,6 +31,7 @@ class AuthRepository
         private val authService: AuthService,
         private val cookieJar: CookieJar,
         private val baseUrl: HttpUrl,
+        private val selectedSurveyRepository: SelectedSurveyRepository,
         @param:IoDispatcher private val ioDispatcher: CoroutineDispatcher,
     ) {
         @Suppress("TooGenericExceptionCaught", "SwallowedException")
@@ -88,6 +90,7 @@ class AuthRepository
                             isRedirectToExpectedTarget &&
                             receivedNewSessionCookie
                         ) {
+                            selectedSurveyRepository.setUsername(username)
                             AuthResult.Success
                         } else if (code == 200) { // 200 OK with HTML error message
                             val responseHtml = loginResponse.body()?.string().orEmpty()

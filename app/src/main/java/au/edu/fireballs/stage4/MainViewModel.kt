@@ -72,7 +72,13 @@ class MainViewModel
         private val _authState = MutableStateFlow<AuthState>(AuthState.Loading)
         val authState: StateFlow<AuthState> = _authState.asStateFlow()
 
-        val selectedSurveyId: Flow<Long?> = selectedSurveyRepository.selectedSurveyId
+        val selectedSurveyId: StateFlow<Long?> =
+            selectedSurveyRepository.selectedSurveyId
+                .stateIn(
+                    viewModelScope,
+                    SharingStarted.Eagerly,
+                    null,
+                )
 
         val globalSyncState: StateFlow<GlobalSyncState> =
             syncStatusSource.status
@@ -89,6 +95,12 @@ class MainViewModel
         fun setSelectedSurvey(surveyId: Long) {
             viewModelScope.launch {
                 selectedSurveyRepository.set(surveyId)
+            }
+        }
+
+        fun clearSelectedSurvey() {
+            viewModelScope.launch {
+                selectedSurveyRepository.clear()
             }
         }
 

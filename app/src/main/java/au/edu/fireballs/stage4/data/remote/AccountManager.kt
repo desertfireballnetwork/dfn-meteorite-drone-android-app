@@ -1,6 +1,7 @@
 package au.edu.fireballs.stage4.data.remote
 
 import au.edu.fireballs.stage4.data.local.Stage4Database
+import au.edu.fireballs.stage4.data.repository.SelectedSurveyRepository
 import au.edu.fireballs.stage4.data.tiles.OfflineRegionWrapper
 import au.edu.fireballs.stage4.data.tiles.TileStore
 import au.edu.fireballs.stage4.di.IoDispatcher
@@ -21,6 +22,7 @@ class AccountManager
         private val database: Stage4Database,
         private val tileStore: TileStore,
         private val offlineRegionWrapper: OfflineRegionWrapper,
+        private val selectedSurveyRepository: SelectedSurveyRepository,
         @IoDispatcher private val ioDispatcher: CoroutineDispatcher,
     ) {
         fun isSignedIn(): Boolean {
@@ -28,7 +30,7 @@ class AccountManager
             return cookies.any { it.name == "sessionid" && it.value.isNotBlank() }
         }
 
-        suspend fun logout() =
+        suspend fun logout(): Unit =
             withContext(ioDispatcher) {
                 var primary: Throwable? = null
                 try {
@@ -45,10 +47,11 @@ class AccountManager
                     }
                 } finally {
                     val cleanups =
-                        listOf<() -> Unit>(
+                        listOf<suspend () -> Unit>(
                             { cookieJar.clear() },
                             { tileStore.deleteAll() },
                             { database.clearAllTables() },
+                            { selectedSurveyRepository.clear() },
                         )
                     cleanups.forEach { cleanup ->
                         runCatching { cleanup() }.exceptionOrNull()?.let { error ->
