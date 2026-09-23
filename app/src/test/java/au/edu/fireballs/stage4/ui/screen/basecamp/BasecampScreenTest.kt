@@ -136,8 +136,6 @@ class BasecampScreenTest {
         val preDownloadViewModel: PreDownloadViewModel = mock()
         whenever(preDownloadViewModel.uiState)
             .thenReturn(MutableStateFlow(PreDownloadUiState.Idle))
-        whenever(preDownloadViewModel.workingSetState)
-            .thenReturn(MutableStateFlow(WorkingSetUiState.None))
         kotlinx.coroutines.CoroutineScope(testDispatcher).launch {
             viewModel.uiState.collect {}
         }

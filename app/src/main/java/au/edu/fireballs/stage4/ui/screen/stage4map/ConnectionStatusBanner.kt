@@ -37,11 +37,11 @@ internal fun ConnectionStatusBanner(
             ConnectionBannerState.Offline ->
                 Triple(BANNER_OFFLINE_COLOR, BANNER_OFFLINE_CONTENT_COLOR, "Offline mode")
 
-            ConnectionBannerState.Downloading ->
+            is ConnectionBannerState.Downloading ->
                 Triple(
                     BANNER_DOWNLOADING_COLOR,
                     BANNER_DOWNLOADING_CONTENT_COLOR,
-                    "Downloading…",
+                    "${state.label}… ${state.percent}%",
                 )
         }
 
@@ -54,7 +54,7 @@ internal fun ConnectionStatusBanner(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Center,
         ) {
-            if (state == ConnectionBannerState.Downloading) {
+            if (state is ConnectionBannerState.Downloading) {
                 CircularProgressIndicator(
                     modifier = Modifier.size(14.dp),
                     strokeWidth = 2.dp,

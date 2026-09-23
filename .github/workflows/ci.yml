@@ -8,7 +8,7 @@ on:
 jobs:
   build:
     name: Build and verify
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, dfn-android]
     timeout-minutes: 60
     steps:
       - name: Checkout

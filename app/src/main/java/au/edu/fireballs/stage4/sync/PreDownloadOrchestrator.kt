@@ -1,5 +1,6 @@
 package au.edu.fireballs.stage4.sync
 
+import android.util.Log
 import androidx.work.Data
 import androidx.work.workDataOf
 import au.edu.fireballs.stage4.data.local.dao.CandidateDao
@@ -19,7 +20,6 @@ import au.edu.fireballs.stage4.data.repository.PreDownloadTargetKey
 import au.edu.fireballs.stage4.data.repository.PreDownloadTargetPlanner
 import au.edu.fireballs.stage4.data.repository.PreDownloadTargetSet
 import au.edu.fireballs.stage4.data.repository.ReplacementBeginResult
-import au.edu.fireballs.stage4.data.repository.ReplacementClassification
 import au.edu.fireballs.stage4.data.repository.ReplacementCompletionResult
 import au.edu.fireballs.stage4.data.repository.ReplacementPruneResult
 import au.edu.fireballs.stage4.data.repository.ReplacementTarget
@@ -91,13 +91,13 @@ class PreDownloadOrchestrator(
     private data class SatelliteWork(
         val bbox: Bbox,
         val signature: String,
+        val target: PreDownloadTargetKey.Satellite,
     )
 
     @Suppress("TooGenericExceptionCaught", "SwallowedException")
     suspend fun run(
         surveyId: Long,
         bufferMeters: Float,
-        manifestId: String? = null,
         progress: suspend (Data) -> Unit,
     ): PreDownloadOutcome {
         val locallyCachedTask = surveyDao.getById(surveyId)?.latestTaskCreated
@@ -151,7 +151,6 @@ class PreDownloadOrchestrator(
                     bufferMeters,
                     replacementRequired,
                     sourceVersion,
-                    manifestId,
                     progress,
                 )
             } else {
@@ -161,7 +160,6 @@ class PreDownloadOrchestrator(
                         bufferMeters,
                         replacementRequired,
                         sourceVersion,
-                        manifestId,
                         progress,
                     )
                 }
@@ -180,7 +178,6 @@ class PreDownloadOrchestrator(
         bufferMeters: Float,
         forceRefresh: Boolean,
         sourceVersion: String,
-        manifestId: String?,
         progress: suspend (Data) -> Unit,
     ): PreDownloadOutcome {
         val candidates = buildCandidates(surveyId)
@@ -219,62 +216,50 @@ class PreDownloadOrchestrator(
                     },
             )
 
-        val activeManifestId = manifestId ?: UUID.randomUUID().toString()
+        val activeManifestId = UUID.randomUUID().toString()
+        val inspected = workingSetRepository.inspectTarget(targetSet)
+        val replacementTarget =
+            ReplacementTarget(
+                surveyId = surveyId,
+                sourceVersion = sourceVersion,
+                radiusMetres = satelliteRadius,
+                minZoom = PreDownloadTargetPlanner.SATELLITE_MIN_ZOOM,
+                maxZoom = PreDownloadTargetPlanner.SATELLITE_MAX_ZOOM,
+                candidateCount = candidates.size,
+            )
         val classification =
-            if (manifestId == null) {
-                val inspected = workingSetRepository.inspectTarget(targetSet)
-                val target =
-                    ReplacementTarget(
-                        surveyId = surveyId,
-                        sourceVersion = sourceVersion,
-                        radiusMetres = satelliteRadius,
-                        minZoom = PreDownloadTargetPlanner.SATELLITE_MIN_ZOOM,
-                        maxZoom = PreDownloadTargetPlanner.SATELLITE_MAX_ZOOM,
-                        candidateCount = candidates.size,
+            when (
+                val begin =
+                    workingSetRepository.beginReplacement(
+                        replacementTarget,
+                        inspected,
+                        activeManifestId,
                     )
-                when (
-                    val begin =
-                        workingSetRepository.beginReplacement(target, inspected, activeManifestId)
-                ) {
-                    is ReplacementBeginResult.ConflictingReplacement ->
-                        return failureWithCode(
-                            CODE_REPLACEMENT_CONFLICT,
-                            "Another replacement is in progress",
-                        )
+            ) {
+                is ReplacementBeginResult.ConflictingReplacement ->
+                    return failureWithCode(
+                        CODE_REPLACEMENT_CONFLICT,
+                        "Another replacement is in progress",
+                    )
 
-                    is ReplacementBeginResult.Started -> {
-                        when (workingSetRepository.pruneObsolete(begin.session)) {
-                            is ReplacementPruneResult.LocalDeletionFailed ->
-                                return failureWithCode(
-                                    CODE_REPLACEMENT_FAILED,
-                                    "Failed to remove obsolete content",
-                                )
+                is ReplacementBeginResult.Started -> {
+                    when (workingSetRepository.pruneObsolete(begin.session)) {
+                        is ReplacementPruneResult.LocalDeletionFailed ->
+                            return failureWithCode(
+                                CODE_REPLACEMENT_FAILED,
+                                "Failed to remove obsolete content",
+                            )
 
-                            ReplacementPruneResult.ManifestUnavailable ->
-                                return failureWithCode(
-                                    CODE_REPLACEMENT_FAILED,
-                                    "Replacement manifest unavailable",
-                                )
+                        ReplacementPruneResult.ManifestUnavailable ->
+                            return failureWithCode(
+                                CODE_REPLACEMENT_FAILED,
+                                "Replacement manifest unavailable",
+                            )
 
-                            is ReplacementPruneResult.Completed -> Unit
-                        }
-                        inspected
+                        is ReplacementPruneResult.Completed -> Unit
                     }
+                    inspected
                 }
-            } else {
-                val resumed =
-                    workingSetRepository.resume(manifestId)
-                        ?: return failureWithCode(
-                            CODE_REPLACEMENT_FAILED,
-                            "Replacement not found",
-                        )
-                ReplacementClassification(
-                    retained = emptySet(),
-                    missing = resumed.session.missing,
-                    obsolete = emptySet(),
-                    clearCommands = emptyList(),
-                    confidentlyDeletableBytes = 0L,
-                )
             }
 
         val missing = classification.missing
@@ -300,17 +285,23 @@ class PreDownloadOrchestrator(
             }
         val satelliteWork =
             satelliteTargets
-                .filter { target ->
-                    PreDownloadTargetKey.Satellite(
-                        surveyId,
-                        sourceVersion,
-                        target.signature,
-                    ) in missing
-                }.map { SatelliteWork(it.bbox, it.signature) }
+                .map { target ->
+                    SatelliteWork(
+                        bbox = target.bbox,
+                        signature = target.signature,
+                        target =
+                            PreDownloadTargetKey.Satellite(
+                                surveyId,
+                                sourceVersion,
+                                target.signature,
+                            ),
+                    )
+                }.filter { it.target in missing }
         val satelliteTotal = satelliteWork.size
+        val satelliteTileTotal =
+            satelliteWork.sumOf { work -> estimateSatelliteTiles(work.bbox) }.toInt()
         val tileTotal = candidateTiles.sumOf { it.tiles.size }
         val cropTotal = missingCrops.size
-        val total = satelliteTotal + tileTotal + cropTotal
 
         val outcome =
             acquireSurvey(
@@ -320,11 +311,11 @@ class PreDownloadOrchestrator(
                 candidateTiles = candidateTiles,
                 missingCrops = missingCrops,
                 satelliteTotal = satelliteTotal,
+                satelliteTileTotal = satelliteTileTotal,
                 tileTotal = tileTotal,
-                total = total,
+                cropTotal = cropTotal,
                 reDownloadRecommended = forceRefresh,
                 progress = progress,
-                manifestId = activeManifestId,
             )
         if (outcome !is PreDownloadOutcome.Success) {
             return outcome
@@ -382,22 +373,46 @@ class PreDownloadOrchestrator(
         candidateTiles: List<CandidateTiles>,
         missingCrops: List<PreDownloadTargetCandidate>,
         satelliteTotal: Int,
+        satelliteTileTotal: Int,
         tileTotal: Int,
-        total: Int,
+        cropTotal: Int,
         reDownloadRecommended: Boolean,
         progress: suspend (Data) -> Unit,
-        manifestId: String?,
     ): PreDownloadOutcome {
+        val phases =
+            buildList {
+                if (satelliteWork.isNotEmpty()) add(PHASE_SATELLITE)
+                if (tileTotal > 0) add(PHASE_TILES)
+                if (cropTotal > 0) add(PHASE_CROPS)
+                add(PHASE_FINALISING)
+            }
+        val phaseProgress: suspend (Data) -> Unit = { data ->
+            val phase = data.getString(KEY_PHASE)
+            progress(
+                Data
+                    .Builder()
+                    .putAll(data)
+                    .putInt(KEY_PHASE_INDEX, phases.indexOf(phase) + 1)
+                    .putInt(KEY_PHASE_COUNT, phases.size)
+                    .build(),
+            )
+        }
+
         if (satelliteWork.isNotEmpty()) {
-            val satelliteOk =
+            val satelliteResult =
                 downloadSatellite(
                     surveyId = surveyId,
                     regions = satelliteWork,
-                    total = total,
-                    progress = progress,
+                    total = satelliteTileTotal,
+                    progress = phaseProgress,
                 )
-            if (!satelliteOk) {
-                return failure("Satellite download failed")
+            if (satelliteResult.isFailure) {
+                val cause = satelliteResult.exceptionOrNull()
+                Log.w(LOG_TAG, "Satellite download failed", cause)
+                return failureWithCode(
+                    CODE_SATELLITE_FAILED,
+                    "Satellite download failed: ${cause?.message ?: "unknown cause"}",
+                )
             }
         }
 
@@ -405,30 +420,35 @@ class PreDownloadOrchestrator(
             downloadTiles(
                 surveyId = surveyId,
                 candidateTiles = candidateTiles,
-                offset = satelliteTotal,
-                total = total,
-                progress = progress,
+                total = tileTotal,
+                progress = phaseProgress,
             )
         if (tileCount != tileTotal) {
             return failure("Tile download failed")
         }
-        val derivedTileCount = precomputeLowZoomTiles(surveyId, candidates)
         val cropCount =
             downloadCrops(
                 surveyId = surveyId,
                 candidates = missingCrops,
-                offset = satelliteTotal + tileTotal,
-                total = total,
-                progress = progress,
+                total = cropTotal,
+                progress = phaseProgress,
             )
         if (cropCount != missingCrops.size) {
             return failure("Crop download failed")
         }
 
+        val derivedTileCount = precomputeLowZoomTiles(surveyId, candidates, phaseProgress)
+        phaseProgress(
+            workDataOf(
+                KEY_DONE to 0,
+                KEY_TOTAL to 0,
+                KEY_PHASE to PHASE_FINALISING,
+            ),
+        )
+
         val builder =
             Data
                 .Builder()
-                .putString(KEY_MANIFEST_ID, manifestId)
                 .putLong(KEY_BUNDLE_ID, 0L)
                 .putInt(KEY_TILE_COUNT, tileCount + derivedTileCount)
                 .putInt(KEY_CROP_COUNT, cropCount)
@@ -465,9 +485,10 @@ class PreDownloadOrchestrator(
         regions: List<SatelliteWork>,
         total: Int,
         progress: suspend (Data) -> Unit,
-    ): Boolean {
-        var completed = 0
+    ): Result<Unit> {
+        var completedTiles = 0
         for (region in regions) {
+            val clusterTiles = estimateSatelliteTiles(region.bbox).toInt()
             val result =
                 suspendCancellableCoroutine<Result<Unit>> { cont ->
                     val scope = CoroutineScope(cont.context)
@@ -475,11 +496,13 @@ class PreDownloadOrchestrator(
                         clusterBboxes = listOf(region.bbox),
                         minZoom = PreDownloadTargetPlanner.SATELLITE_MIN_ZOOM,
                         maxZoom = PreDownloadTargetPlanner.SATELLITE_MAX_ZOOM,
-                        progressCb = { p ->
+                        progressCb = { fraction ->
                             scope.launch {
                                 progress(
                                     workDataOf(
-                                        KEY_DONE to completed + p.toInt(),
+                                        KEY_DONE to
+                                            completedTiles +
+                                            (fraction.coerceIn(0.0, 1.0) * clusterTiles).toInt(),
                                         KEY_TOTAL to total,
                                         KEY_PHASE to PHASE_SATELLITE,
                                     ),
@@ -491,6 +514,7 @@ class PreDownloadOrchestrator(
                                 cont.resume(result)
                             }
                         },
+                        target = region.target,
                     )
                 }
             if (result.isFailure) {
@@ -498,25 +522,38 @@ class PreDownloadOrchestrator(
                 if (error != null && error.isStorageFull()) {
                     throw StorageFullException(error)
                 }
-                return false
+                return Result.failure(
+                    error ?: IllegalStateException("Satellite download failed"),
+                )
             }
             satelliteRegionStore.markCompleted(surveyId, region.signature)
-            completed++
+            completedTiles += clusterTiles
             progress(
                 workDataOf(
-                    KEY_DONE to completed,
+                    KEY_DONE to completedTiles,
                     KEY_TOTAL to total,
                     KEY_PHASE to PHASE_SATELLITE,
                 ),
             )
         }
-        return true
+        return Result.success(Unit)
     }
+
+    private fun estimateSatelliteTiles(bbox: Bbox): Long =
+        (PreDownloadTargetPlanner.SATELLITE_MIN_ZOOM..PreDownloadTargetPlanner.SATELLITE_MAX_ZOOM)
+            .sumOf { zoom ->
+                TileMath.tileCountForBbox(
+                    bbox.minLat,
+                    bbox.minLon,
+                    bbox.maxLat,
+                    bbox.maxLon,
+                    zoom,
+                )
+            }
 
     private suspend fun downloadTiles(
         surveyId: Long,
         candidateTiles: List<CandidateTiles>,
-        offset: Int,
         total: Int,
         progress: suspend (Data) -> Unit,
     ): Int {
@@ -543,7 +580,7 @@ class PreDownloadOrchestrator(
                             }
                             progress(
                                 workDataOf(
-                                    KEY_DONE to offset + completed,
+                                    KEY_DONE to completed,
                                     KEY_TOTAL to total,
                                     KEY_PHASE to PHASE_TILES,
                                 ),
@@ -559,12 +596,13 @@ class PreDownloadOrchestrator(
     private suspend fun precomputeLowZoomTiles(
         surveyId: Long,
         candidates: List<PreDownloadTargetCandidate>,
+        progress: suspend (Data) -> Unit,
     ): Int =
         withContext(ioDispatcher) {
             val minZoom = LowZoomTileCompositor.MIN_ZOOM
             val sourceZoom = LowZoomTileCompositor.SOURCE_ZOOM
             var written = 0
-            candidates.forEach { candidate ->
+            candidates.forEachIndexed { index, candidate ->
                 for (zoom in minZoom until sourceZoom) {
                     lowZoomCompositor
                         .parentTiles(
@@ -595,6 +633,13 @@ class PreDownloadOrchestrator(
                             }
                         }
                 }
+                progress(
+                    workDataOf(
+                        KEY_DONE to index + 1,
+                        KEY_TOTAL to candidates.size,
+                        KEY_PHASE to PHASE_FINALISING,
+                    ),
+                )
             }
             written
         }
@@ -676,7 +721,6 @@ class PreDownloadOrchestrator(
     private suspend fun downloadCrops(
         surveyId: Long,
         candidates: List<PreDownloadTargetCandidate>,
-        offset: Int,
         total: Int,
         progress: suspend (Data) -> Unit,
     ): Int {
@@ -698,7 +742,7 @@ class PreDownloadOrchestrator(
                         }
                         progress(
                             workDataOf(
-                                KEY_DONE to offset + completed,
+                                KEY_DONE to completed,
                                 KEY_TOTAL to total,
                                 KEY_PHASE to PHASE_CROPS,
                             ),
@@ -780,7 +824,7 @@ class PreDownloadOrchestrator(
         const val CODE_STORAGE_FULL_WHILE_WRITING = "STORAGE_FULL_WHILE_WRITING"
         const val CODE_REPLACEMENT_CONFLICT = "REPLACEMENT_CONFLICT"
         const val CODE_REPLACEMENT_FAILED = "REPLACEMENT_FAILED"
-        const val KEY_MANIFEST_ID = "manifestId"
+        const val CODE_SATELLITE_FAILED = "SATELLITE_DOWNLOAD_FAILED"
         const val TILE_KIND_SOURCE = "SOURCE"
         const val TILE_FORMAT_GEOTIFF = "geotiff"
         const val KEY_BUNDLE_ID = "bundleId"
@@ -793,10 +837,14 @@ class PreDownloadOrchestrator(
         const val KEY_DONE = "done"
         const val KEY_TOTAL = "total"
         const val KEY_PHASE = "phase"
+        const val KEY_PHASE_INDEX = "phaseIndex"
+        const val KEY_PHASE_COUNT = "phaseCount"
         const val PHASE_SATELLITE = "satellite"
         const val PHASE_TILES = "tiles"
         const val PHASE_CROPS = "crops"
+        const val PHASE_FINALISING = "finalising"
 
+        private const val LOG_TAG = "PreDownloadOrchestrator"
         private const val TILE_CONCURRENCY = 6
         private const val MAX_TILE_ATTEMPTS = 3
         private const val READ_BUFFER_BYTES = 8 * 1024

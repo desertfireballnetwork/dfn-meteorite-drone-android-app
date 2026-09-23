@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   release:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, dfn-android]
     timeout-minutes: 60
     steps:
       - name: Check out repository

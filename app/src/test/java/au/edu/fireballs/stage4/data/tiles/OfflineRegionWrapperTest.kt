@@ -9,6 +9,7 @@ import com.mapbox.bindgen.None
 import com.mapbox.maps.AsyncOperationResultCallback
 import com.mapbox.maps.OfflineRegionDownloadState
 import com.mapbox.maps.OfflineRegionError
+import com.mapbox.maps.OfflineRegionErrorType
 import com.mapbox.maps.OfflineRegionObserver
 import com.mapbox.maps.OfflineRegionStatus
 import com.mapbox.maps.OfflineRegionTilePyramidDefinition
@@ -135,6 +136,37 @@ class OfflineRegionWrapperTest {
 
         assertEquals(1, completions.size)
         assertTrue(completions.single().isFailure)
+    }
+
+    @Test
+    fun errorOccurredSurfacesTypeAndMessage() {
+        val completions = mutableListOf<Result<Unit>>()
+        wrapper.downloadSatelliteRegion(
+            bbox(),
+            0,
+            10,
+            resourceCountCb = {},
+            progressCb = {},
+            completionCb = { completions.add(it) },
+        )
+        source.createCallback(Result.success(region))
+        val observer = captureObserver()
+
+        val error = mock(OfflineRegionError::class.java)
+        `when`(error.type).thenReturn(OfflineRegionErrorType.CONNECTION)
+        `when`(error.message).thenReturn("boom")
+        observer.errorOccurred(error)
+        idleMain()
+
+        val message = completions.single().exceptionOrNull()?.message
+        assertTrue(
+            "Expected type in message but got $message",
+            message?.contains("CONNECTION") == true,
+        )
+        assertTrue(
+            "Expected cause in message but got $message",
+            message?.contains("boom") == true,
+        )
     }
 
     @Test

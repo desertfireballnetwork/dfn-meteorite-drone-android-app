@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -111,12 +112,19 @@ class GeotiffRadiusViewModel
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
+    onLogout: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: SettingsViewModel = hiltViewModel(),
     geotiffViewModel: GeotiffRadiusViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val geotiffState by geotiffViewModel.uiState.collectAsStateWithLifecycle()
+
+    LaunchedEffect(viewModel) {
+        viewModel.logoutEvent.collect {
+            onLogout()
+        }
+    }
 
     LifecycleResumeEffect(Unit) {
         viewModel.refreshStorage()
@@ -141,6 +149,9 @@ fun SettingsScreen(
             onClearRequested = viewModel::onClearRequested,
             onClearConfirmed = viewModel::onClearConfirmed,
             onClearCancelled = viewModel::onClearCancelled,
+            onLogoutRequested = viewModel::onLogoutRequested,
+            onLogoutConfirmed = viewModel::onLogoutConfirmed,
+            onLogoutCancelled = viewModel::onLogoutCancelled,
             modifier =
                 modifier
                     .fillMaxSize()
@@ -160,6 +171,9 @@ internal fun SettingsContent(
     onClearRequested: (StorageClearCategory) -> Unit,
     onClearConfirmed: () -> Unit,
     onClearCancelled: () -> Unit,
+    onLogoutRequested: () -> Unit,
+    onLogoutConfirmed: () -> Unit,
+    onLogoutCancelled: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     uiState.clear.pendingConfirmation?.let { category ->
@@ -167,6 +181,13 @@ internal fun SettingsContent(
             category = category,
             onConfirm = onClearConfirmed,
             onDismiss = onClearCancelled,
+        )
+    }
+
+    if (uiState.showLogoutConfirmation) {
+        LogoutConfirmationDialog(
+            onConfirm = onLogoutConfirmed,
+            onDismiss = onLogoutCancelled,
         )
     }
 
@@ -280,7 +301,66 @@ internal fun SettingsContent(
                 Text("Retry")
             }
         }
+
+        OutlinedButton(
+            onClick = onLogoutRequested,
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp)
+                    .testTag("logout-button"),
+            enabled = !uiState.isLoggingOut,
+        ) {
+            if (uiState.isLoggingOut) {
+                CircularProgressIndicator(modifier = Modifier.size(24.dp))
+            } else {
+                val logoutText =
+                    if (uiState.username != null) {
+                        "Logout (${uiState.username})"
+                    } else {
+                        "Logout"
+                    }
+                Text(
+                    text = logoutText,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+        }
     }
+}
+
+@Composable
+private fun LogoutConfirmationDialog(
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Logout?") },
+        text = {
+            Text(
+                "This will clear all local data including offline maps and session cookies. " +
+                    "You will need an internet connection to log in again.",
+            )
+        },
+        confirmButton = {
+            TextButton(
+                onClick = onConfirm,
+                modifier = Modifier.testTag("logout-confirm"),
+            ) {
+                Text("Logout", color = MaterialTheme.colorScheme.error)
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = onDismiss,
+                modifier = Modifier.testTag("logout-cancel"),
+            ) {
+                Text("Cancel")
+            }
+        },
+        modifier = Modifier.testTag("logout-confirmation-dialog"),
+    )
 }
 
 @Composable

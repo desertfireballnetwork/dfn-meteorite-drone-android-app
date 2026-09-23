@@ -2,6 +2,8 @@ package au.edu.fireballs.stage4.ui.screen.dataentry
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import au.edu.fireballs.stage4.data.remote.AccountManager
+import au.edu.fireballs.stage4.data.repository.SelectedSurveyRepository
 import au.edu.fireballs.stage4.data.repository.StorageClearCategory
 import au.edu.fireballs.stage4.data.repository.StorageClearRepository
 import au.edu.fireballs.stage4.data.repository.StorageClearResult
@@ -13,8 +15,11 @@ import au.edu.fireballs.stage4.data.repository.isSyncGated
 import au.edu.fireballs.stage4.data.tiles.BufferRadiusRepository
 import au.edu.fireballs.stage4.ui.util.UiText
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -58,6 +63,9 @@ data class SettingsUiState(
     val saved: Boolean,
     val storage: SettingsStorageUiState = SettingsStorageUiState(),
     val clear: SettingsClearUiState = SettingsClearUiState(),
+    val isLoggingOut: Boolean = false,
+    val showLogoutConfirmation: Boolean = false,
+    val username: String? = null,
 )
 
 @HiltViewModel
@@ -68,6 +76,8 @@ class SettingsViewModel
         private val storageCoordinator: StorageCoordinator,
         private val storageClearRepository: StorageClearRepository,
         private val syncStatusSource: SyncStatusSource,
+        private val accountManager: AccountManager,
+        private val selectedSurveyRepository: SelectedSurveyRepository,
     ) : ViewModel() {
         private val _uiState =
             MutableStateFlow(
@@ -80,6 +90,9 @@ class SettingsViewModel
             )
         val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
 
+        private val _logoutEvent = MutableSharedFlow<Unit>()
+        val logoutEvent: SharedFlow<Unit> = _logoutEvent.asSharedFlow()
+
         private var refreshInFlight = false
         private var refreshPending = false
         private var clearLaunchInFlight = false
@@ -87,6 +100,15 @@ class SettingsViewModel
         init {
             observeStorageMutations()
             observeClearGating()
+            observeUsername()
+        }
+
+        private fun observeUsername() {
+            viewModelScope.launch {
+                selectedSurveyRepository.username.collect { name ->
+                    _uiState.update { it.copy(username = name) }
+                }
+            }
         }
 
         fun load() {
@@ -174,6 +196,28 @@ class SettingsViewModel
         fun onClearCancelled() {
             _uiState.update {
                 it.copy(clear = it.clear.copy(pendingConfirmation = null))
+            }
+        }
+
+        fun onLogoutRequested() {
+            _uiState.update { it.copy(showLogoutConfirmation = true) }
+        }
+
+        fun onLogoutCancelled() {
+            _uiState.update { it.copy(showLogoutConfirmation = false) }
+        }
+
+        fun onLogoutConfirmed() {
+            _uiState.update {
+                it.copy(
+                    isLoggingOut = true,
+                    showLogoutConfirmation = false,
+                )
+            }
+            viewModelScope.launch {
+                runCatching { accountManager.logout() }
+                _logoutEvent.emit(Unit)
+                _uiState.update { it.copy(isLoggingOut = false) }
             }
         }
 

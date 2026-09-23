@@ -21,7 +21,9 @@ import au.edu.fireballs.stage4.domain.model.MapCameraTarget
 import au.edu.fireballs.stage4.domain.model.Stage4Candidate
 import au.edu.fireballs.stage4.domain.model.Stage4State
 import au.edu.fireballs.stage4.domain.model.resolveInitialCamera
+import au.edu.fireballs.stage4.sync.PreDownloadOrchestrator
 import au.edu.fireballs.stage4.ui.screen.basecamp.PreDownloadWorkManager
+import au.edu.fireballs.stage4.ui.util.downloadPhaseLabel
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
@@ -82,7 +84,14 @@ sealed interface ConnectionBannerState {
 
     data object Offline : ConnectionBannerState
 
-    data object Downloading : ConnectionBannerState
+    data class Downloading(
+        val label: String,
+        val done: Int,
+        val total: Int,
+    ) : ConnectionBannerState {
+        val percent: Int
+            get() = if (total > 0) (done.toLong() * 100 / total).toInt() else 0
+    }
 }
 
 private fun computeOverlayCandidates(
@@ -344,16 +353,35 @@ class Stage4MapViewModel
                         combine(
                             networkStateRepository.networkState,
                             preDownloadWorkManager.getWorkInfosForUniqueWorkFlow(
-                                PreDownloadWorkManager.UNIQUE_WORK_PREFIX + surveyId,
+                                PreDownloadWorkManager.UNIQUE_WORK_NAME,
                             ),
                         ) { network, workInfos ->
                             val downloading =
-                                workInfos.any {
+                                workInfos.firstOrNull {
                                     it.state == WorkInfo.State.ENQUEUED ||
                                         it.state == WorkInfo.State.RUNNING
                                 }
                             when {
-                                downloading -> ConnectionBannerState.Downloading
+                                downloading != null ->
+                                    ConnectionBannerState.Downloading(
+                                        label =
+                                            downloadPhaseLabel(
+                                                downloading.progress.getString(
+                                                    PreDownloadOrchestrator.KEY_PHASE,
+                                                ),
+                                            ),
+                                        done =
+                                            downloading.progress.getInt(
+                                                PreDownloadOrchestrator.KEY_DONE,
+                                                0,
+                                            ),
+                                        total =
+                                            downloading.progress.getInt(
+                                                PreDownloadOrchestrator.KEY_TOTAL,
+                                                0,
+                                            ),
+                                    )
+
                                 network is NetworkState.Online -> ConnectionBannerState.Online
                                 else -> ConnectionBannerState.Offline
                             }
