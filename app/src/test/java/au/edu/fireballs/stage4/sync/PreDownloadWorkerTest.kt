@@ -36,10 +36,13 @@ import au.edu.fireballs.stage4.data.tiles.LocalFileRasterTileProvider
 import au.edu.fireballs.stage4.data.tiles.LowZoomCompositor
 import au.edu.fireballs.stage4.data.tiles.NoOpSatelliteRegionStore
 import au.edu.fireballs.stage4.data.tiles.OfflineManagerWrapper
+import au.edu.fireballs.stage4.data.tiles.OfflineRegionFailureCategory
+import au.edu.fireballs.stage4.data.tiles.OfflineRegionPurgeResult
 import au.edu.fireballs.stage4.data.tiles.TileCoord
 import au.edu.fireballs.stage4.data.tiles.TileStore
 import au.edu.fireballs.stage4.data.tiles.TileStoreMeasuredUsage
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -98,6 +101,9 @@ class PreDownloadWorkerTest {
 
     private fun testWorkingSetRepository(): OfflineWorkingSetRepository =
         mockk(relaxed = true) {
+            coEvery { purgeSatelliteTarget(any()) } coAnswers {
+                OfflineRegionPurgeResult.Purged(firstArg())
+            }
             coEvery { inspectTarget(any()) } coAnswers {
                 val set = firstArg<PreDownloadTargetSet>()
                 ReplacementClassification(
@@ -179,6 +185,191 @@ class PreDownloadWorkerTest {
             isMine = true,
             isActive = true,
         )
+
+    private data class SatellitePurgeScenario(
+        val outcome: PreDownloadOutcome,
+        val events: List<String>,
+        val offlineManagerWrapper: OfflineManagerWrapper,
+    )
+
+    private suspend fun runSatellitePurgeScenario(): SatellitePurgeScenario {
+        val candidateDao = FakeCandidateDao(listOf(candidate(1L, 0.0, 0.0)))
+        val claimDao = FakeClaimDao()
+        val surveyDao = FakeSurveyDao(latestTaskCreated = null)
+        val tileStore = TileStore(Files.createTempDirectory("tiles").toFile())
+        val stage4Service = mock(Stage4Service::class.java)
+        `when`(stage4Service.getClaims(SURVEY_ID.toString(), true))
+            .thenReturn(
+                ListClaimsResponseDto(
+                    listOf(
+                        ClaimDto(
+                            inferenceResultId = 1L,
+                            userId = 2L,
+                            username = "me",
+                            isMe = true,
+                        ),
+                    ),
+                ),
+            )
+        val claimRepository = ClaimRepository(stage4Service, claimDao, testDispatcher)
+        val stage4Repository = mock(Stage4Repository::class.java)
+        `when`(stage4Repository.fetchLatestTaskCreated(SURVEY_ID)).thenReturn(null)
+        val tileService = mock(TileService::class.java)
+        `when`(
+            tileService.getCandidateTile(
+                anyLong(),
+                anyLong(),
+                anyInt(),
+                anyInt(),
+                anyInt(),
+            ),
+        ).thenReturn(
+            Response.success(
+                byteArrayOf(1, 2, 3).toResponseBody("image/png".toMediaType()),
+            ),
+        )
+        `when`(tileService.getCandidateCrop(anyLong()))
+            .thenReturn(
+                Response.success(
+                    validJpeg.toResponseBody("image/jpeg".toMediaType()),
+                ),
+            )
+        val events = mutableListOf<String>()
+        val offlineManagerWrapper = mock(OfflineManagerWrapper::class.java)
+        doAnswer { invocation ->
+            events.add("download")
+            invocation.getArgument<(Result<Unit>) -> Unit>(4)(Result.success(Unit))
+        }.`when`(offlineManagerWrapper)
+            .splitAndDownload(any(), any(), any(), any(), any(), any())
+        val orchestrator =
+            PreDownloadOrchestrator(
+                claimRepository = claimRepository,
+                stage4Repository = stage4Repository,
+                workingSetRepository = workingSetRepository,
+                candidateDao = candidateDao,
+                claimDao = claimDao,
+                surveyDao = surveyDao,
+                tileStore = tileStore,
+                lowZoomCompositor = noOpCompositor,
+                tileService = tileService,
+                offlineManagerWrapper = offlineManagerWrapper,
+                candidateImageRepository = candidateImageRepository,
+                geotiffRadiusRepository = geotiffRadiusRepository,
+                satelliteRegionStore = satelliteRegionStore,
+                ioDispatcher = testDispatcher,
+            )
+        val outcome = orchestrator.run(SURVEY_ID, BUFFER_METERS) {}
+        return SatellitePurgeScenario(outcome, events, offlineManagerWrapper)
+    }
+
+    @Test
+    fun purgesMissingSatelliteBeforeSplitAndDownload() =
+        runTest {
+            val events = mutableListOf<String>()
+            coEvery { workingSetRepository.purgeSatelliteTarget(any()) } coAnswers {
+                events.add("purge")
+                OfflineRegionPurgeResult.Purged(firstArg())
+            }
+
+            val scenario = runSatellitePurgeScenario()
+            events.addAll(scenario.events)
+
+            assertTrue(
+                "Expected success but got ${scenario.outcome}",
+                scenario.outcome is PreDownloadOutcome.Success,
+            )
+            assertEquals(listOf("purge", "download"), events)
+            coVerify(exactly = 1) { workingSetRepository.purgeSatelliteTarget(any()) }
+            verify(scenario.offlineManagerWrapper).splitAndDownload(
+                any(),
+                any(),
+                any(),
+                any(),
+                any(),
+                any(),
+            )
+        }
+
+    @Test
+    fun confirmedAbsentPermitsReplacementCreation() =
+        runTest {
+            coEvery { workingSetRepository.purgeSatelliteTarget(any()) } coAnswers {
+                OfflineRegionPurgeResult.ConfirmedAbsent(firstArg())
+            }
+
+            val scenario = runSatellitePurgeScenario()
+
+            assertTrue(
+                "Expected success but got ${scenario.outcome}",
+                scenario.outcome is PreDownloadOutcome.Success,
+            )
+            verify(scenario.offlineManagerWrapper).splitAndDownload(
+                any(),
+                any(),
+                any(),
+                any(),
+                any(),
+                any(),
+            )
+        }
+
+    @Test
+    fun retryablePurgeFailurePreventsReplacementCreation() =
+        runTest {
+            coEvery { workingSetRepository.purgeSatelliteTarget(any()) } coAnswers {
+                OfflineRegionPurgeResult.RetryableFailure(
+                    firstArg(),
+                    OfflineRegionFailureCategory.PURGE_REJECTED,
+                    1L,
+                )
+            }
+
+            val scenario = runSatellitePurgeScenario()
+
+            assertTrue(
+                "Expected failure but got ${scenario.outcome}",
+                scenario.outcome is PreDownloadOutcome.Failure,
+            )
+            verify(scenario.offlineManagerWrapper, never()).splitAndDownload(
+                any(),
+                any(),
+                any(),
+                any(),
+                any(),
+                any(),
+            )
+        }
+
+    @Test
+    fun completeRetainedSatelliteIsNotPurged() =
+        runTest {
+            coEvery { workingSetRepository.inspectTarget(any()) } coAnswers {
+                val set = firstArg<PreDownloadTargetSet>()
+                ReplacementClassification(
+                    retained = set.satellites.toSet(),
+                    missing = (set.geotiffTiles + set.crops).toSet(),
+                    obsolete = emptySet(),
+                    clearCommands = emptyList(),
+                    confidentlyDeletableBytes = 0L,
+                )
+            }
+
+            val scenario = runSatellitePurgeScenario()
+
+            assertTrue(
+                "Expected success but got ${scenario.outcome}",
+                scenario.outcome is PreDownloadOutcome.Success,
+            )
+            coVerify(exactly = 0) { workingSetRepository.purgeSatelliteTarget(any()) }
+            verify(scenario.offlineManagerWrapper, never()).splitAndDownload(
+                any(),
+                any(),
+                any(),
+                any(),
+                any(),
+                any(),
+            )
+        }
 
     @Test
     fun successfulDownloadRunsFullOrchestration() =

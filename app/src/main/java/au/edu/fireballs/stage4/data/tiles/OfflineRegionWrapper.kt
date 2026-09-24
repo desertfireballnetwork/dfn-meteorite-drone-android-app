@@ -183,21 +183,81 @@ class OfflineRegionWrapper(
         }
         source.getOfflineRegions { result ->
             mainHandler.post {
-                callback(
-                    result.map { regions ->
-                        val owned =
-                            regions
-                                .mapNotNull { decodeOfflineRegionTarget(it.metadata) }
-                                .toSet()
-                        targets.map { target ->
-                            if (target in owned) {
-                                OfflineRegionRetention.Retained(target)
-                            } else {
-                                OfflineRegionRetention.Missing(target)
+                if (result.isFailure) {
+                    callback(Result.failure(result.exceptionOrNull()!!))
+                    return@post
+                }
+                val regions = result.getOrThrow()
+                val owned =
+                    regions
+                        .mapNotNull { region ->
+                            decodeOfflineRegionTarget(region.metadata)?.let { it to region }
+                        }.groupBy({ it.first }, { it.second })
+                val output =
+                    MutableList<OfflineRegionRetention?>(targets.size) { null }
+                val remaining = IntArray(targets.size)
+                val finished = BooleanArray(targets.size)
+                var remainingTargets = targets.size
+                var completed = false
+
+                fun finishTarget(
+                    index: Int,
+                    outcome: OfflineRegionRetention,
+                ) {
+                    output[index] = outcome
+                    remainingTargets--
+                    if (remainingTargets == 0 && !completed) {
+                        completed = true
+                        callback(Result.success(output.filterNotNull()))
+                    }
+                }
+
+                targets.forEachIndexed { index, target ->
+                    val handles = owned[target].orEmpty()
+                    remaining[index] = handles.size
+                    if (handles.isEmpty()) {
+                        finished[index] = true
+                        finishTarget(index, OfflineRegionRetention.Missing(target))
+                    }
+                }
+
+                targets.forEachIndexed { index, target ->
+                    owned[target].orEmpty().forEach { handle ->
+                        var handleFinished = false
+                        handle.getStatus { statusResult ->
+                            mainHandler.post {
+                                if (!handleFinished) {
+                                    handleFinished = true
+                                    if (!finished[index]) {
+                                        val status = statusResult.getOrNull()
+                                        val complete =
+                                            status != null &&
+                                                status.requiredResourceCountIsPrecise &&
+                                                status.requiredResourceCount > 0 &&
+                                                status.completedResourceCount >=
+                                                status.requiredResourceCount
+                                        if (complete) {
+                                            finished[index] = true
+                                            finishTarget(
+                                                index,
+                                                OfflineRegionRetention.Retained(target),
+                                            )
+                                        } else {
+                                            remaining[index]--
+                                            if (remaining[index] == 0) {
+                                                finished[index] = true
+                                                finishTarget(
+                                                    index,
+                                                    OfflineRegionRetention.Missing(target),
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
-                    },
-                )
+                    }
+                }
             }
         }
     }

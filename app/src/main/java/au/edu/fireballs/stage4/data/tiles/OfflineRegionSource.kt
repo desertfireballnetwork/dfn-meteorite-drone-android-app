@@ -11,6 +11,7 @@ import com.mapbox.maps.OfflineRegionCreateCallback
 import com.mapbox.maps.OfflineRegionDownloadState
 import com.mapbox.maps.OfflineRegionManager
 import com.mapbox.maps.OfflineRegionObserver
+import com.mapbox.maps.OfflineRegionStatus
 import com.mapbox.maps.OfflineRegionTilePyramidDefinition
 
 interface OfflineRegionHandle {
@@ -19,6 +20,8 @@ interface OfflineRegionHandle {
     fun setOfflineRegionDownloadState(state: OfflineRegionDownloadState)
 
     fun purge(callback: AsyncOperationResultCallback)
+
+    fun getStatus(callback: (Result<OfflineRegionStatus>) -> Unit)
 
     val identifier: Long
 
@@ -46,6 +49,25 @@ class MapboxOfflineRegionHandle(
 
     override fun purge(callback: AsyncOperationResultCallback) {
         region.purge(callback)
+    }
+
+    override fun getStatus(callback: (Result<OfflineRegionStatus>) -> Unit) {
+        region.getStatus { expected ->
+            callback(
+                when {
+                    expected.isError ->
+                        Result.failure(IllegalStateException(expected.error))
+
+                    expected.value != null -> Result.success(expected.value!!)
+                    else ->
+                        Result.failure(
+                            IllegalStateException(
+                                "Mapbox returned no offline region status",
+                            ),
+                        )
+                },
+            )
+        }
     }
 
     override val identifier: Long

@@ -14,12 +14,21 @@ import au.edu.fireballs.stage4.data.tiles.OfflineRegionRetention
 import au.edu.fireballs.stage4.data.tiles.OfflineRegionSource
 import au.edu.fireballs.stage4.data.tiles.OfflineRegionWrapper
 import au.edu.fireballs.stage4.data.tiles.TileStore
+import au.edu.fireballs.stage4.data.tiles.encodeOfflineRegionTarget
+import com.mapbox.bindgen.ExpectedFactory
+import com.mapbox.maps.AsyncOperationResultCallback
+import com.mapbox.maps.OfflineRegionDownloadState
+import com.mapbox.maps.OfflineRegionObserver
+import com.mapbox.maps.OfflineRegionStatus
 import com.mapbox.maps.OfflineRegionTilePyramidDefinition
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.yield
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -29,6 +38,7 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
 import java.nio.file.Files
 import java.util.Base64
 
@@ -258,6 +268,119 @@ class OfflineWorkingSetRepositoryTest {
         }
 
     @Test
+    fun incompleteSatelliteRegionIsClassifiedMissingAndRefusesCompletion() =
+        runTest {
+            val key = satellite("incomplete")
+            source.regions =
+                listOf(
+                    FakeOfflineRegionHandle(
+                        encodeOfflineRegionTarget(key),
+                        Result.success(incompleteSatelliteStatus()),
+                    ),
+                )
+
+            val inspected =
+                withMainIdle {
+                    repository.inspectTarget(
+                        PreDownloadTargetSet(emptyList(), emptyList(), listOf(key)),
+                    )
+                }
+            assertEquals(setOf(key), inspected.missing)
+
+            repository.beginReplacement(target(), inspected, "incomplete")
+            assertEquals(
+                ReplacementCompletionResult.Refused(1),
+                withMainIdle { repository.completeReplacement("incomplete") },
+            )
+            assertEquals("REPLACING", bundle("incomplete")?.state)
+        }
+
+    @Test
+    fun markItemCompleteReturnsInvalidPayloadForIncompleteSatellite() =
+        runTest {
+            val key = satellite("incomplete-item")
+            source.regions =
+                listOf(
+                    FakeOfflineRegionHandle(
+                        encodeOfflineRegionTarget(key),
+                        Result.success(incompleteSatelliteStatus()),
+                    ),
+                )
+            repository.beginReplacement(
+                target(),
+                classification(missing = setOf(key)),
+                "incomplete-item",
+            )
+
+            assertEquals(
+                ReplacementItemResult.InvalidPayload(key),
+                withMainIdle { repository.markItemComplete("incomplete-item", key) },
+            )
+        }
+
+    @Test
+    fun markItemCompleteReturnsCompletedForCompleteSatellite() =
+        runTest {
+            val key = satellite("complete-item")
+            source.regions =
+                listOf(FakeOfflineRegionHandle(encodeOfflineRegionTarget(key)))
+            repository.beginReplacement(
+                target(),
+                classification(missing = setOf(key)),
+                "complete-item",
+            )
+
+            assertEquals(
+                ReplacementItemResult.Completed(key),
+                withMainIdle { repository.markItemComplete("complete-item", key) },
+            )
+        }
+
+    @Test
+    fun completeSatelliteRegionPermitsReplacementCompletion() =
+        runTest {
+            val key = satellite("complete-replacement")
+            source.regions =
+                listOf(FakeOfflineRegionHandle(encodeOfflineRegionTarget(key)))
+            repository.beginReplacement(
+                target(),
+                classification(missing = setOf(key)),
+                "complete-replacement",
+            )
+
+            assertEquals(
+                ReplacementCompletionResult.Completed("complete-replacement"),
+                withMainIdle { repository.completeReplacement("complete-replacement") },
+            )
+            assertEquals("COMPLETE", bundle("complete-replacement")?.state)
+        }
+
+    @Test
+    fun purgeSatelliteTargetReturnsConfirmedAbsentWhenNoOwnedRegion() =
+        runTest {
+            val key = satellite("absent")
+
+            assertEquals(
+                OfflineRegionPurgeResult.ConfirmedAbsent(key),
+                withMainIdle { repository.purgeSatelliteTarget(key) },
+            )
+        }
+
+    @Test
+    fun purgeSatelliteTargetReturnsPurgedWhenOwnedRegionPresent() =
+        runTest {
+            val key = satellite("owned")
+            source.regions =
+                listOf(FakeOfflineRegionHandle(encodeOfflineRegionTarget(key)))
+
+            assertEquals(
+                OfflineRegionPurgeResult.Purged(key),
+                withMainIdle { repository.purgeSatelliteTarget(key) },
+            )
+            assertEquals(listOf(1L), source.purged)
+        }
+
+    @Test
     fun claimChangesCannotMutatePersistedManifest() =
         runTest {
             val session =
@@ -365,6 +488,16 @@ class OfflineWorkingSetRepositoryTest {
                 "Unchanged source generation must preserve derived composites",
                 tileStore.contains(1, 7, 19, 1, 1),
             )
+        }
+
+    private suspend fun <T> withMainIdle(block: suspend () -> T): T =
+        coroutineScope {
+            val result = async(UnconfinedTestDispatcher()) { block() }
+            while (!result.isCompleted) {
+                shadowOf(Looper.getMainLooper()).idle()
+                yield()
+            }
+            result.await()
         }
 
     private fun createRepository(
@@ -509,6 +642,28 @@ class OfflineWorkingSetRepositoryTest {
         directory.resolve("orphan.tmp.jpg").writeText("temporary")
     }
 
+    private class FakeOfflineRegionHandle(
+        override val metadata: ByteArray,
+        var statusResult: Result<OfflineRegionStatus> =
+            Result.success(completeSatelliteStatus()),
+        private val onPurge: (Long) -> Unit = {},
+    ) : OfflineRegionHandle {
+        override val identifier: Long = 1L
+
+        override fun setOfflineRegionObserver(observer: OfflineRegionObserver) = Unit
+
+        override fun setOfflineRegionDownloadState(state: OfflineRegionDownloadState) = Unit
+
+        override fun purge(callback: AsyncOperationResultCallback) {
+            onPurge(identifier)
+            callback.run(ExpectedFactory.createNone())
+        }
+
+        override fun getStatus(callback: (Result<OfflineRegionStatus>) -> Unit) {
+            callback(statusResult)
+        }
+    }
+
     private class FakeOfflineRegionSource : OfflineRegionSource {
         val purged = mutableListOf<Long>()
         var regions: List<OfflineRegionHandle> = emptyList()
@@ -521,11 +676,47 @@ class OfflineWorkingSetRepositoryTest {
 
         override fun getOfflineRegions(callback: (Result<List<OfflineRegionHandle>>) -> Unit) {
             onList?.invoke()
-            callback(Result.success(regions))
+            callback(
+                Result.success(
+                    regions.map { region ->
+                        if (region is FakeOfflineRegionHandle) {
+                            FakeOfflineRegionHandle(
+                                metadata = region.metadata,
+                                statusResult = region.statusResult,
+                                onPurge = purged::add,
+                            )
+                        } else {
+                            region
+                        }
+                    },
+                ),
+            )
         }
     }
 
     companion object {
+        private fun completeSatelliteStatus(): OfflineRegionStatus =
+            satelliteStatus(completed = 10, required = 10, precise = true)
+
+        private fun incompleteSatelliteStatus(): OfflineRegionStatus =
+            satelliteStatus(completed = 5, required = 10, precise = true)
+
+        private fun satelliteStatus(
+            completed: Long,
+            required: Long,
+            precise: Boolean,
+        ): OfflineRegionStatus =
+            OfflineRegionStatus(
+                OfflineRegionDownloadState.ACTIVE,
+                completed,
+                0,
+                completed,
+                0,
+                required,
+                required,
+                precise,
+            )
+
         private val PNG =
             Base64.getDecoder().decode(
                 "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk" +

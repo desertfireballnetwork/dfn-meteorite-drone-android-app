@@ -332,6 +332,10 @@ class PreDownloadWorkerE2eTest {
     }
 
     private class FakeOfflineRegionHandle : OfflineRegionHandle {
+        override fun getStatus(callback: (Result<OfflineRegionStatus>) -> Unit) {
+            callback(Result.success(COMPLETED_STATUS))
+        }
+
         private var observer: OfflineRegionObserver? = null
 
         override val identifier: Long = 1L

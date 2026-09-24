@@ -39,6 +39,23 @@ class OfflineManagerWrapperTest {
             callback.run(ExpectedFactory.createNone())
         }
 
+        override fun getStatus(callback: (Result<OfflineRegionStatus>) -> Unit) {
+            callback(
+                Result.success(
+                    OfflineRegionStatus(
+                        OfflineRegionDownloadState.ACTIVE,
+                        10,
+                        0,
+                        10,
+                        0,
+                        10,
+                        10,
+                        true,
+                    ),
+                ),
+            )
+        }
+
         override fun setMetadata(
             metadata: ByteArray,
             callback: AsyncOperationResultCallback,
