@@ -194,9 +194,12 @@ class OfflineWorkingSetRepository(
                 offlineBundleDao
                     .getAll()
                     .filter { it.manifestId != session.manifestId }
-            val previousSourceVersion =
-                oldBundles.firstOrNull { it.surveyId == bundle.surveyId }?.sourceVersion
-            if (previousSourceVersion != null && previousSourceVersion != bundle.sourceVersion) {
+            val previousBundle = oldBundles.firstOrNull { it.surveyId == bundle.surveyId }
+            val sourceGenerationChanged =
+                previousBundle != null && previousBundle.sourceVersion != bundle.sourceVersion
+            val previousReplacementUnfinished =
+                previousBundle != null && previousBundle.state != WorkingSetState.COMPLETE.value
+            if (sourceGenerationChanged || previousReplacementUnfinished) {
                 try {
                     tileStore.deleteDerivedTiles(bundle.surveyId)
                 } catch (error: IOException) {
