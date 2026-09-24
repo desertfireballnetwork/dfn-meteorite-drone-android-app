@@ -599,6 +599,10 @@ class OfflineWorkingSetRepository(
                 }
             }
         }
+
+    suspend fun purgeSatelliteTarget(
+        target: PreDownloadTargetKey.Satellite,
+    ): OfflineRegionPurgeResult = purgeTarget(target)
 }
 
 private fun PreDownloadTargetKey.Tile.toEntity(

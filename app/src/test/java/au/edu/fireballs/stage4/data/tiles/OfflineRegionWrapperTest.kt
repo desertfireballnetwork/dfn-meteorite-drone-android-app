@@ -256,6 +256,244 @@ class OfflineRegionWrapperTest {
     }
 
     @Test
+    fun retainExactEmptyTargetsCompletesOnceWithEmptyResult() {
+        val results = mutableListOf<Result<List<OfflineRegionRetention>>>()
+
+        wrapper.retainExact(emptyList()) { results.add(it) }
+        idleMain()
+
+        assertEquals(1, results.size)
+        assertEquals(emptyList<OfflineRegionRetention>(), results.single().getOrThrow())
+        assertEquals(0, source.getRegionsCalls)
+    }
+
+    @Test
+    fun retainExactDeduplicatesRepeatedCallbackFromOneHandle() {
+        val expected = target(1L, "v1", "sat:duplicate-callback")
+        val repeated =
+            FakeRegionHandle(
+                metadata = encodeOfflineRegionTarget(expected),
+                statusResult = Result.success(status(completed = 0)),
+                immediateCallbackCount = 2,
+            )
+        val complete =
+            FakeRegionHandle(
+                metadata = encodeOfflineRegionTarget(expected),
+                statusResult = Result.success(status()),
+            )
+        source.regions = listOf(repeated, complete)
+        val results = mutableListOf<Result<List<OfflineRegionRetention>>>()
+
+        wrapper.retainExact(listOf(expected)) { results.add(it) }
+        idleMain()
+
+        assertEquals(1, results.size)
+        assertEquals(
+            listOf(OfflineRegionRetention.Retained(expected)),
+            results.single().getOrThrow(),
+        )
+    }
+
+    @Test
+    fun retainExactRetainsCompletePrecisePositiveStatus() {
+        val expected = target(1L, "v1", "sat:complete")
+        source.regions =
+            listOf(
+                FakeRegionHandle(
+                    metadata = encodeOfflineRegionTarget(expected),
+                    statusResult = Result.success(status()),
+                ),
+            )
+        val results = mutableListOf<Result<List<OfflineRegionRetention>>>()
+
+        wrapper.retainExact(listOf(expected)) { results.add(it) }
+        idleMain()
+
+        assertEquals(
+            listOf(OfflineRegionRetention.Retained(expected)),
+            results.single().getOrThrow(),
+        )
+    }
+
+    @Test
+    fun retainExactTreatsIncompleteStatusAsMissing() {
+        assertStatusIsMissing(status(completed = 9, required = 10))
+    }
+
+    @Test
+    fun retainExactTreatsImpreciseStatusAsMissing() {
+        assertStatusIsMissing(status(precise = false))
+    }
+
+    @Test
+    fun retainExactTreatsStatusFailureAsMissing() {
+        val expected = target(1L, "v1", "sat:failure")
+        source.regions =
+            listOf(
+                FakeRegionHandle(
+                    metadata = encodeOfflineRegionTarget(expected),
+                    statusResult = Result.failure(IllegalStateException("status failed")),
+                ),
+            )
+
+        assertRetentionIsMissing(expected)
+    }
+
+    @Test
+    fun retainExactTreatsAbsentStatusAsMissing() {
+        val expected = target(1L, "v1", "sat:absent")
+        source.regions =
+            listOf(
+                FakeRegionHandle(
+                    metadata = encodeOfflineRegionTarget(expected),
+                    statusResult =
+                        Result.failure(
+                            IllegalStateException("Mapbox returned no offline region status"),
+                        ),
+                ),
+            )
+
+        assertRetentionIsMissing(expected)
+    }
+
+    @Test
+    fun retainExactTreatsZeroRequiredResourcesAsMissing() {
+        assertStatusIsMissing(status(completed = 0, required = 0))
+    }
+
+    @Test
+    fun retainExactTreatsNoOwnedRegionAsMissing() {
+        val expected = target(1L, "v1", "sat:none")
+        source.regions = emptyList()
+
+        assertRetentionIsMissing(expected)
+    }
+
+    @Test
+    fun retainExactRetainsWhenOneDuplicateIsComplete() {
+        val expected = target(1L, "v1", "sat:duplicate-complete")
+        source.regions =
+            listOf(
+                FakeRegionHandle(
+                    metadata = encodeOfflineRegionTarget(expected),
+                    statusResult = Result.success(status(completed = 9)),
+                ),
+                FakeRegionHandle(
+                    metadata = encodeOfflineRegionTarget(expected),
+                    statusResult = Result.success(status()),
+                ),
+            )
+        val results = mutableListOf<Result<List<OfflineRegionRetention>>>()
+
+        wrapper.retainExact(listOf(expected)) { results.add(it) }
+        idleMain()
+
+        assertEquals(
+            listOf(OfflineRegionRetention.Retained(expected)),
+            results.single().getOrThrow(),
+        )
+    }
+
+    @Test
+    fun retainExactTreatsIncompleteDuplicatesAsMissing() {
+        val expected = target(1L, "v1", "sat:duplicate-missing")
+        source.regions =
+            listOf(
+                FakeRegionHandle(
+                    metadata = encodeOfflineRegionTarget(expected),
+                    statusResult = Result.success(status(completed = 8)),
+                ),
+                FakeRegionHandle(
+                    metadata = encodeOfflineRegionTarget(expected),
+                    statusResult = Result.success(status(completed = 9)),
+                ),
+            )
+
+        assertRetentionIsMissing(expected)
+    }
+
+    @Test
+    fun retainExactSynchronousCallbacksCompleteOuterCallbackOnce() {
+        val expected = target(1L, "v1", "sat:synchronous")
+        source.regions =
+            listOf(
+                FakeRegionHandle(
+                    metadata = encodeOfflineRegionTarget(expected),
+                    statusResult = Result.success(status()),
+                ),
+                FakeRegionHandle(
+                    metadata = encodeOfflineRegionTarget(expected),
+                    statusResult = Result.success(status()),
+                ),
+            )
+        val results = mutableListOf<Result<List<OfflineRegionRetention>>>()
+
+        wrapper.retainExact(listOf(expected)) { results.add(it) }
+        idleMain()
+
+        assertEquals(1, results.size)
+        assertEquals(
+            listOf(OfflineRegionRetention.Retained(expected)),
+            results.single().getOrThrow(),
+        )
+    }
+
+    @Test
+    fun retainExactIgnoresOutstandingCallbacksAfterShortCircuit() {
+        val expected = target(1L, "v1", "sat:delayed")
+        val complete =
+            FakeRegionHandle(
+                metadata = encodeOfflineRegionTarget(expected),
+                statusResult = Result.success(status()),
+            )
+        val delayed =
+            FakeRegionHandle(
+                metadata = encodeOfflineRegionTarget(expected),
+                statusResult = Result.success(status(completed = 0)),
+                captureStatusCallback = true,
+            )
+        source.regions = listOf(complete, delayed)
+        val results = mutableListOf<Result<List<OfflineRegionRetention>>>()
+
+        wrapper.retainExact(listOf(expected)) { results.add(it) }
+        idleMain()
+        delayed.dispatchStatus()
+        delayed.dispatchStatus()
+        idleMain()
+
+        assertEquals(1, results.size)
+        assertEquals(
+            listOf(OfflineRegionRetention.Retained(expected)),
+            results.single().getOrThrow(),
+        )
+    }
+
+    private fun assertStatusIsMissing(status: OfflineRegionStatus) {
+        val expected = target(1L, "v1", "sat:status")
+        source.regions =
+            listOf(
+                FakeRegionHandle(
+                    metadata = encodeOfflineRegionTarget(expected),
+                    statusResult = Result.success(status),
+                ),
+            )
+
+        assertRetentionIsMissing(expected)
+    }
+
+    private fun assertRetentionIsMissing(expected: PreDownloadTargetKey.Satellite) {
+        val results = mutableListOf<Result<List<OfflineRegionRetention>>>()
+
+        wrapper.retainExact(listOf(expected)) { results.add(it) }
+        idleMain()
+
+        assertEquals(
+            listOf(OfflineRegionRetention.Missing(expected)),
+            results.single().getOrThrow(),
+        )
+    }
+
+    @Test
     fun purgeExactPurgesOwnedExactRegion() {
         val expected = target(1L, "v1", "sat:alpha")
         val handle = FakeRegionHandle(metadata = encodeOfflineRegionTarget(expected))
@@ -401,17 +639,23 @@ class OfflineRegionWrapperTest {
             signature = signature,
         )
 
-    private fun completeStatus(): OfflineRegionStatus =
+    private fun status(
+        completed: Long = 10,
+        required: Long = 10,
+        precise: Boolean = true,
+    ): OfflineRegionStatus =
         OfflineRegionStatus(
             OfflineRegionDownloadState.ACTIVE,
-            10,
+            completed,
             0,
-            10,
-            10,
+            completed,
             0,
-            10,
-            true,
+            required,
+            required,
+            precise,
         )
+
+    private fun completeStatus(): OfflineRegionStatus = status()
 
     private fun captureObserver(): OfflineRegionObserver {
         val captor = argumentCaptor<OfflineRegionObserver>()
@@ -448,9 +692,14 @@ class OfflineRegionWrapperTest {
         override var metadata: ByteArray? = null,
         var purgeResult: Expected<String, None> = ExpectedFactory.createNone(),
         var metadataResult: Expected<String, None> = ExpectedFactory.createNone(),
+        var statusResult: Result<OfflineRegionStatus> = Result.success(defaultStatus()),
+        var captureStatusCallback: Boolean = false,
+        var immediateCallbackCount: Int = 1,
     ) : OfflineRegionHandle {
         var purgeCalls = 0
         var observer: OfflineRegionObserver? = null
+        val statusCallbacks =
+            mutableListOf<(Result<OfflineRegionStatus>) -> Unit>()
 
         override val identifier: Long = 1L
 
@@ -465,6 +714,20 @@ class OfflineRegionWrapperTest {
             callback.run(purgeResult)
         }
 
+        override fun getStatus(callback: (Result<OfflineRegionStatus>) -> Unit) {
+            if (captureStatusCallback) {
+                statusCallbacks.add(callback)
+            } else {
+                repeat(immediateCallbackCount) {
+                    callback(statusResult)
+                }
+            }
+        }
+
+        fun dispatchStatus() {
+            statusCallbacks.toList().forEach { it(statusResult) }
+        }
+
         override fun setMetadata(
             metadata: ByteArray,
             callback: AsyncOperationResultCallback,
@@ -473,6 +736,20 @@ class OfflineRegionWrapperTest {
                 this.metadata = metadata
             }
             callback.run(metadataResult)
+        }
+
+        companion object {
+            private fun defaultStatus(): OfflineRegionStatus =
+                OfflineRegionStatus(
+                    OfflineRegionDownloadState.ACTIVE,
+                    10,
+                    0,
+                    10,
+                    0,
+                    10,
+                    10,
+                    true,
+                )
         }
     }
 

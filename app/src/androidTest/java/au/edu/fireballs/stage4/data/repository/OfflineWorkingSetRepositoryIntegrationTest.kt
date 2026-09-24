@@ -21,6 +21,7 @@ import com.mapbox.bindgen.ExpectedFactory
 import com.mapbox.maps.AsyncOperationResultCallback
 import com.mapbox.maps.OfflineRegionDownloadState
 import com.mapbox.maps.OfflineRegionObserver
+import com.mapbox.maps.OfflineRegionStatus
 import com.mapbox.maps.OfflineRegionTilePyramidDefinition
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
@@ -422,6 +423,23 @@ class OfflineWorkingSetRepositoryIntegrationTest {
         override val identifier: Long,
         override var metadata: ByteArray?,
     ) : OfflineRegionHandle {
+        override fun getStatus(callback: (Result<OfflineRegionStatus>) -> Unit) {
+            callback(
+                Result.success(
+                    OfflineRegionStatus(
+                        OfflineRegionDownloadState.ACTIVE,
+                        1,
+                        0,
+                        1,
+                        1,
+                        1,
+                        1,
+                        true,
+                    ),
+                ),
+            )
+        }
+
         override fun setOfflineRegionObserver(observer: OfflineRegionObserver) = Unit
 
         override fun setOfflineRegionDownloadState(state: OfflineRegionDownloadState) = Unit
