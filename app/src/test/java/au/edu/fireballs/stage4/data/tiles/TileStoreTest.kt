@@ -328,4 +328,61 @@ class TileStoreTest {
         assertTrue(fallbackUsed)
         assertArrayEquals(byteArrayOf(1, 2, 3), target.readBytes())
     }
+
+    @Test
+    fun deleteDerivedTilesRemovesOnlyZoomsBelowSourceZoomForOneSurvey() {
+        val store = tempStore()
+        store.write(1, 2, 13, 1, 1, byteArrayOf(1))
+        store.write(1, 2, 19, 1, 1, byteArrayOf(2))
+        store.write(1, 2, 20, 1, 1, byteArrayOf(3))
+        store.write(1, 2, 21, 1, 1, byteArrayOf(4))
+        store.write(1, 2, 22, 1, 1, byteArrayOf(5))
+        store.write(2, 2, 19, 1, 1, byteArrayOf(6))
+
+        store.deleteDerivedTiles(1)
+
+        assertFalse(store.contains(1, 2, 13, 1, 1))
+        assertFalse(store.contains(1, 2, 19, 1, 1))
+        assertTrue(store.contains(1, 2, 20, 1, 1))
+        assertTrue(store.contains(1, 2, 21, 1, 1))
+        assertTrue(store.contains(1, 2, 22, 1, 1))
+        assertTrue(store.contains(2, 2, 19, 1, 1))
+    }
+
+    @Test
+    fun deleteDerivedTilesPreservesTheSourceZoomBoundary() {
+        val store = tempStore()
+        store.write(1, 2, 19, 1, 1, byteArrayOf(1))
+        store.write(1, 2, 20, 1, 1, byteArrayOf(2))
+
+        store.deleteDerivedTiles(1)
+
+        assertFalse(store.contains(1, 2, 19, 1, 1))
+        assertTrue(store.contains(1, 2, 20, 1, 1))
+    }
+
+    @Test
+    fun deleteDerivedTilesIsNoOpForEmptyStateAndRepeatedCalls() {
+        val store = tempStore()
+
+        store.deleteDerivedTiles(1)
+        store.write(1, 2, 19, 1, 1, byteArrayOf(1))
+        store.deleteDerivedTiles(1)
+        store.deleteDerivedTiles(1)
+
+        assertFalse(store.contains(1, 2, 19, 1, 1))
+    }
+
+    @Test
+    fun deleteDerivedTilesRejectsSymbolicLinkRoot() {
+        val parent = Files.createTempDirectory("tiles-derived-link").toFile()
+        val outside = Files.createTempDirectory("tiles-derived-outside").toFile()
+        val link = parent.resolve("root")
+        Files.createSymbolicLink(link.toPath(), outside.toPath())
+        val store = TileStore(link)
+
+        assertThrows(IOException::class.java) {
+            store.deleteDerivedTiles(1)
+        }
+    }
 }

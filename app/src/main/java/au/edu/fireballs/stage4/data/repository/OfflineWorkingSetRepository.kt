@@ -190,11 +190,27 @@ class OfflineWorkingSetRepository(
                 return@withContext ReplacementPruneResult.ManifestUnavailable
             }
 
-            val oldManifestIds =
+            val oldBundles =
                 offlineBundleDao
                     .getAll()
-                    .map { it.manifestId }
-                    .filter { it != session.manifestId }
+                    .filter { it.manifestId != session.manifestId }
+            val previousBundle = oldBundles.firstOrNull { it.surveyId == bundle.surveyId }
+            val sourceGenerationChanged =
+                previousBundle != null && previousBundle.sourceVersion != bundle.sourceVersion
+            val previousReplacementUnfinished =
+                previousBundle != null && previousBundle.state != WorkingSetState.COMPLETE.value
+            if (sourceGenerationChanged || previousReplacementUnfinished) {
+                try {
+                    tileStore.deleteDerivedTiles(bundle.surveyId)
+                } catch (error: IOException) {
+                    return@withContext ReplacementPruneResult.LocalDeletionFailed(
+                        PreDownloadPruneCategory.GEOTIFF,
+                        error.message,
+                    )
+                }
+            }
+
+            val oldManifestIds = oldBundles.map { it.manifestId }
             val geotiffKeys = session.obsolete.filterIsInstance<PreDownloadPruneKey.Geotiff>()
             val cropKeys = session.obsolete.filterIsInstance<PreDownloadPruneKey.Crop>()
             val satelliteKeys = session.obsolete.filterIsInstance<PreDownloadPruneKey.Satellite>()

@@ -73,6 +73,7 @@ import org.mockito.kotlin.eq
 import org.mockito.kotlin.never
 import org.mockito.kotlin.whenever
 import retrofit2.Response
+import java.io.File
 import java.io.IOException
 import java.nio.file.Files
 
@@ -126,12 +127,12 @@ class PreDownloadWorkerTest {
             override fun compose(
                 surveyId: Long,
                 candidateId: Long,
+                sourceTiles: List<TileCoord>,
                 parent: TileCoord,
             ): ByteArray = LocalFileRasterTileProvider.TRANSPARENT_PNG
 
             override fun parentTiles(
-                surveyId: Long,
-                candidateId: Long,
+                sourceTiles: List<TileCoord>,
                 zoom: Int,
             ): List<TileCoord> = emptyList()
         }
@@ -1722,6 +1723,304 @@ class PreDownloadWorkerTest {
             inserted.removeAll { it.surveyId == surveyId }
         }
     }
+
+    @Test
+    fun finalisingUsesEagerZoomRangeSkipsValidAndAdvancesProgress() =
+        runTest {
+            val candidateDao = FakeCandidateDao(listOf(candidate(1L, 0.0, 0.0)))
+            val claimDao = FakeClaimDao()
+            val surveyDao = FakeSurveyDao(latestTaskCreated = null)
+            val tileStore = TileStore(Files.createTempDirectory("tiles").toFile())
+
+            val validPng =
+                byteArrayOf(
+                    0x89.toByte(),
+                    0x50.toByte(),
+                    0x4E.toByte(),
+                    0x47.toByte(),
+                    0x0D.toByte(),
+                    0x0A.toByte(),
+                    0x1A.toByte(),
+                    0x0A.toByte(),
+                    0x00,
+                    0x00,
+                    0x00,
+                    0x0D,
+                    0x49.toByte(),
+                    0x48.toByte(),
+                    0x44.toByte(),
+                    0x52.toByte(),
+                    0x00,
+                    0x00,
+                    0x00,
+                    0x01,
+                    0x00,
+                    0x00,
+                    0x00,
+                    0x01,
+                )
+            tileStore.write(SURVEY_ID, 1L, 13, 0, 0, validPng)
+            val corrupt = File(tileStore.surveyTilesDirectory(SURVEY_ID), "1/14/0/0.png")
+            corrupt.parentFile?.mkdirs()
+            corrupt.writeBytes(ByteArray(0))
+
+            val requestedZooms = java.util.Collections.synchronizedList(mutableListOf<Int>())
+            val composedZooms = java.util.Collections.synchronizedList(mutableListOf<Int>())
+            val recordingCompositor =
+                object : LowZoomCompositor {
+                    override fun compose(
+                        surveyId: Long,
+                        candidateId: Long,
+                        sourceTiles: List<TileCoord>,
+                        parent: TileCoord,
+                    ): ByteArray {
+                        composedZooms.add(parent.z)
+                        return validPng
+                    }
+
+                    override fun parentTiles(
+                        sourceTiles: List<TileCoord>,
+                        zoom: Int,
+                    ): List<TileCoord> {
+                        requestedZooms.add(zoom)
+                        return listOf(TileCoord(zoom, 0, 0))
+                    }
+                }
+
+            val stage4Service = mock(Stage4Service::class.java)
+            `when`(stage4Service.getClaims(SURVEY_ID.toString(), true))
+                .thenReturn(
+                    ListClaimsResponseDto(
+                        listOf(
+                            ClaimDto(
+                                inferenceResultId = 1L,
+                                userId = 2L,
+                                username = "me",
+                                claimedAt = "2026-01-01T00:00:00Z",
+                                isMe = true,
+                            ),
+                        ),
+                    ),
+                )
+            val claimRepository = ClaimRepository(stage4Service, claimDao, testDispatcher)
+
+            val stage4Repository = mock(Stage4Repository::class.java)
+            `when`(stage4Repository.fetchLatestTaskCreated(SURVEY_ID)).thenReturn(null)
+
+            val tileService = mock(TileService::class.java)
+            `when`(
+                tileService.getCandidateTile(
+                    anyLong(),
+                    anyLong(),
+                    anyInt(),
+                    anyInt(),
+                    anyInt(),
+                ),
+            ).thenReturn(
+                Response.success(
+                    byteArrayOf(1, 2, 3).toResponseBody("image/png".toMediaType()),
+                ),
+            )
+            `when`(tileService.getCandidateCrop(anyLong()))
+                .thenReturn(
+                    Response.success(validJpeg.toResponseBody("image/jpeg".toMediaType())),
+                )
+
+            val offlineManagerWrapper = mock(OfflineManagerWrapper::class.java)
+            doAnswer { invocation ->
+                val completionCb = invocation.getArgument<(Result<Unit>) -> Unit>(4)
+                completionCb(Result.success(Unit))
+            }.`when`(offlineManagerWrapper)
+                .splitAndDownload(any(), any(), any(), any(), any(), any())
+
+            val orchestrator =
+                PreDownloadOrchestrator(
+                    claimRepository = claimRepository,
+                    stage4Repository = stage4Repository,
+                    workingSetRepository = workingSetRepository,
+                    candidateDao = candidateDao,
+                    claimDao = claimDao,
+                    surveyDao = surveyDao,
+                    tileStore = tileStore,
+                    lowZoomCompositor = recordingCompositor,
+                    tileService = tileService,
+                    offlineManagerWrapper = offlineManagerWrapper,
+                    candidateImageRepository = candidateImageRepository,
+                    geotiffRadiusRepository = geotiffRadiusRepository,
+                    satelliteRegionStore = satelliteRegionStore,
+                    ioDispatcher = testDispatcher,
+                )
+
+            val progressUpdates = mutableListOf<Data>()
+            val outcome = orchestrator.run(SURVEY_ID, BUFFER_METERS) { progressUpdates.add(it) }
+            advanceUntilIdle()
+
+            assertTrue("Expected success but got $outcome", outcome is PreDownloadOutcome.Success)
+            assertEquals(
+                "Eager precompute must request zooms 13-19 only",
+                (13..19).toList(),
+                requestedZooms.distinct().sorted(),
+            )
+            assertEquals(
+                "Only absent or corrupt composites are composed",
+                (14..19).toList(),
+                composedZooms.distinct().sorted(),
+            )
+            val finalisingDone =
+                progressUpdates
+                    .filter {
+                        it.getString(PreDownloadOrchestrator.KEY_PHASE) ==
+                            PreDownloadOrchestrator.PHASE_FINALISING
+                    }.map { it.getInt(PreDownloadOrchestrator.KEY_DONE, -1) }
+            assertTrue(
+                "Expected finalising progress to reach 1, got $finalisingDone",
+                finalisingDone.contains(1),
+            )
+        }
+
+    @Test
+    fun finalisingProgressCountsEveryCandidateOnceUnderConcurrency() =
+        runTest {
+            val candidateDao =
+                FakeCandidateDao(
+                    listOf(candidate(1L, 0.0, 0.0), candidate(2L, 0.0, 0.0)),
+                )
+            val claimDao = FakeClaimDao()
+            val surveyDao = FakeSurveyDao(latestTaskCreated = null)
+            val tileStore = TileStore(Files.createTempDirectory("tiles").toFile())
+
+            val validPng =
+                byteArrayOf(
+                    0x89.toByte(),
+                    0x50.toByte(),
+                    0x4E.toByte(),
+                    0x47.toByte(),
+                    0x0D.toByte(),
+                    0x0A.toByte(),
+                    0x1A.toByte(),
+                    0x0A.toByte(),
+                    0x00,
+                    0x00,
+                    0x00,
+                    0x0D,
+                    0x49.toByte(),
+                    0x48.toByte(),
+                    0x44.toByte(),
+                    0x52.toByte(),
+                    0x00,
+                    0x00,
+                    0x00,
+                    0x01,
+                    0x00,
+                    0x00,
+                    0x00,
+                    0x01,
+                )
+
+            val recordingCompositor =
+                object : LowZoomCompositor {
+                    override fun compose(
+                        surveyId: Long,
+                        candidateId: Long,
+                        sourceTiles: List<TileCoord>,
+                        parent: TileCoord,
+                    ): ByteArray = validPng
+
+                    override fun parentTiles(
+                        sourceTiles: List<TileCoord>,
+                        zoom: Int,
+                    ): List<TileCoord> = listOf(TileCoord(zoom, 0, 0))
+                }
+
+            val stage4Service = mock(Stage4Service::class.java)
+            `when`(stage4Service.getClaims(SURVEY_ID.toString(), true))
+                .thenReturn(
+                    ListClaimsResponseDto(
+                        listOf(
+                            ClaimDto(
+                                inferenceResultId = 1L,
+                                userId = 2L,
+                                username = "me",
+                                claimedAt = "2026-01-01T00:00:00Z",
+                                isMe = true,
+                            ),
+                            ClaimDto(
+                                inferenceResultId = 2L,
+                                userId = 2L,
+                                username = "me",
+                                claimedAt = "2026-01-01T00:00:00Z",
+                                isMe = true,
+                            ),
+                        ),
+                    ),
+                )
+            val claimRepository = ClaimRepository(stage4Service, claimDao, testDispatcher)
+
+            val stage4Repository = mock(Stage4Repository::class.java)
+            `when`(stage4Repository.fetchLatestTaskCreated(SURVEY_ID)).thenReturn(null)
+
+            val tileService = mock(TileService::class.java)
+            `when`(
+                tileService.getCandidateTile(
+                    anyLong(),
+                    anyLong(),
+                    anyInt(),
+                    anyInt(),
+                    anyInt(),
+                ),
+            ).thenReturn(
+                Response.success(
+                    byteArrayOf(1, 2, 3).toResponseBody("image/png".toMediaType()),
+                ),
+            )
+            `when`(tileService.getCandidateCrop(anyLong()))
+                .thenReturn(
+                    Response.success(validJpeg.toResponseBody("image/jpeg".toMediaType())),
+                )
+
+            val offlineManagerWrapper = mock(OfflineManagerWrapper::class.java)
+            doAnswer { invocation ->
+                val completionCb = invocation.getArgument<(Result<Unit>) -> Unit>(4)
+                completionCb(Result.success(Unit))
+            }.`when`(offlineManagerWrapper)
+                .splitAndDownload(any(), any(), any(), any(), any(), any())
+
+            val orchestrator =
+                PreDownloadOrchestrator(
+                    claimRepository = claimRepository,
+                    stage4Repository = stage4Repository,
+                    workingSetRepository = workingSetRepository,
+                    candidateDao = candidateDao,
+                    claimDao = claimDao,
+                    surveyDao = surveyDao,
+                    tileStore = tileStore,
+                    lowZoomCompositor = recordingCompositor,
+                    tileService = tileService,
+                    offlineManagerWrapper = offlineManagerWrapper,
+                    candidateImageRepository = candidateImageRepository,
+                    geotiffRadiusRepository = geotiffRadiusRepository,
+                    satelliteRegionStore = satelliteRegionStore,
+                    ioDispatcher = testDispatcher,
+                )
+
+            val progressUpdates = mutableListOf<Data>()
+            val outcome = orchestrator.run(SURVEY_ID, BUFFER_METERS) { progressUpdates.add(it) }
+            advanceUntilIdle()
+
+            assertTrue("Expected success but got $outcome", outcome is PreDownloadOutcome.Success)
+            val finalisingDone =
+                progressUpdates
+                    .filter {
+                        it.getString(PreDownloadOrchestrator.KEY_PHASE) ==
+                            PreDownloadOrchestrator.PHASE_FINALISING
+                    }.map { it.getInt(PreDownloadOrchestrator.KEY_DONE, -1) }
+                    .filter { it > 0 }
+            assertEquals(
+                "Each candidate must be counted exactly once",
+                listOf(1, 2),
+                finalisingDone.sorted(),
+            )
+        }
 
     companion object {
         private const val SURVEY_ID = 7L

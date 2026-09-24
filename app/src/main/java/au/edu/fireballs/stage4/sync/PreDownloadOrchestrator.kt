@@ -608,49 +608,77 @@ class PreDownloadOrchestrator(
         progress: suspend (Data) -> Unit,
     ): Int =
         withContext(ioDispatcher) {
-            val minZoom = LowZoomTileCompositor.MIN_ZOOM
             val sourceZoom = LowZoomTileCompositor.SOURCE_ZOOM
-            var written = 0
-            candidates.forEachIndexed { index, candidate ->
-                for (zoom in minZoom until sourceZoom) {
-                    lowZoomCompositor
-                        .parentTiles(
-                            surveyId,
-                            candidate.inferenceResultId,
-                            zoom,
-                        ).forEach { parent ->
-                            val bytes =
-                                lowZoomCompositor.compose(
-                                    surveyId,
-                                    candidate.inferenceResultId,
-                                    parent,
-                                )
-                            if (
-                                !bytes.contentEquals(
-                                    LocalFileRasterTileProvider.TRANSPARENT_PNG,
-                                )
-                            ) {
-                                tileStore.write(
-                                    surveyId,
-                                    candidate.inferenceResultId,
-                                    parent.z,
-                                    parent.x,
-                                    parent.y,
-                                    bytes,
-                                )
-                                written++
+            val limiter = ioDispatcher.limitedParallelism(LOW_ZOOM_CONCURRENCY)
+            val lock = Mutex()
+            var completed = 0
+            var present = 0
+            coroutineScope {
+                candidates.forEach { candidate ->
+                    launch {
+                        val candidateId = candidate.inferenceResultId
+                        val candidatePresent =
+                            withContext(limiter) {
+                                val sourceTiles =
+                                    tileStore.candidateTiles(surveyId, candidateId, sourceZoom)
+                                var count = 0
+                                for (zoom in EAGER_LOW_ZOOM_MIN until sourceZoom) {
+                                    lowZoomCompositor
+                                        .parentTiles(sourceTiles, zoom)
+                                        .forEach { parent ->
+                                            if (
+                                                tileStore.isValidTile(
+                                                    surveyId,
+                                                    candidateId,
+                                                    parent.z,
+                                                    parent.x,
+                                                    parent.y,
+                                                )
+                                            ) {
+                                                count++
+                                                return@forEach
+                                            }
+                                            val bytes =
+                                                lowZoomCompositor.compose(
+                                                    surveyId,
+                                                    candidateId,
+                                                    sourceTiles,
+                                                    parent,
+                                                )
+                                            if (
+                                                !bytes.contentEquals(
+                                                    LocalFileRasterTileProvider.TRANSPARENT_PNG,
+                                                )
+                                            ) {
+                                                tileStore.write(
+                                                    surveyId,
+                                                    candidateId,
+                                                    parent.z,
+                                                    parent.x,
+                                                    parent.y,
+                                                    bytes,
+                                                )
+                                                count++
+                                            }
+                                        }
+                                }
+                                count
                             }
+                        lock.withLock {
+                            present += candidatePresent
+                            completed++
+                            progress(
+                                workDataOf(
+                                    KEY_DONE to completed,
+                                    KEY_TOTAL to candidates.size,
+                                    KEY_PHASE to PHASE_FINALISING,
+                                ),
+                            )
                         }
+                    }
                 }
-                progress(
-                    workDataOf(
-                        KEY_DONE to index + 1,
-                        KEY_TOTAL to candidates.size,
-                        KEY_PHASE to PHASE_FINALISING,
-                    ),
-                )
             }
-            written
+            present
         }
 
     private suspend fun fetchTileWithRetry(
@@ -855,6 +883,8 @@ class PreDownloadOrchestrator(
 
         private const val LOG_TAG = "PreDownloadOrchestrator"
         private const val TILE_CONCURRENCY = 6
+        private const val EAGER_LOW_ZOOM_MIN = 13
+        private const val LOW_ZOOM_CONCURRENCY = 3
         private const val MAX_TILE_ATTEMPTS = 3
         private const val READ_BUFFER_BYTES = 8 * 1024
         private const val MAX_TILE_BYTES = 16 * 1024 * 1024

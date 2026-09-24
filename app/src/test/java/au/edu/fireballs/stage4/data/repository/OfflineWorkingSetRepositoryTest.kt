@@ -398,6 +398,140 @@ class OfflineWorkingSetRepositoryTest {
             assertEquals(1, database.tileManifestDao().getForManifest("immutable").size)
         }
 
+    @Test
+    fun replacementPruneInvalidatesDerivedTilesOnlyForBundleSurvey() =
+        runTest {
+            tileStore.write(1, 7, 19, 1, 1, PNG)
+            tileStore.write(1, 7, 20, 1, 1, PNG)
+            tileStore.write(1, 7, 21, 1, 1, PNG)
+            tileStore.write(1, 7, 22, 1, 1, PNG)
+            tileStore.write(2, 7, 19, 1, 1, PNG)
+            seedPreviousBundle(sourceVersion = "v1")
+            val started =
+                repository.beginReplacement(
+                    target(),
+                    classification(missing = setOf(tile(1L))),
+                    "new",
+                ) as ReplacementBeginResult.Started
+
+            val result = repository.pruneObsolete(started.session)
+
+            assertTrue(result is ReplacementPruneResult.Completed)
+            assertFalse(tileStore.contains(1, 7, 19, 1, 1))
+            assertTrue(tileStore.contains(1, 7, 20, 1, 1))
+            assertTrue(tileStore.contains(1, 7, 21, 1, 1))
+            assertTrue(tileStore.contains(1, 7, 22, 1, 1))
+            assertTrue(tileStore.contains(2, 7, 19, 1, 1))
+        }
+
+    @Test
+    fun derivedTileDeletionFailureSurfacesAsLocalDeletionFailed() =
+        runTest {
+            val parent = Files.createTempDirectory("working-set-link").toFile()
+            val outside = Files.createTempDirectory("working-set-outside").toFile()
+            val link = parent.resolve("tiles")
+            Files.createSymbolicLink(link.toPath(), outside.toPath())
+            tileStore = TileStore(link)
+            repository = createRepository(UnconfinedTestDispatcher())
+            seedPreviousBundle(sourceVersion = "v1")
+            val started =
+                repository.beginReplacement(
+                    target(),
+                    classification(missing = setOf(tile(1L))),
+                    "new",
+                ) as ReplacementBeginResult.Started
+
+            val result = repository.pruneObsolete(started.session)
+
+            assertTrue(result is ReplacementPruneResult.LocalDeletionFailed)
+            result as ReplacementPruneResult.LocalDeletionFailed
+            assertEquals(PreDownloadPruneCategory.GEOTIFF, result.category)
+            assertEquals("Tile root must not be a symbolic link", result.message)
+        }
+
+    @Test
+    fun replacementPruneUsesMostRecentPredecessorSourceVersion() =
+        runTest {
+            tileStore.write(1, 7, 19, 1, 1, PNG)
+            seedPreviousBundle(manifestId = "older", sourceVersion = "v1", createdAt = 1L)
+            seedPreviousBundle(manifestId = "newer", sourceVersion = "v2", createdAt = 2L)
+            val started =
+                repository.beginReplacement(
+                    target(sourceVersion = "v2"),
+                    classification(missing = setOf(tile(1L))),
+                    "new",
+                ) as ReplacementBeginResult.Started
+
+            val result = repository.pruneObsolete(started.session)
+
+            assertTrue(result is ReplacementPruneResult.Completed)
+            assertTrue(
+                "Most recent predecessor (v2) must be authoritative",
+                tileStore.contains(1, 7, 19, 1, 1),
+            )
+        }
+
+    @Test
+    fun replacementPruneInvalidatesDerivedTilesWhenPreviousRunIncomplete() =
+        runTest {
+            tileStore.write(1, 7, 19, 1, 1, PNG)
+            seedPreviousBundle(sourceVersion = "v2", state = "INCOMPLETE")
+            val started =
+                repository.beginReplacement(
+                    target(sourceVersion = "v2"),
+                    classification(missing = setOf(tile(1L))),
+                    "new",
+                ) as ReplacementBeginResult.Started
+
+            val result = repository.pruneObsolete(started.session)
+
+            assertTrue(result is ReplacementPruneResult.Completed)
+            assertFalse(tileStore.contains(1, 7, 19, 1, 1))
+        }
+
+    private suspend fun seedPreviousBundle(
+        manifestId: String = "old-1",
+        surveyId: Long = 1L,
+        sourceVersion: String = "v1",
+        state: String = "COMPLETE",
+        createdAt: Long = 1L,
+    ) {
+        database.offlineBundleDao().insert(
+            OfflineBundleEntity(
+                manifestId = manifestId,
+                surveyId = surveyId,
+                sourceVersion = sourceVersion,
+                state = state,
+                createdAt = createdAt,
+                totalBytes = 10,
+                tileCount = 1,
+                satelliteRegionCount = 0,
+                candidateCount = 1,
+            ),
+        )
+    }
+
+    @Test
+    fun replacementPrunePreservesDerivedTilesWhenSourceVersionUnchanged() =
+        runTest {
+            tileStore.write(1, 7, 19, 1, 1, PNG)
+            seedPreviousBundle(sourceVersion = "v2")
+            val started =
+                repository.beginReplacement(
+                    target(sourceVersion = "v2"),
+                    classification(missing = setOf(tile(1L))),
+                    "new",
+                ) as ReplacementBeginResult.Started
+
+            val result = repository.pruneObsolete(started.session)
+
+            assertTrue(result is ReplacementPruneResult.Completed)
+            assertTrue(
+                "Unchanged source generation must preserve derived composites",
+                tileStore.contains(1, 7, 19, 1, 1),
+            )
+        }
+
     private suspend fun <T> withMainIdle(block: suspend () -> T): T =
         coroutineScope {
             val result = async(UnconfinedTestDispatcher()) { block() }

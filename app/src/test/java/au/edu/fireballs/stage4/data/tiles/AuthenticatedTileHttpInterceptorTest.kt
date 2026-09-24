@@ -47,12 +47,12 @@ class AuthenticatedTileHttpInterceptorTest {
             override fun compose(
                 surveyId: Long,
                 candidateId: Long,
+                sourceTiles: List<TileCoord>,
                 parent: TileCoord,
             ): ByteArray = FAKE_COMPOSITE_BYTES
 
             override fun parentTiles(
-                surveyId: Long,
-                candidateId: Long,
+                sourceTiles: List<TileCoord>,
                 zoom: Int,
             ): List<TileCoord> = emptyList()
         }
