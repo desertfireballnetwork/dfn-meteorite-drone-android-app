@@ -11,12 +11,12 @@ interface LowZoomCompositor {
     fun compose(
         surveyId: Long,
         candidateId: Long,
+        sourceTiles: List<TileCoord>,
         parent: TileCoord,
     ): ByteArray
 
     fun parentTiles(
-        surveyId: Long,
-        candidateId: Long,
+        sourceTiles: List<TileCoord>,
         zoom: Int,
     ): List<TileCoord>
 }
@@ -71,11 +71,11 @@ class LowZoomTileCompositor(
     override fun compose(
         surveyId: Long,
         candidateId: Long,
+        sourceTiles: List<TileCoord>,
         parent: TileCoord,
     ): ByteArray {
         require(parent.z in MIN_ZOOM until SOURCE_ZOOM)
-        val children = tileStore.candidateTiles(surveyId, candidateId, SOURCE_ZOOM)
-        val placements = placementsFor(children, parent, SOURCE_ZOOM, TILE_SIZE)
+        val placements = placementsFor(sourceTiles, parent, SOURCE_ZOOM, TILE_SIZE)
         if (placements.isEmpty()) {
             return LocalFileRasterTileProvider.TRANSPARENT_PNG
         }
@@ -134,13 +134,11 @@ class LowZoomTileCompositor(
     }
 
     override fun parentTiles(
-        surveyId: Long,
-        candidateId: Long,
+        sourceTiles: List<TileCoord>,
         zoom: Int,
     ): List<TileCoord> {
         require(zoom in MIN_ZOOM until SOURCE_ZOOM)
-        return tileStore
-            .candidateTiles(surveyId, candidateId, SOURCE_ZOOM)
+        return sourceTiles
             .map { parentOf(it, zoom) }
             .distinct()
     }

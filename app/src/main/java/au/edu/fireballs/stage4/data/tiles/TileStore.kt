@@ -211,9 +211,49 @@ class TileStore(
     }
 
     suspend fun measuredUsage(): TileStoreMeasuredUsage =
+
         synchronized(lock) {
             measureOwnedUsage(baseDir)
         }
+
+    fun deleteDerivedTiles(surveyId: Long) {
+        require(surveyId >= 0L) { "Survey id must be non-negative" }
+        synchronized(lock) {
+            val root = baseDir.toPath()
+            if (Files.isSymbolicLink(root)) {
+                throw IOException("Tile root must not be a symbolic link")
+            }
+            val surveyDirectory = surveyTilesDirectory(surveyId)
+            val surveyPath = surveyDirectory.toPath()
+            if (!Files.isDirectory(surveyPath, LinkOption.NOFOLLOW_LINKS)) {
+                return
+            }
+            val derivedTiles = mutableListOf<File>()
+            Files.walkFileTree(
+                surveyPath,
+                object : SimpleFileVisitor<Path>() {
+                    override fun visitFile(
+                        file: Path,
+                        attrs: BasicFileAttributes,
+                    ): FileVisitResult {
+                        val relative = surveyPath.relativize(file)
+                        val zoom = relative.getName(1).toString().toIntOrNull()
+                        if (relative.nameCount == TILE_PATH_DEPTH &&
+                            zoom != null &&
+                            zoom < SOURCE_ZOOM
+                        ) {
+                            derivedTiles += file.toFile()
+                        }
+                        return FileVisitResult.CONTINUE
+                    }
+                },
+            )
+            derivedTiles.forEach { file ->
+                deleteRegularFile(file)
+                pruneEmptyDirectories(file.parentFile ?: surveyDirectory, baseDir)
+            }
+        }
+    }
 
     fun surveyTilesDirectory(surveyId: Long): File {
         require(surveyId >= 0L) { "Survey id must be non-negative" }
@@ -363,6 +403,8 @@ class TileStore(
     companion object {
         const val MAX_TILE_BYTES = 16 * 1024 * 1024
         private const val MAX_TILE_ZOOM = 30
+        private const val SOURCE_ZOOM = 20
+        private const val TILE_PATH_DEPTH = 4
         private const val TEMP_SUFFIX = ".tmp"
         private const val PNG_HEADER_BYTES = 24
         private val PNG_SIGNATURE =

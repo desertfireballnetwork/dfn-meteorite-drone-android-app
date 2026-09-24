@@ -275,6 +275,55 @@ class OfflineWorkingSetRepositoryTest {
             assertEquals(1, database.tileManifestDao().getForManifest("immutable").size)
         }
 
+    @Test
+    fun replacementPruneInvalidatesDerivedTilesOnlyForBundleSurvey() =
+        runTest {
+            tileStore.write(1, 7, 19, 1, 1, PNG)
+            tileStore.write(1, 7, 20, 1, 1, PNG)
+            tileStore.write(1, 7, 21, 1, 1, PNG)
+            tileStore.write(1, 7, 22, 1, 1, PNG)
+            tileStore.write(2, 7, 19, 1, 1, PNG)
+            val started =
+                repository.beginReplacement(
+                    target(),
+                    classification(missing = setOf(tile(1L))),
+                    "new",
+                ) as ReplacementBeginResult.Started
+
+            val result = repository.pruneObsolete(started.session)
+
+            assertTrue(result is ReplacementPruneResult.Completed)
+            assertFalse(tileStore.contains(1, 7, 19, 1, 1))
+            assertTrue(tileStore.contains(1, 7, 20, 1, 1))
+            assertTrue(tileStore.contains(1, 7, 21, 1, 1))
+            assertTrue(tileStore.contains(1, 7, 22, 1, 1))
+            assertTrue(tileStore.contains(2, 7, 19, 1, 1))
+        }
+
+    @Test
+    fun derivedTileDeletionFailureSurfacesAsLocalDeletionFailed() =
+        runTest {
+            val parent = Files.createTempDirectory("working-set-link").toFile()
+            val outside = Files.createTempDirectory("working-set-outside").toFile()
+            val link = parent.resolve("tiles")
+            Files.createSymbolicLink(link.toPath(), outside.toPath())
+            tileStore = TileStore(link)
+            repository = createRepository(UnconfinedTestDispatcher())
+            val started =
+                repository.beginReplacement(
+                    target(),
+                    classification(missing = setOf(tile(1L))),
+                    "new",
+                ) as ReplacementBeginResult.Started
+
+            val result = repository.pruneObsolete(started.session)
+
+            assertTrue(result is ReplacementPruneResult.LocalDeletionFailed)
+            result as ReplacementPruneResult.LocalDeletionFailed
+            assertEquals(PreDownloadPruneCategory.GEOTIFF, result.category)
+            assertEquals("Tile root must not be a symbolic link", result.message)
+        }
+
     private fun createRepository(
         dispatcher: CoroutineDispatcher,
         wrapper: OfflineRegionWrapper =

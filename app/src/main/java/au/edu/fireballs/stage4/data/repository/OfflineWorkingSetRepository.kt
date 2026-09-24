@@ -190,6 +190,15 @@ class OfflineWorkingSetRepository(
                 return@withContext ReplacementPruneResult.ManifestUnavailable
             }
 
+            try {
+                tileStore.deleteDerivedTiles(bundle.surveyId)
+            } catch (error: IOException) {
+                return@withContext ReplacementPruneResult.LocalDeletionFailed(
+                    PreDownloadPruneCategory.GEOTIFF,
+                    error.message,
+                )
+            }
+
             val oldManifestIds =
                 offlineBundleDao
                     .getAll()

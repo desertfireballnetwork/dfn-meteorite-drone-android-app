@@ -230,10 +230,17 @@ class AuthenticatedTileHttpInterceptor
             synchronized(compositeCache) {
                 compositeCache[cacheKey]?.let { return it }
             }
+            val sourceTiles =
+                tileStore.candidateTiles(
+                    tile.surveyId,
+                    tile.candidateId,
+                    LowZoomTileCompositor.SOURCE_ZOOM,
+                )
             val bytes =
                 lowZoomCompositor.compose(
                     tile.surveyId,
                     tile.candidateId,
+                    sourceTiles,
                     xyzTile,
                 )
             synchronized(compositeCache) {
