@@ -32,6 +32,7 @@ import au.edu.fireballs.stage4.data.tiles.LocalFileRasterTileProvider
 import au.edu.fireballs.stage4.data.tiles.LowZoomCompositor
 import au.edu.fireballs.stage4.data.tiles.LowZoomTileCompositor
 import au.edu.fireballs.stage4.data.tiles.OfflineManagerWrapper
+import au.edu.fireballs.stage4.data.tiles.OfflineRegionPurgeResult
 import au.edu.fireballs.stage4.data.tiles.SatelliteRegionStore
 import au.edu.fireballs.stage4.data.tiles.TileCoord
 import au.edu.fireballs.stage4.data.tiles.TileMath
@@ -489,6 +490,14 @@ class PreDownloadOrchestrator(
         var completedTiles = 0
         for (region in regions) {
             val clusterTiles = estimateSatelliteTiles(region.bbox).toInt()
+            val purge = workingSetRepository.purgeSatelliteTarget(region.target)
+            if (purge is OfflineRegionPurgeResult.RetryableFailure) {
+                return Result.failure(
+                    IllegalStateException(
+                        "Satellite region purge failed: ${purge.category}",
+                    ),
+                )
+            }
             val result =
                 suspendCancellableCoroutine<Result<Unit>> { cont ->
                     val scope = CoroutineScope(cont.context)
