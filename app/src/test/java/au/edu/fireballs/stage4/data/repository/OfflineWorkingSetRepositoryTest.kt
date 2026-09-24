@@ -283,6 +283,7 @@ class OfflineWorkingSetRepositoryTest {
             tileStore.write(1, 7, 21, 1, 1, PNG)
             tileStore.write(1, 7, 22, 1, 1, PNG)
             tileStore.write(2, 7, 19, 1, 1, PNG)
+            seedPreviousBundle(sourceVersion = "v1")
             val started =
                 repository.beginReplacement(
                     target(),
@@ -309,6 +310,7 @@ class OfflineWorkingSetRepositoryTest {
             Files.createSymbolicLink(link.toPath(), outside.toPath())
             tileStore = TileStore(link)
             repository = createRepository(UnconfinedTestDispatcher())
+            seedPreviousBundle(sourceVersion = "v1")
             val started =
                 repository.beginReplacement(
                     target(),
@@ -322,6 +324,47 @@ class OfflineWorkingSetRepositoryTest {
             result as ReplacementPruneResult.LocalDeletionFailed
             assertEquals(PreDownloadPruneCategory.GEOTIFF, result.category)
             assertEquals("Tile root must not be a symbolic link", result.message)
+        }
+
+    private suspend fun seedPreviousBundle(
+        manifestId: String = "old-1",
+        surveyId: Long = 1L,
+        sourceVersion: String = "v1",
+    ) {
+        database.offlineBundleDao().insert(
+            OfflineBundleEntity(
+                manifestId = manifestId,
+                surveyId = surveyId,
+                sourceVersion = sourceVersion,
+                state = "COMPLETE",
+                createdAt = 1L,
+                totalBytes = 10,
+                tileCount = 1,
+                satelliteRegionCount = 0,
+                candidateCount = 1,
+            ),
+        )
+    }
+
+    @Test
+    fun replacementPrunePreservesDerivedTilesWhenSourceVersionUnchanged() =
+        runTest {
+            tileStore.write(1, 7, 19, 1, 1, PNG)
+            seedPreviousBundle(sourceVersion = "v2")
+            val started =
+                repository.beginReplacement(
+                    target(sourceVersion = "v2"),
+                    classification(missing = setOf(tile(1L))),
+                    "new",
+                ) as ReplacementBeginResult.Started
+
+            val result = repository.pruneObsolete(started.session)
+
+            assertTrue(result is ReplacementPruneResult.Completed)
+            assertTrue(
+                "Unchanged source generation must preserve derived composites",
+                tileStore.contains(1, 7, 19, 1, 1),
+            )
         }
 
     private fun createRepository(
