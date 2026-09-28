@@ -67,7 +67,9 @@ import au.edu.fireballs.stage4.domain.model.DetectionTag
 import au.edu.fireballs.stage4.domain.model.GeoCoordinate
 import au.edu.fireballs.stage4.domain.model.Stage4Candidate
 import au.edu.fireballs.stage4.ui.theme.dfnMarkerNo
+import au.edu.fireballs.stage4.ui.theme.dfnMarkerNoLight
 import au.edu.fireballs.stage4.ui.theme.dfnMarkerYes
+import au.edu.fireballs.stage4.ui.theme.dfnMarkerYesLight
 import coil.compose.AsyncImage
 import coil.compose.SubcomposeAsyncImage
 import coil.network.HttpException
@@ -662,25 +664,37 @@ private fun CandidateVerdictBar(
                                 if (verdict == true) {
                                     dfnMarkerYes
                                 } else {
-                                    MaterialTheme.colorScheme.surfaceVariant
+                                    dfnMarkerYesLight
+                                },
+                            contentColor =
+                                if (verdict == true) {
+                                    Color.White
+                                } else {
+                                    Color.Yellow
                                 },
                         ),
                 ) {
                     Text("Yes")
                 }
-                OutlinedButton(
+                Button(
                     onClick = { onVerdict(false, null) },
                     modifier =
                         Modifier
                             .weight(1f)
                             .testTag("verdict-no"),
                     colors =
-                        ButtonDefaults.outlinedButtonColors(
+                        ButtonDefaults.buttonColors(
                             containerColor =
                                 if (verdict == false) {
                                     dfnMarkerNo
                                 } else {
-                                    Color.Transparent
+                                    dfnMarkerNoLight
+                                },
+                            contentColor =
+                                if (verdict == false) {
+                                    Color.White
+                                } else {
+                                    Color.Yellow
                                 },
                         ),
                 ) {

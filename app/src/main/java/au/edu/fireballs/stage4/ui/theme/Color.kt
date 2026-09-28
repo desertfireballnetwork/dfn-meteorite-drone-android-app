@@ -5,7 +5,9 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 
 val dfnMarkerYes = Color(0xFF28A745)
+val dfnMarkerYesLight = Color(0xFF88BD94)
 val dfnMarkerNo = Color(0xFFDC3545)
+val dfnMarkerNoLight = Color(0xFFC5858B)
 val dfnMarkerUnprocessed = Color(0xFF007BFF)
 val dfnMarkerCar = Color(0xFFFFC107)
 val dfnSurveyedAreaPolygon = Color(0xFF000000)
