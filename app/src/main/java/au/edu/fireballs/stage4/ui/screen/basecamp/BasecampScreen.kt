@@ -69,6 +69,7 @@ import au.edu.fireballs.stage4.ui.screen.stage4map.BaseMarker
 import au.edu.fireballs.stage4.ui.screen.stage4map.LayerToggleState
 import au.edu.fireballs.stage4.ui.screen.stage4map.marker.CandidateMarkers
 import au.edu.fireballs.stage4.ui.util.downloadPhaseLabel
+import au.edu.fireballs.stage4.ui.util.formatDownloadSpeed
 import com.mapbox.bindgen.Value
 import com.mapbox.geojson.Feature
 import com.mapbox.geojson.LineString
@@ -424,13 +425,18 @@ private fun DownloadDialog(
                                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                             }
                             Spacer(modifier = Modifier.height(8.dp))
+                            val progressStatus =
+                                if (state.total > 0) {
+                                    "$percent%"
+                                } else {
+                                    "Working…"
+                                }
+                            val status =
+                                state.bytesPerSecond?.let {
+                                    "$progressStatus · ${formatDownloadSpeed(it)}"
+                                } ?: progressStatus
                             Text(
-                                text =
-                                    if (state.total > 0) {
-                                        "$percent%"
-                                    } else {
-                                        "Working…"
-                                    },
+                                text = status,
                                 style = MaterialTheme.typography.bodySmall,
                             )
                         }

@@ -31,6 +31,7 @@ import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -332,6 +333,7 @@ class PreDownloadViewModelTest {
                                     PreDownloadOrchestrator.PHASE_TILES,
                                 PreDownloadOrchestrator.KEY_PHASE_INDEX to 2,
                                 PreDownloadOrchestrator.KEY_PHASE_COUNT to 4,
+                                PreDownloadOrchestrator.KEY_BYTES_PER_SECOND to 3_355_443L,
                             ),
                     ),
                 ),
@@ -346,7 +348,142 @@ class PreDownloadViewModelTest {
             assertEquals(10, running.total)
             assertEquals(2, running.phaseIndex)
             assertEquals(4, running.phaseCount)
+            assertEquals(3_355_443L, running.bytesPerSecond)
         }
+
+    @Test
+    fun `tile and crop progress map positive download speed`() =
+        runTest(testDispatcher) {
+            viewModel.openSurvey(7L)
+            advanceUntilIdle()
+            viewModel.startDownload()
+            advanceUntilIdle()
+            val request = workManager.enqueued.single().second
+
+            listOf(
+                PreDownloadOrchestrator.PHASE_TILES to 12_800L,
+                PreDownloadOrchestrator.PHASE_CROPS to 3_355_443L,
+            ).forEach { (phase, speed) ->
+                workManager.emit(
+                    request.id,
+                    runningWorkInfo(request.id, phase, speed),
+                )
+                advanceUntilIdle()
+
+                val running = viewModel.uiState.value as PreDownloadUiState.Running
+                assertEquals(phase, running.phase)
+                assertEquals(speed, running.bytesPerSecond)
+            }
+        }
+
+    @Test
+    fun `missing and non-positive download speeds map to null`() =
+        runTest(testDispatcher) {
+            viewModel.openSurvey(7L)
+            advanceUntilIdle()
+            viewModel.startDownload()
+            advanceUntilIdle()
+            val request = workManager.enqueued.single().second
+
+            listOf(null, 0L, -42L).forEach { speed ->
+                workManager.emit(
+                    request.id,
+                    runningWorkInfo(
+                        request.id,
+                        PreDownloadOrchestrator.PHASE_TILES,
+                        speed,
+                    ),
+                )
+                advanceUntilIdle()
+
+                val running = viewModel.uiState.value as PreDownloadUiState.Running
+                assertNull(running.bytesPerSecond)
+            }
+        }
+
+    @Test
+    fun `inapplicable phases ignore download speed`() =
+        runTest(testDispatcher) {
+            viewModel.openSurvey(7L)
+            advanceUntilIdle()
+            viewModel.startDownload()
+            advanceUntilIdle()
+            val request = workManager.enqueued.single().second
+
+            listOf(
+                PreDownloadOrchestrator.PHASE_SATELLITE,
+                PreDownloadOrchestrator.PHASE_FINALISING,
+                "",
+                "unknown",
+            ).forEach { phase ->
+                workManager.emit(
+                    request.id,
+                    runningWorkInfo(request.id, phase, 12_800L),
+                )
+                advanceUntilIdle()
+
+                val running = viewModel.uiState.value as PreDownloadUiState.Running
+                assertEquals(phase, running.phase)
+                assertNull(running.bytesPerSecond)
+            }
+        }
+
+    @Test
+    fun `phase transition clears speed when next event omits it`() =
+        runTest(testDispatcher) {
+            viewModel.openSurvey(7L)
+            advanceUntilIdle()
+            viewModel.startDownload()
+            advanceUntilIdle()
+            val request = workManager.enqueued.single().second
+
+            workManager.emit(
+                request.id,
+                runningWorkInfo(
+                    request.id,
+                    PreDownloadOrchestrator.PHASE_TILES,
+                    12_800L,
+                ),
+            )
+            advanceUntilIdle()
+            assertEquals(
+                12_800L,
+                (viewModel.uiState.value as PreDownloadUiState.Running).bytesPerSecond,
+            )
+
+            workManager.emit(
+                request.id,
+                runningWorkInfo(
+                    request.id,
+                    PreDownloadOrchestrator.PHASE_CROPS,
+                    null,
+                ),
+            )
+            advanceUntilIdle()
+
+            val running = viewModel.uiState.value as PreDownloadUiState.Running
+            assertEquals(PreDownloadOrchestrator.PHASE_CROPS, running.phase)
+            assertNull(running.bytesPerSecond)
+        }
+
+    private fun runningWorkInfo(
+        id: UUID,
+        phase: String,
+        bytesPerSecond: Long?,
+    ): WorkInfo {
+        val progress =
+            Data
+                .Builder()
+                .putInt(PreDownloadOrchestrator.KEY_DONE, 3)
+                .putInt(PreDownloadOrchestrator.KEY_TOTAL, 10)
+                .putString(PreDownloadOrchestrator.KEY_PHASE, phase)
+                .apply {
+                    bytesPerSecond?.let {
+                        putLong(PreDownloadOrchestrator.KEY_BYTES_PER_SECOND, it)
+                    }
+                }.build()
+        return workInfo(id, WorkInfo.State.RUNNING, progress = progress)
+    }
 
     private fun workInfo(
         id: UUID,
