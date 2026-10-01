@@ -1,5 +1,6 @@
 package au.edu.fireballs.stage4.sync
 
+import android.os.SystemClock
 import android.util.Log
 import androidx.work.Data
 import androidx.work.workDataOf
@@ -42,7 +43,10 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
@@ -83,6 +87,7 @@ class PreDownloadOrchestrator(
     private val storageCoordinator: StorageCoordinator? = null,
     @IoDispatcher private val ioDispatcher: CoroutineDispatcher,
     private val preflight: PreDownloadStoragePreflight? = null,
+    private val elapsedRealtimeMillis: () -> Long = SystemClock::elapsedRealtime,
 ) {
     private data class CandidateTiles(
         val candidate: PreDownloadTargetCandidate,
@@ -418,22 +423,30 @@ class PreDownloadOrchestrator(
         }
 
         val tileCount =
-            downloadTiles(
-                surveyId = surveyId,
-                candidateTiles = candidateTiles,
-                total = tileTotal,
-                progress = phaseProgress,
-            )
+            if (tileTotal > 0) {
+                downloadTiles(
+                    surveyId = surveyId,
+                    candidateTiles = candidateTiles,
+                    total = tileTotal,
+                    progress = phaseProgress,
+                )
+            } else {
+                0
+            }
         if (tileCount != tileTotal) {
             return failure("Tile download failed")
         }
         val cropCount =
-            downloadCrops(
-                surveyId = surveyId,
-                candidates = missingCrops,
-                total = cropTotal,
-                progress = phaseProgress,
-            )
+            if (cropTotal > 0) {
+                downloadCrops(
+                    surveyId = surveyId,
+                    candidates = missingCrops,
+                    total = cropTotal,
+                    progress = phaseProgress,
+                )
+            } else {
+                0
+            }
         if (cropCount != missingCrops.size) {
             return failure("Crop download failed")
         }
@@ -570,34 +583,76 @@ class PreDownloadOrchestrator(
         var completed = 0
         var written = 0
         val lock = Mutex()
+        var windowStartedAtMillis = elapsedRealtimeMillis()
+        var accumulatedBytes = 0L
+        var latestSample: Long? = null
+        progress(
+            phaseProgressData(
+                done = completed,
+                total = total,
+                phase = PHASE_TILES,
+                bytesPerSecond = null,
+            ),
+        )
+        val recordBytes: suspend (Int) -> Unit = { bytesRead ->
+            lock.withLock { accumulatedBytes += bytesRead.toLong() }
+        }
         coroutineScope {
-            candidateTiles.forEach { work ->
+            val sampler =
                 launch {
-                    work.tiles.forEach { tile ->
-                        val ok =
-                            withContext(limiter) {
-                                fetchTileWithRetry(
-                                    surveyId,
-                                    work.candidate.inferenceResultId,
-                                    tile,
+                    while (isActive) {
+                        delay(RATE_SAMPLE_INTERVAL_MILLIS)
+                        val data =
+                            lock.withLock {
+                                val now = elapsedRealtimeMillis()
+                                val elapsedMillis = now - windowStartedAtMillis
+                                latestSample =
+                                    bytesPerSecond(accumulatedBytes, elapsedMillis)
+                                        .takeIf { it > 0L }
+                                accumulatedBytes = 0L
+                                windowStartedAtMillis = now
+                                phaseProgressData(
+                                    completed,
+                                    total,
+                                    PHASE_TILES,
+                                    latestSample,
                                 )
                             }
-                        lock.withLock {
-                            completed++
-                            if (ok) {
-                                written++
-                            }
-                            progress(
-                                workDataOf(
-                                    KEY_DONE to completed,
-                                    KEY_TOTAL to total,
-                                    KEY_PHASE to PHASE_TILES,
-                                ),
-                            )
+                        progress(data)
+                    }
+                }
+            val workers =
+                candidateTiles.map { work ->
+                    launch {
+                        work.tiles.forEach { tile ->
+                            val ok =
+                                withContext(limiter) {
+                                    fetchTileWithRetry(
+                                        surveyId,
+                                        work.candidate.inferenceResultId,
+                                        tile,
+                                        recordBytes,
+                                    )
+                                }
+                            val data =
+                                lock.withLock {
+                                    completed++
+                                    if (ok) {
+                                        written++
+                                    }
+                                    phaseProgressData(
+                                        completed,
+                                        total,
+                                        PHASE_TILES,
+                                        latestSample,
+                                    )
+                                }
+                            progress(data)
                         }
                     }
                 }
-            }
+            workers.joinAll()
+            sampler.cancel()
         }
         return written
     }
@@ -685,10 +740,11 @@ class PreDownloadOrchestrator(
         surveyId: Long,
         candidateId: Long,
         tile: TileCoord,
+        recordBytes: suspend (Int) -> Unit,
     ): Boolean {
         var failures = 0
         while (failures < MAX_TILE_ATTEMPTS) {
-            if (fetchTileOnce(surveyId, candidateId, tile)) {
+            if (fetchTileOnce(surveyId, candidateId, tile, recordBytes)) {
                 return true
             }
             failures++
@@ -701,6 +757,7 @@ class PreDownloadOrchestrator(
         surveyId: Long,
         candidateId: Long,
         tile: TileCoord,
+        recordBytes: suspend (Int) -> Unit,
     ): Boolean =
         try {
             val tms = TileMath.flipTileY(tile)
@@ -715,7 +772,7 @@ class PreDownloadOrchestrator(
                     response.isSuccessful &&
                         body != null &&
                         body.contentLength() <= MAX_TILE_BYTES ->
-                        readBoundedBody(body, MAX_TILE_BYTES)
+                        readBoundedBody(body, MAX_TILE_BYTES, recordBytes)
 
                     else -> null
                 }
@@ -734,27 +791,6 @@ class PreDownloadOrchestrator(
             false
         }
 
-    private fun readBoundedBody(
-        body: ResponseBody,
-        maxBytes: Int,
-    ): ByteArray? {
-        val output = ByteArrayOutputStream()
-        val buffer = ByteArray(READ_BUFFER_BYTES)
-        body.byteStream().use { input ->
-            while (true) {
-                val read = input.read(buffer)
-                if (read < 0) {
-                    break
-                }
-                if (output.size() + read > maxBytes) {
-                    return null
-                }
-                output.write(buffer, 0, read)
-            }
-        }
-        return output.toByteArray()
-    }
-
     private suspend fun downloadCrops(
         surveyId: Long,
         candidates: List<PreDownloadTargetCandidate>,
@@ -765,28 +801,73 @@ class PreDownloadOrchestrator(
         var completed = 0
         var written = 0
         val lock = Mutex()
+        var windowStartedAtMillis = elapsedRealtimeMillis()
+        var accumulatedBytes = 0L
+        var latestSample: Long? = null
+        progress(
+            phaseProgressData(
+                done = completed,
+                total = total,
+                phase = PHASE_CROPS,
+                bytesPerSecond = null,
+            ),
+        )
+        val recordBytes: suspend (Int) -> Unit = { bytesRead ->
+            lock.withLock { accumulatedBytes += bytesRead.toLong() }
+        }
         coroutineScope {
-            candidates.forEach { candidate ->
+            val sampler =
                 launch {
-                    val ok =
-                        withContext(limiter) {
-                            fetchCrop(surveyId, candidate.inferenceResultId)
-                        }
-                    lock.withLock {
-                        completed++
-                        if (ok) {
-                            written++
-                        }
-                        progress(
-                            workDataOf(
-                                KEY_DONE to completed,
-                                KEY_TOTAL to total,
-                                KEY_PHASE to PHASE_CROPS,
-                            ),
-                        )
+                    while (isActive) {
+                        delay(RATE_SAMPLE_INTERVAL_MILLIS)
+                        val data =
+                            lock.withLock {
+                                val now = elapsedRealtimeMillis()
+                                val elapsedMillis = now - windowStartedAtMillis
+                                latestSample =
+                                    bytesPerSecond(accumulatedBytes, elapsedMillis)
+                                        .takeIf { it > 0L }
+                                accumulatedBytes = 0L
+                                windowStartedAtMillis = now
+                                phaseProgressData(
+                                    completed,
+                                    total,
+                                    PHASE_CROPS,
+                                    latestSample,
+                                )
+                            }
+                        progress(data)
                     }
                 }
-            }
+            val workers =
+                candidates.map { candidate ->
+                    launch {
+                        val ok =
+                            withContext(limiter) {
+                                fetchCrop(
+                                    surveyId,
+                                    candidate.inferenceResultId,
+                                    recordBytes,
+                                )
+                            }
+                        val data =
+                            lock.withLock {
+                                completed++
+                                if (ok) {
+                                    written++
+                                }
+                                phaseProgressData(
+                                    completed,
+                                    total,
+                                    PHASE_CROPS,
+                                    latestSample,
+                                )
+                            }
+                        progress(data)
+                    }
+                }
+            workers.joinAll()
+            sampler.cancel()
         }
         return written
     }
@@ -795,12 +876,13 @@ class PreDownloadOrchestrator(
     private suspend fun fetchCrop(
         surveyId: Long,
         candidateId: Long,
+        recordBytes: suspend (Int) -> Unit,
     ): Boolean =
         try {
             val response = tileService.getCandidateCrop(candidateId)
             val body = response.body()
             if (response.isSuccessful && body != null && body.contentLength() <= MAX_CROP_BYTES) {
-                val bytes = readBoundedBody(body, MAX_CROP_BYTES)
+                val bytes = readBoundedBody(body, MAX_CROP_BYTES, recordBytes)
                 if (bytes != null) {
                     val result =
                         candidateImageRepository.writeCrop(surveyId, candidateId, bytes)
@@ -819,6 +901,24 @@ class PreDownloadOrchestrator(
             }
             false
         }
+
+    private fun phaseProgressData(
+        done: Int,
+        total: Int,
+        phase: String,
+        bytesPerSecond: Long?,
+    ): Data {
+        val builder =
+            Data
+                .Builder()
+                .putInt(KEY_DONE, done)
+                .putInt(KEY_TOTAL, total)
+                .putString(KEY_PHASE, phase)
+        if (bytesPerSecond != null) {
+            builder.putLong(KEY_BYTES_PER_SECOND, bytesPerSecond)
+        }
+        return builder.build()
+    }
 
     private fun failureWithCode(
         code: String,
@@ -876,6 +976,7 @@ class PreDownloadOrchestrator(
         const val KEY_PHASE = "phase"
         const val KEY_PHASE_INDEX = "phaseIndex"
         const val KEY_PHASE_COUNT = "phaseCount"
+        const val KEY_BYTES_PER_SECOND = "bytesPerSecond"
         const val PHASE_SATELLITE = "satellite"
         const val PHASE_TILES = "tiles"
         const val PHASE_CROPS = "crops"
@@ -885,12 +986,51 @@ class PreDownloadOrchestrator(
         private const val TILE_CONCURRENCY = 6
         private const val EAGER_LOW_ZOOM_MIN = 13
         private const val LOW_ZOOM_CONCURRENCY = 3
+        internal const val RATE_SAMPLE_INTERVAL_MILLIS = 1_000L
         private const val MAX_TILE_ATTEMPTS = 3
-        private const val READ_BUFFER_BYTES = 8 * 1024
-        private const val MAX_TILE_BYTES = 16 * 1024 * 1024
+        internal const val MAX_TILE_BYTES = 16 * 1024 * 1024
         private const val MAX_CROP_BYTES = 2_097_152
     }
 }
+
+internal suspend fun readBoundedBody(
+    body: ResponseBody,
+    maxBytes: Int,
+    recordBytes: suspend (Int) -> Unit,
+): ByteArray? {
+    val output = ByteArrayOutputStream()
+    val buffer = ByteArray(READ_BUFFER_BYTES)
+    body.byteStream().use { input ->
+        while (true) {
+            val read = input.read(buffer)
+            if (read < 0) {
+                break
+            }
+            if (read > 0) {
+                recordBytes(read)
+            }
+            if (output.size() + read > maxBytes) {
+                return null
+            }
+            output.write(buffer, 0, read)
+        }
+    }
+    return output.toByteArray()
+}
+
+internal fun bytesPerSecond(
+    bytes: Long,
+    elapsedMillis: Long,
+): Long {
+    if (bytes <= 0L || elapsedMillis < PreDownloadOrchestrator.RATE_SAMPLE_INTERVAL_MILLIS) {
+        return 0L
+    }
+    val whole = bytes / elapsedMillis
+    val remainder = bytes % elapsedMillis
+    return whole * 1_000L + remainder * 1_000L / elapsedMillis
+}
+
+private const val READ_BUFFER_BYTES = 8 * 1024
 
 private class StorageFullException(
     cause: Throwable,

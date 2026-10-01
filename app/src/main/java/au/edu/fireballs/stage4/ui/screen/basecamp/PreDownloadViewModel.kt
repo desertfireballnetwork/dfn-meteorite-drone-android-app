@@ -52,6 +52,7 @@ sealed interface PreDownloadUiState {
         val phase: String,
         val phaseIndex: Int,
         val phaseCount: Int,
+        val bytesPerSecond: Long?,
     ) : PreDownloadUiState
 
     data class Done(
@@ -201,14 +202,28 @@ class PreDownloadViewModel
 
         private suspend fun handleWorkInfo(info: WorkInfo) {
             when (info.state) {
-                WorkInfo.State.ENQUEUED, WorkInfo.State.RUNNING ->
+                WorkInfo.State.ENQUEUED, WorkInfo.State.RUNNING -> {
+                    val phase =
+                        info.progress.getString(PreDownloadOrchestrator.KEY_PHASE)
+                            ?: ""
+                    val reportedBytesPerSecond =
+                        info.progress.getLong(
+                            PreDownloadOrchestrator.KEY_BYTES_PER_SECOND,
+                            -1L,
+                        )
+                    val bytesPerSecond =
+                        reportedBytesPerSecond.takeIf {
+                            it > 0L &&
+                                (
+                                    phase == PreDownloadOrchestrator.PHASE_TILES ||
+                                        phase == PreDownloadOrchestrator.PHASE_CROPS
+                                )
+                        }
                     _uiState.value =
                         PreDownloadUiState.Running(
                             done = info.progress.getInt(PreDownloadOrchestrator.KEY_DONE, 0),
                             total = info.progress.getInt(PreDownloadOrchestrator.KEY_TOTAL, 0),
-                            phase =
-                                info.progress.getString(PreDownloadOrchestrator.KEY_PHASE)
-                                    ?: "",
+                            phase = phase,
                             phaseIndex =
                                 info.progress.getInt(
                                     PreDownloadOrchestrator.KEY_PHASE_INDEX,
@@ -219,7 +234,9 @@ class PreDownloadViewModel
                                     PreDownloadOrchestrator.KEY_PHASE_COUNT,
                                     0,
                                 ),
+                            bytesPerSecond = bytesPerSecond,
                         )
+                }
 
                 WorkInfo.State.SUCCEEDED -> {
                     val output = info.outputData
