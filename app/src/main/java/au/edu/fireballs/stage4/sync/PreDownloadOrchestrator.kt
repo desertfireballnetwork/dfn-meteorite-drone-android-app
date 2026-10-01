@@ -43,7 +43,10 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
@@ -592,58 +595,64 @@ class PreDownloadOrchestrator(
             ),
         )
         val recordBytes: suspend (Int) -> Unit = { bytesRead ->
-            lock.withLock {
-                accumulatedBytes += bytesRead.toLong()
-                val now = elapsedRealtimeMillis()
-                val elapsedMillis = now - windowStartedAtMillis
-                if (elapsedMillis >= RATE_SAMPLE_INTERVAL_MILLIS) {
-                    latestSample =
-                        bytesPerSecond(accumulatedBytes, elapsedMillis).takeIf { it > 0L }
-                    accumulatedBytes = 0L
-                    windowStartedAtMillis = now
-                    latestSample?.let { sample ->
-                        progress(
-                            phaseProgressData(
-                                done = completed,
-                                total = total,
-                                phase = PHASE_TILES,
-                                bytesPerSecond = sample,
-                            ),
-                        )
-                    }
-                }
-            }
+            lock.withLock { accumulatedBytes += bytesRead.toLong() }
         }
         coroutineScope {
-            candidateTiles.forEach { work ->
+            val sampler =
                 launch {
-                    work.tiles.forEach { tile ->
-                        val ok =
-                            withContext(limiter) {
-                                fetchTileWithRetry(
-                                    surveyId,
-                                    work.candidate.inferenceResultId,
-                                    tile,
-                                    recordBytes,
+                    while (isActive) {
+                        delay(RATE_SAMPLE_INTERVAL_MILLIS)
+                        val data =
+                            lock.withLock {
+                                val now = elapsedRealtimeMillis()
+                                val elapsedMillis = now - windowStartedAtMillis
+                                latestSample =
+                                    bytesPerSecond(accumulatedBytes, elapsedMillis)
+                                        .takeIf { it > 0L }
+                                accumulatedBytes = 0L
+                                windowStartedAtMillis = now
+                                phaseProgressData(
+                                    completed,
+                                    total,
+                                    PHASE_TILES,
+                                    latestSample,
                                 )
                             }
-                        lock.withLock {
-                            completed++
-                            if (ok) {
-                                written++
-                            }
-                            progress(
-                                phaseProgressData(
-                                    done = completed,
-                                    total = total,
-                                    phase = PHASE_TILES,
-                                    bytesPerSecond = latestSample,
-                                ),
-                            )
+                        progress(data)
+                    }
+                }
+            val workers =
+                candidateTiles.map { work ->
+                    launch {
+                        work.tiles.forEach { tile ->
+                            val ok =
+                                withContext(limiter) {
+                                    fetchTileWithRetry(
+                                        surveyId,
+                                        work.candidate.inferenceResultId,
+                                        tile,
+                                        recordBytes,
+                                    )
+                                }
+                            val data =
+                                lock.withLock {
+                                    completed++
+                                    if (ok) {
+                                        written++
+                                    }
+                                    phaseProgressData(
+                                        completed,
+                                        total,
+                                        PHASE_TILES,
+                                        latestSample,
+                                    )
+                                }
+                            progress(data)
                         }
                     }
                 }
-            }
+            workers.joinAll()
+            sampler.cancel()
         }
         return written
     }
@@ -804,51 +813,61 @@ class PreDownloadOrchestrator(
             ),
         )
         val recordBytes: suspend (Int) -> Unit = { bytesRead ->
-            lock.withLock {
-                accumulatedBytes += bytesRead.toLong()
-                val now = elapsedRealtimeMillis()
-                val elapsedMillis = now - windowStartedAtMillis
-                if (elapsedMillis >= RATE_SAMPLE_INTERVAL_MILLIS) {
-                    latestSample =
-                        bytesPerSecond(accumulatedBytes, elapsedMillis).takeIf { it > 0L }
-                    accumulatedBytes = 0L
-                    windowStartedAtMillis = now
-                    latestSample?.let { sample ->
-                        progress(
-                            phaseProgressData(
-                                done = completed,
-                                total = total,
-                                phase = PHASE_CROPS,
-                                bytesPerSecond = sample,
-                            ),
-                        )
-                    }
-                }
-            }
+            lock.withLock { accumulatedBytes += bytesRead.toLong() }
         }
         coroutineScope {
-            candidates.forEach { candidate ->
+            val sampler =
                 launch {
-                    val ok =
-                        withContext(limiter) {
-                            fetchCrop(surveyId, candidate.inferenceResultId, recordBytes)
-                        }
-                    lock.withLock {
-                        completed++
-                        if (ok) {
-                            written++
-                        }
-                        progress(
-                            phaseProgressData(
-                                done = completed,
-                                total = total,
-                                phase = PHASE_CROPS,
-                                bytesPerSecond = latestSample,
-                            ),
-                        )
+                    while (isActive) {
+                        delay(RATE_SAMPLE_INTERVAL_MILLIS)
+                        val data =
+                            lock.withLock {
+                                val now = elapsedRealtimeMillis()
+                                val elapsedMillis = now - windowStartedAtMillis
+                                latestSample =
+                                    bytesPerSecond(accumulatedBytes, elapsedMillis)
+                                        .takeIf { it > 0L }
+                                accumulatedBytes = 0L
+                                windowStartedAtMillis = now
+                                phaseProgressData(
+                                    completed,
+                                    total,
+                                    PHASE_CROPS,
+                                    latestSample,
+                                )
+                            }
+                        progress(data)
                     }
                 }
-            }
+            val workers =
+                candidates.map { candidate ->
+                    launch {
+                        val ok =
+                            withContext(limiter) {
+                                fetchCrop(
+                                    surveyId,
+                                    candidate.inferenceResultId,
+                                    recordBytes,
+                                )
+                            }
+                        val data =
+                            lock.withLock {
+                                completed++
+                                if (ok) {
+                                    written++
+                                }
+                                phaseProgressData(
+                                    completed,
+                                    total,
+                                    PHASE_CROPS,
+                                    latestSample,
+                                )
+                            }
+                        progress(data)
+                    }
+                }
+            workers.joinAll()
+            sampler.cancel()
         }
         return written
     }

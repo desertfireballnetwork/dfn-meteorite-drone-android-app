@@ -44,11 +44,16 @@ import au.edu.fireballs.stage4.data.tiles.TileStoreMeasuredUsage
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import okhttp3.MediaType
 import okhttp3.MediaType.Companion.toMediaType
@@ -69,6 +74,7 @@ import org.mockito.Mockito.verify
 import org.mockito.Mockito.verifyNoInteractions
 import org.mockito.Mockito.`when`
 import org.mockito.kotlin.any
+import org.mockito.kotlin.doSuspendableAnswer
 import org.mockito.kotlin.eq
 import org.mockito.kotlin.never
 import org.mockito.kotlin.whenever
@@ -456,16 +462,6 @@ class PreDownloadWorkerTest {
                     geotiffRadiusRepository = geotiffRadiusRepository,
                     satelliteRegionStore = satelliteRegionStore,
                     ioDispatcher = testDispatcher,
-                    elapsedRealtimeMillis =
-                        object {
-                            var now = 0L
-
-                            operator fun invoke(): Long {
-                                val current = now
-                                now += 1_000L
-                                return current
-                            }
-                        }::invoke,
                 )
 
             val progressUpdates = mutableListOf<Data>()
@@ -497,20 +493,15 @@ class PreDownloadWorkerTest {
                     it.getString(PreDownloadOrchestrator.KEY_PHASE) ==
                         PreDownloadOrchestrator.PHASE_CROPS
                 }
-            assertTrue(
-                tileProgress.any {
-                    it.getLong(PreDownloadOrchestrator.KEY_BYTES_PER_SECOND, 0L) > 0L
-                },
+            assertFalse(
+                tileProgress.first().keyValueMap.containsKey(
+                    PreDownloadOrchestrator.KEY_BYTES_PER_SECOND,
+                ),
             )
             assertFalse(
                 cropProgress.first().keyValueMap.containsKey(
                     PreDownloadOrchestrator.KEY_BYTES_PER_SECOND,
                 ),
-            )
-            assertTrue(
-                cropProgress.any {
-                    it.getLong(PreDownloadOrchestrator.KEY_BYTES_PER_SECOND, 0L) > 0L
-                },
             )
             assertTrue(
                 progressUpdates
@@ -576,6 +567,122 @@ class PreDownloadWorkerTest {
                 "Repository owns persistence (no legacy bundle insert)",
                 offlineBundleDao.inserted.isEmpty(),
             )
+        }
+
+    @Test
+    fun tileRateIsPublishedThenClearedWhenIdle() =
+        runTest {
+            val dispatcher = StandardTestDispatcher(testScheduler)
+            val candidateDao = FakeCandidateDao(listOf(candidate(1L, 0.0, 0.0)))
+            val claimDao = FakeClaimDao()
+            val surveyDao = FakeSurveyDao(latestTaskCreated = null)
+            val tileStore = TileStore(Files.createTempDirectory("tiles").toFile())
+            val stage4Service = mock(Stage4Service::class.java)
+            `when`(stage4Service.getClaims(SURVEY_ID.toString(), true))
+                .thenReturn(
+                    ListClaimsResponseDto(
+                        listOf(
+                            ClaimDto(
+                                inferenceResultId = 1L,
+                                userId = 2L,
+                                username = "me",
+                                isMe = true,
+                            ),
+                        ),
+                    ),
+                )
+            val claimRepository = ClaimRepository(stage4Service, claimDao, dispatcher)
+            val stage4Repository = mock(Stage4Repository::class.java)
+            `when`(stage4Repository.fetchLatestTaskCreated(SURVEY_ID)).thenReturn(null)
+            val stalledFetches = CompletableDeferred<Unit>()
+            var tileCalls = 0
+            val tileService = mock(TileService::class.java)
+            whenever(
+                tileService.getCandidateTile(
+                    anyLong(),
+                    anyLong(),
+                    anyInt(),
+                    anyInt(),
+                    anyInt(),
+                ),
+            ).doSuspendableAnswer {
+                tileCalls++
+                if (tileCalls > 1) {
+                    stalledFetches.await()
+                }
+                Response.success(
+                    byteArrayOf(1, 2, 3).toResponseBody("image/png".toMediaType()),
+                )
+            }
+            whenever(tileService.getCandidateCrop(anyLong()))
+                .thenReturn(
+                    Response.success(validJpeg.toResponseBody("image/jpeg".toMediaType())),
+                )
+            val offlineManagerWrapper = mock(OfflineManagerWrapper::class.java)
+            doAnswer { invocation ->
+                invocation.getArgument<(Result<Unit>) -> Unit>(4)(Result.success(Unit))
+            }.`when`(offlineManagerWrapper)
+                .splitAndDownload(any(), any(), any(), any(), any(), any())
+            val orchestrator =
+                PreDownloadOrchestrator(
+                    claimRepository = claimRepository,
+                    stage4Repository = stage4Repository,
+                    workingSetRepository = workingSetRepository,
+                    candidateDao = candidateDao,
+                    claimDao = claimDao,
+                    surveyDao = surveyDao,
+                    tileStore = tileStore,
+                    lowZoomCompositor = noOpCompositor,
+                    tileService = tileService,
+                    offlineManagerWrapper = offlineManagerWrapper,
+                    candidateImageRepository = candidateImageRepository,
+                    geotiffRadiusRepository = geotiffRadiusRepository,
+                    satelliteRegionStore = satelliteRegionStore,
+                    ioDispatcher = dispatcher,
+                    elapsedRealtimeMillis = { testScheduler.currentTime },
+                )
+            val progressUpdates = mutableListOf<Data>()
+            val download =
+                launch {
+                    orchestrator.run(SURVEY_ID, BUFFER_METERS) {
+                        progressUpdates.add(it)
+                    }
+                }
+
+            runCurrent()
+            assertTrue(tileCalls > 1)
+            advanceTimeBy(PreDownloadOrchestrator.RATE_SAMPLE_INTERVAL_MILLIS)
+            runCurrent()
+
+            val positiveSample =
+                progressUpdates.last {
+                    it.getString(PreDownloadOrchestrator.KEY_PHASE) ==
+                        PreDownloadOrchestrator.PHASE_TILES
+                }
+            assertTrue(
+                positiveSample.getLong(
+                    PreDownloadOrchestrator.KEY_BYTES_PER_SECOND,
+                    0L,
+                ) > 0L,
+            )
+
+            advanceTimeBy(PreDownloadOrchestrator.RATE_SAMPLE_INTERVAL_MILLIS)
+            runCurrent()
+
+            val idleSample =
+                progressUpdates.last {
+                    it.getString(PreDownloadOrchestrator.KEY_PHASE) ==
+                        PreDownloadOrchestrator.PHASE_TILES
+                }
+            assertFalse(
+                idleSample.keyValueMap.containsKey(
+                    PreDownloadOrchestrator.KEY_BYTES_PER_SECOND,
+                ),
+            )
+
+            stalledFetches.complete(Unit)
+            advanceUntilIdle()
+            download.join()
         }
 
     @Test
