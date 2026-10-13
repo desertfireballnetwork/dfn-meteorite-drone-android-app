@@ -1,5 +1,6 @@
 package au.edu.fireballs.stage4.ui.screen.candidate
 
+import au.edu.fireballs.stage4.ui.screen.stage4map.applyUserLocationDisplay
 import com.mapbox.maps.MapView
 import com.mapbox.maps.plugin.Plugin
 import com.mapbox.maps.plugin.locationcomponent.LocationComponentPlugin
@@ -25,8 +26,9 @@ internal fun setCandidateLocationPuckEnabled(
     val locationPlugin =
         mapView.getPlugin(Plugin.MAPBOX_LOCATION_COMPONENT_PLUGIN_ID) as? LocationComponentPlugin
     locationPlugin?.updateSettings {
-        enabled = display.enabled
-        pulsingEnabled = display.pulsingEnabled
-        showAccuracyRing = display.showAccuracyRing
+        applyUserLocationDisplay(
+            enabled = display.enabled,
+            showAccuracyRing = display.showAccuracyRing,
+        )
     }
 }
