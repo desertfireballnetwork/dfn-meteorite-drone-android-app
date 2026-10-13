@@ -5,7 +5,7 @@ campaigns. It provides Django session login, a survey picker, basecamp claiming 
 tile and candidate downloads, and on-map candidate review with a Yes/No decision, detection
 tag, and camera evidence photo. Reviews persist offline and sync when connectivity returns.
 
-**Status:** Prototype (`versionName 0.1.0`), pre-release, and in field testing.
+**Status:** Prototype (`versionName 0.2.0`), pre-release, and in field testing.
 
 ## Getting the app
 

@@ -2,7 +2,7 @@
 kotlin = "2.3.10"
 ksp = "2.3.10"
 agp = "9.3.0"
-app-version-name = "0.1.0"
+app-version-name = "0.2.0"
 gradle-wrapper = "9.6.1"
 compose-bom = "2026.06.01"
 hilt = "2.60.1"
