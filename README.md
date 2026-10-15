@@ -26,6 +26,10 @@ Follow the [build-from-source instructions](DEPLOYMENT.md#build-from-source).
 - `ANDROID_HOME` set to the Android SDK location.
 - A Mapbox downloads token and a Mapbox public access token.
 
+Note on Mapbox usage: the app downloads context satellite imagery, billed against the Mapbox's account `Raster Tiles API` credits.
+A typical meteorite search uses on the order of 200k credit (out of 750k per month on the free tier), so that's something to keep an eye on.
+
+
 ## Local configuration
 
 Create an untracked `local.properties` in the repository root:
