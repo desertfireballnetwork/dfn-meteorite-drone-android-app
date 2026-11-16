@@ -28,6 +28,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLinkStyles
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -63,9 +70,23 @@ fun LoginScreen(
         verticalArrangement = Arrangement.Center,
     ) {
         Text(
-            text = stringResource(id = R.string.welcome),
-            style = MaterialTheme.typography.headlineLarge,
+            text = stringResource(id = R.string.login_title),
+            style = MaterialTheme.typography.headlineMedium,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth(),
         )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Text(
+            text = stringResource(id = R.string.login_subtitle),
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        WebCredentialsHint(serverUrl = viewModel.serverUrl)
 
         Spacer(modifier = Modifier.height(24.dp))
 
@@ -125,4 +146,39 @@ fun LoginScreen(
             }
         }
     }
+}
+
+@Composable
+private fun WebCredentialsHint(serverUrl: String) {
+    val linkText = stringResource(id = R.string.login_web_version)
+    val fullText = stringResource(id = R.string.login_web_credentials_hint, linkText)
+    val linkStart = fullText.indexOf(linkText)
+    val linkStyles =
+        TextLinkStyles(
+            style =
+                SpanStyle(
+                    color = MaterialTheme.colorScheme.primary,
+                    textDecoration = TextDecoration.Underline,
+                ),
+        )
+
+    val hint =
+        buildAnnotatedString {
+            if (serverUrl.isBlank() || linkStart < 0) {
+                append(fullText)
+            } else {
+                append(fullText.substring(0, linkStart))
+                withLink(LinkAnnotation.Url(url = serverUrl, styles = linkStyles)) {
+                    append(linkText)
+                }
+                append(fullText.substring(linkStart + linkText.length))
+            }
+        }
+
+    Text(
+        text = hint,
+        style = MaterialTheme.typography.bodyMedium,
+        textAlign = TextAlign.Center,
+        modifier = Modifier.fillMaxWidth().testTag("web_credentials_hint"),
+    )
 }
