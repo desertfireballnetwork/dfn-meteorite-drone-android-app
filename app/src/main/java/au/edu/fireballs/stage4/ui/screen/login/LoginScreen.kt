@@ -7,7 +7,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.input.TextFieldLineLimits
+import androidx.compose.foundation.text.input.TextFieldState
+import androidx.compose.foundation.text.input.TextObfuscationMode
+import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -16,6 +19,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedSecureTextField
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -32,9 +36,6 @@ import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLinkStyles
 import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withLink
@@ -49,8 +50,11 @@ fun LoginScreen(
     modifier: Modifier = Modifier,
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    var username by remember { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
+    val usernameState = rememberTextFieldState()
+
+    // Plain remember (not rememberSaveable / rememberTextFieldState) so the password is
+    // never written into the saved instance state bundle.
+    val passwordState = remember { TextFieldState() }
     var passwordVisible by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
@@ -91,22 +95,19 @@ fun LoginScreen(
         Spacer(modifier = Modifier.height(24.dp))
 
         OutlinedTextField(
-            value = username,
-            onValueChange = { username = it },
+            state = usernameState,
             label = { Text(stringResource(id = R.string.username)) },
-            singleLine = true,
+            lineLimits = TextFieldLineLimits.SingleLine,
             modifier = Modifier.fillMaxWidth(),
         )
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        OutlinedTextField(
-            value = password,
-            onValueChange = { password = it },
+        OutlinedSecureTextField(
+            state = passwordState,
             label = { Text(stringResource(id = R.string.password)) },
-            singleLine = true,
-            visualTransformation =
-                if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+            textObfuscationMode =
+                if (passwordVisible) TextObfuscationMode.Visible else TextObfuscationMode.Hidden,
             trailingIcon = {
                 val icon =
                     if (passwordVisible) Icons.Filled.Visibility else Icons.Filled.VisibilityOff
@@ -116,7 +117,6 @@ fun LoginScreen(
                     Icon(imageVector = icon, contentDescription = description)
                 }
             },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
             modifier = Modifier.fillMaxWidth().testTag("password_field"),
         )
 
@@ -132,7 +132,12 @@ fun LoginScreen(
         }
 
         Button(
-            onClick = { viewModel.signIn(username, password) },
+            onClick = {
+                viewModel.signIn(
+                    usernameState.text.toString(),
+                    passwordState.text.toString(),
+                )
+            },
             enabled = uiState !is LoginUiState.Loading,
             modifier = Modifier.fillMaxWidth(),
         ) {
