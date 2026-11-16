@@ -1,10 +1,13 @@
 <resources>
     <string name="app_name">DFN Stage 4</string>
-    <string name="welcome">Welcome</string>
+    <string name="login_title">DFN Drone Meteorite Searching Stage 4</string>
+    <string name="login_subtitle">Login</string>
     <string name="username">Username</string>
     <string name="password">Password</string>
     <string name="sign_in">Sign in</string>
     <string name="login_failed">Login failed</string>
+    <string name="login_web_credentials_hint">Use the same username and password as the %1$s.</string>
+    <string name="login_web_version">web version</string>
 
     <!-- Survey List Screen -->
     <string name="surveys_title">Surveys</string>

@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+import javax.inject.Named
 
 sealed interface LoginUiState {
     data object Idle : LoginUiState
@@ -36,6 +37,7 @@ class LoginViewModel
     @Inject
     constructor(
         private val authRepository: AuthRepository,
+        @Named("serverUrl") val serverUrl: String,
     ) : ViewModel() {
         private val _uiState = MutableStateFlow<LoginUiState>(LoginUiState.Idle)
         val uiState: StateFlow<LoginUiState> = _uiState.asStateFlow()

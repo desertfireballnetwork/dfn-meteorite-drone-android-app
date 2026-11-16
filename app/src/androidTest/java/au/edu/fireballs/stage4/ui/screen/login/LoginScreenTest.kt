@@ -27,6 +27,7 @@ class LoginScreenTest {
 
         every { viewModel.uiState } returns uiState
         every { viewModel.navigationEvent } returns navigationEvent
+        every { viewModel.serverUrl } returns "https://example.test/"
 
         composeTestRule.setContent {
             Stage4Theme {
@@ -68,5 +69,27 @@ class LoginScreenTest {
         composeTestRule
             .onNodeWithContentDescription("Show password")
             .assertIsDisplayed()
+    }
+
+    @Test
+    fun webCredentialsHint_isDisplayedWithWebVersionText() {
+        val viewModel = mockk<LoginViewModel>(relaxed = true)
+        every { viewModel.uiState } returns MutableStateFlow<LoginUiState>(LoginUiState.Idle)
+        every { viewModel.navigationEvent } returns MutableSharedFlow()
+        every { viewModel.serverUrl } returns "https://example.test/"
+
+        composeTestRule.setContent {
+            Stage4Theme {
+                LoginScreen(
+                    viewModel = viewModel,
+                    onLoginSuccess = {},
+                )
+            }
+        }
+
+        composeTestRule
+            .onNodeWithTag("web_credentials_hint")
+            .assertIsDisplayed()
+            .assertTextContains("Use the same username and password as the web version.")
     }
 }

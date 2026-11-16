@@ -26,7 +26,7 @@ class LoginViewModelTest {
     @Before
     fun setUp() {
         Dispatchers.setMain(testDispatcher)
-        viewModel = LoginViewModel(authRepository)
+        viewModel = LoginViewModel(authRepository, "https://example.test/")
     }
 
     @After
